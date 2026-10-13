@@ -1,0 +1,80 @@
+<meta charset="utf-8">
+<title>Univicoustic · Acoustic Measurement</title>
+<meta name="description" content="Guided acoustic measurement: room, target, measurement, RT60, assessment, treatment and prediction.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Type: IBM Plex Sans for the interface, IBM Plex Mono for measured, target and predicted readouts.
+     Offline, the system faces are used instead. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="css/app.css">
+
+<div id="app" class="app"></div>
+<div id="sheet-root"></div>
+<div id="toast-root" aria-live="polite"></div>
+<div id="tip" class="tip" role="tooltip" hidden></div>
+
+<!-- Core: namespace and utilities, data, workflow model, project store -->
+<script src="js/core/util.js"></script>
+<script src="js/data/demo.js"></script>
+<!-- Brand: name and identity from the supplied references in assets/brand -->
+<script src="js/data/brand.js"></script>
+<!-- Report form: its fields and the database columns (the submission server reads the same file) -->
+<script src="js/data/report-form.js"></script>
+<!-- RT60 target criteria (standards, room uses), read by the target recommendation service -->
+<script src="js/data/targets.js"></script>
+<!-- Instructional videos (content), played by js/ui/guide.js -->
+<script src="js/data/guides.js"></script>
+<!-- Product database, generated from the NRC Master File by tools/import-products.ps1 (do not edit by hand) -->
+<script src="js/data/products.generated.js"></script>
+<!-- Room surface materials and their sourced absorption data (surface descriptions and what a treatment covers; never used by the measurement) -->
+<script src="js/data/materials.js"></script>
+<script src="js/core/workflow.js"></script>
+<script src="js/core/store.js"></script>
+
+<!-- Services; stages only talk to these interfaces -->
+<script src="js/services/acoustics.js"></script>
+<script src="js/services/target.js"></script>
+<script src="js/services/catalog.js"></script>
+<!-- Surfaces: areas, materials, what a treatment covers (no RT60 estimate) -->
+<script src="js/services/surfaces.js"></script>
+<!-- Live measurement: signal processing, acoustic analysis and browser audio (real microphone input only) -->
+<script src="js/measurement/dsp.js"></script>
+<script src="js/measurement/analysis.js"></script>
+<script src="js/measurement/audio-io.js"></script>
+<script src="js/services/measurement.js"></script>
+<script src="js/services/processing.js"></script>
+<!-- Average RT60 across the measured bands: the one calculation every summary and the report read -->
+<script src="js/services/rt60-average.js"></script>
+<script src="js/services/prediction.js"></script>
+<script src="js/services/explain.js"></script>
+<script src="js/core/derive.js"></script>
+<script src="js/measurement/live.js"></script>
+
+<!-- UI building blocks -->
+<script src="js/ui/components.js"></script>
+<script src="js/ui/live-ui.js"></script>
+<script src="js/ui/charts.js"></script>
+<script src="js/ui/guide.js"></script>
+
+<!-- Project report: a 1–2 page PDF of the open project, generated in the browser from its saved data -->
+<script src="js/report/pdf.js"></script>
+<script src="js/report/report.js"></script>
+<!-- Report gate: the report form, sent to the app server (server/app_server.py → Supabase), unlocks the PDF -->
+<script src="js/services/report-gate.js"></script>
+
+<!-- Workflow stages, one file per step -->
+<script src="js/stages/home.js"></script>
+<script src="js/stages/room.js"></script>
+<script src="js/stages/target.js"></script>
+<script src="js/stages/setup.js"></script>
+<script src="js/stages/measure.js"></script>
+<script src="js/stages/processing.js"></script>
+<script src="js/stages/results.js"></script>
+<script src="js/stages/assessment.js"></script>
+<script src="js/stages/treatment.js"></script>
+<script src="js/stages/prediction.js"></script>
+<script src="js/stages/final.js"></script>
+
+<!-- Application shell: rail, context bar, action bar, events -->
+<script src="js/app.js"></script>

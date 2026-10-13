@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calculation tests</title>
+<style>
+  body{font:14px/1.5 system-ui,sans-serif;margin:24px;background:#fff;color:#14191b}
+  li{margin:6px 0;list-style:none} .ok b{color:#16884a} .bad b{color:#c42e42} small{color:#566065}
+</style>
+</head>
+<body>
+<h1>Calculation tests</h1>
+<p>Room geometry, Sabine absorption and RT60, the treatment prediction, octave-band absorption from the product data,
+and the RT60 targets, against values worked out by hand. Development only; the application never loads this page.</p>
+<ol id="out"><li>Running…</li></ol>
+<script>window.AM = { services: {} };</script>
+<script src="../js/core/util.js"></script>
+<script src="../js/data/demo.js"></script>
+<script src="../js/data/targets.js"></script>
+<script src="../js/data/products.generated.js"></script>
+<script src="../js/data/materials.js"></script>
+<script src="../js/core/workflow.js"></script>
+<script src="../js/services/acoustics.js"></script>
+<script src="../js/services/target.js"></script>
+<script src="../js/services/catalog.js"></script>
+<script src="../js/services/surfaces.js"></script>
+<script src="../js/services/prediction.js"></script>
+<script src="../js/services/rt60-average.js"></script>
+<script src="../js/core/derive.js"></script>
+<script src="calculations.test.js"></script>
+</body>
+</html>

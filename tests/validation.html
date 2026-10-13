@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RT60 validation</title>
+<style>
+  :root{--ink:#14191b;--muted:#566065;--line:#d9dee0;--ok:#16884a;--bad:#c42e42;--soft:#f4f6f7}
+  body{font:14px/1.5 system-ui,sans-serif;margin:24px;background:#fff;color:var(--ink);max-width:1280px}
+  h1{margin:0 0 4px} h2{margin:32px 0 4px;font-size:18px} p{margin:6px 0;max-width:900px} small,.muted{color:var(--muted)}
+  .wrap{overflow-x:auto;margin:8px 0}
+  table{border-collapse:collapse;font-size:13px;min-width:100%}
+  th,td{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
+  th{background:var(--soft);font-weight:600;white-space:nowrap} td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+  .ok{color:var(--ok);font-weight:700} .bad{color:var(--bad);font-weight:700}
+  #summary{font-size:15px;margin:12px 0;padding:10px 12px;background:var(--soft);border-radius:6px}
+  .tool{border:1px solid var(--line);border-radius:6px;padding:12px;margin:8px 0}
+  ul{margin:6px 0;padding-left:20px} li{margin:3px 0}
+</style>
+</head>
+<body>
+<h1>RT60 validation</h1>
+<p>Synthetic rooms of known reverberation time run through the application's own analysis (<code>AM.analysis</code>) and
+decision (<code>AM.services.processing</code>). Development only; the application never loads this page.</p>
+<p class="muted">Expected = the room's own decay in that band, taken from its noise-free impulse response (no sweep, no
+noise, no measuring device) over the same ISO 3382-2 range as the measurement (T30 −5…−35 dB, T20 −5…−25 dB). A synthetic
+octave band decays within a few per cent of its nominal RT (most spread at 125 Hz), so errors are against Expected; the
+nominal value and the error against it are shown too. Tolerance: 5 % for T30, 8 % for T20. "Before" re-runs the same
+recording with the analysis as it was before this audit (no direct-sound cap, no gap check, the 60 dB fit first from
+75 dB usable decay).</p>
+<div id="summary">Running…</div>
+<div id="out"></div>
+
+<h2>Analyse an impulse response or a clap recording (WAV)</h2>
+<div class="tool">
+  <p>For a same-data comparison: load an impulse response exported from another program (for example REW: File → Export →
+  Export impulse response as WAV) or a recording of a single clap or balloon pop, and compare the values below with what
+  that program or app reports for the same file. 16-, 24- or 32-bit PCM or 32-bit float WAV; the first channel is used.</p>
+  <input type="file" id="wav" accept=".wav,audio/wav,audio/x-wav">
+  <div id="wav-out"></div>
+</div>
+
+<script>window.AM = { services: {} };</script>
+<script src="../js/core/util.js"></script>
+<script src="../js/data/demo.js"></script>
+<script src="../js/data/targets.js"></script>
+<script src="../js/data/products.generated.js"></script>
+<script src="../js/data/materials.js"></script>
+<script src="../js/core/workflow.js"></script>
+<script src="../js/services/acoustics.js"></script>
+<script src="../js/services/target.js"></script>
+<script src="../js/services/catalog.js"></script>
+<script src="../js/services/surfaces.js"></script>
+<script src="../js/services/prediction.js"></script>
+<script src="../js/services/rt60-average.js"></script>
+<script src="../js/core/derive.js"></script>
+<script src="../js/measurement/dsp.js"></script>
+<script src="../js/measurement/analysis.js"></script>
+<script src="../js/services/processing.js"></script>
+<script src="fixtures.js"></script>
+<script src="validation.test.js"></script>
+</body>
+</html>

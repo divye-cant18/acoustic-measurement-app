@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Measurement analysis tests</title>
+<style>
+  body{font:14px/1.5 system-ui,sans-serif;margin:24px;background:#fff;color:#14191b}
+  li{margin:6px 0;list-style:none} .ok b{color:#16884a} .bad b{color:#c42e42} small{color:#566065}
+</style>
+</head>
+<body>
+<h1>Measurement analysis tests</h1>
+<p>Synthetic signals with known reverberation times (tests/fixtures.js) run through the application's own analysis code.
+This page is for development only; the application never loads these fixtures.</p>
+<ol id="out"><li>Running…</li></ol>
+<script>window.AM = { services: {} };</script>
+<script src="../js/core/util.js"></script>
+<script src="../js/data/demo.js"></script>
+<script src="../js/measurement/dsp.js"></script>
+<script src="../js/measurement/analysis.js"></script>
+<script src="../js/services/processing.js"></script>
+<script src="fixtures.js"></script>
+<script src="dsp.test.js"></script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Noise study</title>
+<style>
+  :root{--ink:#14191b;--muted:#566065;--line:#d9dee0;--ok:#16884a;--bad:#c42e42;--soft:#f4f6f7}
+  body{font:14px/1.5 system-ui,sans-serif;margin:24px;background:#fff;color:var(--ink);max-width:1400px}
+  h1{margin:0 0 4px} h2{margin:28px 0 6px;font-size:18px} p{margin:6px 0;max-width:960px} small{color:var(--muted)}
+  .wrap{overflow-x:auto;margin:8px 0}
+  table{border-collapse:collapse;font-size:13px;min-width:100%}
+  th,td{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
+  th{background:var(--soft);font-weight:600} td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+  .ok{color:var(--ok);font-weight:700} .bad{color:var(--bad);font-weight:700}
+  #status{padding:8px 12px;background:var(--soft);border-radius:6px;display:inline-block}
+</style>
+</head>
+<body>
+<h1>Background noise: what the check says against what the take shows</h1>
+<p>Six backgrounds built on one stationary room noise (about −49.5 dBFS broadband, mostly ventilation rumble). For each:
+the background-noise check, and RT60 takes made in that background, scored against the room's own decay. Development
+only; the application never loads this page. Add <code>?sweep=3</code> to run the takes with a 3 s sweep.</p>
+<p id="status">Starting…</p>
+<div id="out"></div>
+<script>window.AM = { services: {} };</script>
+<script src="../js/core/util.js"></script>
+<script src="../js/data/demo.js"></script>
+<script src="../js/measurement/dsp.js"></script>
+<script src="../js/measurement/analysis.js"></script>
+<script src="../js/services/processing.js"></script>
+<script src="fixtures.js"></script>
+<script src="noise-study.test.js"></script>
+</body>
+</html>

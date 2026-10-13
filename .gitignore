@@ -1,0 +1,31 @@
+# Secrets: never commit real environment files
+.env
+.env.*
+*.env
+!/.env.example
+!server/.env.example
+
+# Created by the app server at run time: the submissions ledger and the receipt signing key (a secret)
+server/data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Project reports downloaded into the folder while testing
+Room-Acoustic-Report_*.pdf
+
+# Logs
+*.log
+
+# Personal editor and tool settings
+.vscode/
+.idea/
+.claude/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
