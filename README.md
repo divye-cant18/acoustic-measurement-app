@@ -73,6 +73,9 @@ server/                       the app server (Python standard library): serves t
   submissions.py              validation against js/data/report-form.js, the table row, ledger, receipts, rate limits
   supabase_client.py          Supabase REST API (PostgREST): insert, look up, check the table, with the secret key
   supabase/schema.sql         the report_submissions table, row level security, privileges (run once in Supabase)
+  vercel_adapter.py           the same API as Vercel Functions (see Deploying on Vercel)
+api/                          Vercel Functions: health.py, report-submissions.py, report-submissions/verify.py
+vercel.json                   Vercel: publishes index.html, css/, js/, assets/ only; function settings; headers
   .env.example                configuration template (copy to server/.env); server/data/ is created at run time
 js/stages/*.js                one file per stage: view, actions, canContinue, demoFill
 js/app.js                     shell: workflow rail, context bar, action bar, sheets, events
@@ -421,6 +424,32 @@ keeps the values at submission time). Opened from a file, from another server or
 be sent and the report stays locked. The browser's own Print on Final Result prints a notice until the report is
 unlocked; afterwards it prints the summary without the form.
 
+### Deploying on Vercel
+
+Import the GitHub repository at vercel.com (New Project; framework preset "Other"; leave the build settings to
+`vercel.json`). Every push to `main` then deploys again, at the same `https://<project>.vercel.app` address. HTTPS is what
+lets the browser open the microphone.
+
+- **What is published:** the build step copies `index.html`, `css/`, `js/` and `assets/` to `public/`, and only that is
+  served. `server/`, `docs/`, `tests/` and the README are never published.
+- **The API:** `api/health.py`, `api/report-submissions.py` and `api/report-submissions/verify.py` are Vercel Functions
+  (Python, standard library only). Each is `server/app_server.py`'s handler through `server/vercel_adapter.py`, so the
+  validation, the allowlist, the receipts and the database code are the same as on your own server.
+- **Environment Variables** (Vercel → Project → Settings → Environment Variables), as in `server/.env.example`:
+  `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_TABLE` (optional, default `report_submissions`) and
+  `REPORT_RECEIPT_SECRET`, which is **required** on Vercel: a long random value that stays the same (for example the
+  output of `python -c "import secrets; print(secrets.token_hex(32))"`). Without it the form says it is not connected.
+  Changing any of them needs a redeploy.
+- **What differs from your own server:** the disk is temporary, so the ledger lives in `/tmp` and can be lost between
+  requests; the table's primary key and the lookup by submission ID then decide, so a submission is still stored once
+  and a receipt still verifies. The same ID sent again with different content after such a loss is answered from the
+  stored row instead of being refused. Rate limits are counted per running instance, using the address Vercel reports
+  (`x-real-ip`).
+- **Check after deploying:** `https://<project>.vercel.app/api/health` answers `{"ok": true, "store": "configured"}`.
+
+Projects are kept in each browser's own storage for that address, so projects made at `localhost` do not appear on the
+Vercel address.
+
 ## Testing
 
 `tests/` is for development only. The application never loads it, and nothing in it can reach a real measurement.
@@ -501,7 +530,9 @@ unlocked; afterwards it prints the summary without the form.
 - `tests/report_submission_test.py` (`python tests/report_submission_test.py`): the report server against
   `tests/fake_supabase.py`, a local stand-in for Supabase's REST API that checks the apikey, shuts out the publishable
   key, knows the table's columns and constraints, enforces the primary key and can drop answers, time out or refuse.
-  26 checks: validation, the 22 approved columns only, unlisted fields refused, text stored as typed, null optional
+  34 checks, 8 of them for Vercel (the api/*.py files loaded by path, as Vercel does: health, submit and verify; a cold
+  start that loses the ledger; no receipt secret = not connected; no files served by a function; the rate limit per
+  address from Vercel's header; the site's own origin; vercel.json publishing only the app). The others: validation, the 22 approved columns only, unlisted fields refused, text stored as typed, null optional
   values, one row per submission ID (repeats, concurrent repeats, lost answers, timeouts, server errors, the primary key
   without the ledger), refused keys, a missing table, public keys refused as the server key, `--check`, receipts, served
   and unserved files, no key in browser files, origin and rate limits, a ledger without personal data, and schema.sql

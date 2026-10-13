@@ -207,6 +207,18 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # no client addresses in the log
         sys.stderr.write('%s %s\n' % (self.log_date_time_string(), fmt % args))
 
+    # What the hosting can change (server/vercel_adapter.py): the path asked for, who the client is for the rate limit,
+    # and which origins are this site's own.
+    def request_path(self):
+        return urllib.parse.urlsplit(self.path).path
+
+    def client_key(self):
+        return self.client_address[0]
+
+    def same_origins(self):
+        host = self.headers.get('Host', '')
+        return {f'http://{host}', f'https://{host}'}
+
     def _send(self, status, body, ctype='application/json; charset=utf-8', extra=None):
         data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode('utf-8')
         self.send_response(status)
@@ -228,7 +240,7 @@ class Handler(BaseHTTPRequestHandler):
         self.do_GET()
 
     def do_GET(self):
-        path = urllib.parse.urlsplit(self.path).path
+        path = self.request_path()
         if path == '/api/health':
             a = self.app
             return self._send(200, {'ok': True, 'store': 'configured' if a.db else 'not_configured'})
@@ -250,7 +262,7 @@ class Handler(BaseHTTPRequestHandler):
     # ---------- API ----------
 
     def do_POST(self):
-        path = urllib.parse.urlsplit(self.path).path
+        path = self.request_path()
         try:
             length = int(self.headers.get('Content-Length') or 0)
         except ValueError:
@@ -262,7 +274,7 @@ class Handler(BaseHTTPRequestHandler):
         if path not in ('/api/report-submissions', '/api/report-submissions/verify'):
             return self._send(404, {'error': 'not_found'})
         origin = self.headers.get('Origin')
-        if origin and origin.rstrip('/') not in {f'http://{self.headers.get("Host", "")}', f'https://{self.headers.get("Host", "")}'} | self.app.extra_origins:
+        if origin and origin.rstrip('/') not in self.same_origins() | self.app.extra_origins:
             return self._send(403, {'status': 'failed', 'reason': 'origin', 'message': 'Requests from other sites are not accepted.'})
         if not (self.headers.get('Content-Type') or '').lower().startswith('application/json'):
             return self._send(415, {'status': 'failed', 'reason': 'content_type', 'message': 'Send JSON.'})
@@ -270,7 +282,7 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw.decode('utf-8'))
         except (ValueError, UnicodeDecodeError):
             return self._send(400, {'status': 'invalid', 'errors': {'_': 'The request is not valid JSON.'}})
-        client = self.client_address[0]
+        client = self.client_key()
         if path.endswith('/verify'):
             if not self.app.verify_limit.allow(client):
                 return self._send(429, {'verified': False, 'reason': 'rate_limited'}, extra={'Retry-After': '60'})

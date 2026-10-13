@@ -416,5 +416,159 @@ class Spec(unittest.TestCase):
         self.assertEqual(declared, APPROVED, 'schema.sql declares exactly the approved columns, in order')
 
 
+class Vercel(unittest.TestCase):
+    """The API as Vercel runs it: the real api/*.py files, loaded by path as Vercel loads them (server/vercel_adapter.py),
+    each served on its own, against the fake database; and what vercel.json publishes."""
+    ROUTES = {'/api/health': 'api/health.py', '/api/report-submissions': 'api/report-submissions.py',
+              '/api/report-submissions/verify': 'api/report-submissions/verify.py'}
+
+    def setUp(self):
+        self.fake = fs.FakeSupabase(table=True)
+        port = self.fake.start()
+        self.env({'SUPABASE_URL': f'http://127.0.0.1:{port}', 'SUPABASE_SECRET_KEY': fs.SECRET_KEY, 'SUPABASE_TABLE': fs.TABLE,
+                  'SUPABASE_PUBLISHABLE_KEY': None, 'REPORT_DATA_DIR': tempfile.mkdtemp(dir=TMP), 'SUPABASE_HTTP_TIMEOUT': '1.5',
+                  'REPORT_SUBMIT_LIMITS': None, 'REPORT_RECEIPT_SECRET': 'a-stable-test-secret-' + 'x' * 40, 'VERCEL': '1'})
+        self.servers = []
+        self.start()
+
+    def env(self, values):
+        self.saved = getattr(self, 'saved', {})
+        for k, v in values.items():
+            self.saved.setdefault(k, os.environ.get(k))
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def start(self):
+        """A new instance of every function (a cold start): each api file loaded again, as Vercel would."""
+        import importlib.util
+        self.stop()
+        self.ports, self.handlers = {}, {}
+        for route, rel in self.ROUTES.items():
+            spec = importlib.util.spec_from_file_location(f'vc_{uuid.uuid4().hex}', os.path.join(ROOT, *rel.split('/')))
+            mod = importlib.util.module_from_spec(spec)
+            with redirect_stdout(io.StringIO()):
+                spec.loader.exec_module(mod)
+            httpd = self.make_server(mod.handler)
+            self.handlers[route], self.ports[route] = mod.handler, httpd.server_address[1]
+
+    def make_server(self, handler):
+        from http.server import ThreadingHTTPServer
+        httpd = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+        httpd.daemon_threads = True
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        self.servers.append(httpd)
+        return httpd
+
+    def stop(self):
+        for httpd in getattr(self, 'servers', []):
+            httpd.shutdown()
+            httpd.server_close()
+        self.servers = []
+
+    def tearDown(self):
+        self.stop()
+        self.fake.stop()
+        for k, v in self.saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def call(self, method, path, body=None, headers=None, function=None):
+        c = http.client.HTTPConnection('127.0.0.1', self.ports[function or path], timeout=30)
+        h = {'Content-Type': 'application/json'}
+        h.update(headers or {})
+        c.request(method, path, body=json.dumps(body).encode() if body is not None else None, headers=h)
+        r = c.getresponse()
+        out = r.read()
+        c.close()
+        try:
+            return r.status, json.loads(out)
+        except ValueError:
+            return r.status, out
+
+    def submit(self, sid=None, headers=None):
+        sid = sid or str(uuid.uuid4())
+        return sid, self.call('POST', '/api/report-submissions', {'submissionId': sid, 'form': form(), 'project': project()}, headers)
+
+    def test_each_api_file_defines_its_handler_for_its_route(self):
+        from http.server import BaseHTTPRequestHandler
+        for route, h in self.handlers.items():
+            self.assertTrue(issubclass(h, BaseHTTPRequestHandler), route)
+            self.assertEqual(h.route, route)
+            self.assertIsNotNone(h.app.db, route)
+        # the routes the browser calls (js/services/report-gate.js) are exactly these functions
+        with open(os.path.join(ROOT, 'js', 'services', 'report-gate.js'), encoding='utf-8') as f:
+            gate = f.read()
+        for name in ('health', 'report-submissions', 'report-submissions/verify'):
+            self.assertRegex(gate, rf"(api|post)\('{name}'", name)
+
+    def test_submit_verify_and_health(self):
+        self.assertEqual(self.call('GET', '/api/health'), (200, {'ok': True, 'store': 'configured'}))
+        sid, (status, out) = self.submit()
+        self.assertEqual(status, 200, out)
+        self.assertEqual(len(self.fake.rows), 1)
+        good = {k: out[k] for k in ('submissionId', 'projectId', 'submittedAt', 'receipt')}
+        self.assertEqual(self.call('POST', '/api/report-submissions/verify', good)[1]['verified'], True)
+        self.assertEqual(self.call('POST', '/api/report-submissions/verify', dict(good, receipt='0' * 64))[1]['verified'], False)
+
+    def test_a_cold_start_loses_the_ledger_and_the_database_decides(self):
+        sid, (_, out) = self.submit()
+        good = {k: out[k] for k in ('submissionId', 'projectId', 'submittedAt', 'receipt')}
+        self.env({'REPORT_DATA_DIR': tempfile.mkdtemp(dir=TMP)})  # /tmp is empty on a new instance
+        self.start()
+        status, res = self.call('POST', '/api/report-submissions/verify', good)
+        self.assertEqual((status, res['verified']), (200, True), 'the receipt key is the same secret; the row is found')
+        sid2, (status, again) = self.submit(sid)
+        self.assertEqual(status, 200, again)
+        self.assertEqual(again['submittedAt'], out['submittedAt'])
+        self.assertEqual(len(self.fake.rows), 1, 'a repeat after a cold start adds no row')
+
+    def test_without_the_receipt_secret_the_form_says_it_is_not_connected(self):
+        self.env({'REPORT_RECEIPT_SECRET': None})
+        self.start()
+        self.assertEqual(self.call('GET', '/api/health')[1]['store'], 'not_configured')
+        _, (status, out) = self.submit()
+        self.assertEqual((status, out['reason']), (503, 'not_configured'))
+        self.assertEqual(self.fake.rows or [], [])
+
+    def test_functions_serve_no_files_and_answer_only_their_route(self):
+        for path in ('/', '/index.html', '/server/app_server.py', '/server/.env.example', '/README.md'):
+            status, _ = self.call('GET', path, function='/api/report-submissions')
+            self.assertEqual(status, 404, path)
+        self.assertEqual(self.call('GET', '/api/report-submissions')[0], 404)
+        self.assertEqual(self.call('POST', '/api/health', {'x': 1})[0], 404)
+        # the route is the function's own, whatever path the platform passes on
+        status, out = self.call('POST', '/api/anything', {'submissionId': str(uuid.uuid4()), 'form': form(), 'project': project()},
+                                function='/api/report-submissions')
+        self.assertEqual((status, out['status']), (200, 'success'))
+
+    def test_rate_limit_per_client_from_vercels_address_header(self):
+        a, b = {'x-real-ip': '203.0.113.7'}, {'x-real-ip': '198.51.100.9'}
+        codes = [self.submit(headers=a)[1][0] for _ in range(6)]
+        self.assertEqual(codes, [200] * 5 + [429])
+        self.assertEqual(self.submit(headers=b)[1][0], 200, 'another client has its own allowance')
+        self.env({'VERCEL': None})  # off Vercel the header is not trusted: everyone is the connection's address
+        self.assertEqual(self.submit(headers={'x-real-ip': '192.0.2.1'})[1][0], 200)
+        self.assertEqual(self.submit(headers={'x-real-ip': '192.0.2.2'})[1][0], 200)
+
+    def test_origin_is_the_sites_own_domain(self):
+        site = {'Host': 'internal.invalid', 'x-forwarded-host': 'acoustic-measurement-app.vercel.app'}
+        _, (status, _) = self.submit(headers=dict(site, Origin='https://acoustic-measurement-app.vercel.app'))
+        self.assertEqual(status, 200)
+        _, (status, _) = self.submit(headers=dict(site, Origin='https://evil.example'))
+        self.assertEqual(status, 403)
+
+    def test_vercel_json_publishes_only_the_app(self):
+        with open(os.path.join(ROOT, 'vercel.json'), encoding='utf-8') as f:
+            cfg = json.load(f)
+        self.assertEqual(cfg['outputDirectory'], 'public')
+        copied = cfg['buildCommand'].split('cp -r', 1)[1].split()
+        self.assertEqual(copied, ['index.html', 'css', 'js', 'assets', 'public/'], 'only the app is published; never server/, docs/, tests/')
+        self.assertNotIn('js/', cfg['functions']['api/**/*.py']['excludeFiles'], 'the functions read js/data/report-form.js')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

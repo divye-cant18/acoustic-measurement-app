@@ -14,6 +14,10 @@ __pycache__/
 .venv/
 venv/
 
+# Vercel: the build output (made by vercel.json's build step) and the CLI's project link
+/public/
+.vercel/
+
 # Project reports downloaded into the folder while testing
 Room-Acoustic-Report_*.pdf
 
