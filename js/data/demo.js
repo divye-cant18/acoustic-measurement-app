@@ -57,11 +57,21 @@
       name: 'Laptop or computer', noun: 'laptop',
       place: 'Place the laptop on a firm, stable table or stand at the measuring position, open as you normally use it, with its microphone and speaker unobstructed.',
       support: 'On a firm table or stand. Many laptops have their speakers underneath or at the sides, so never on a cushion, a bed or your lap.',
+      // What to check with this kind of device (instructions only: the audio request is the same for every profile).
+      checks: [
+        'Switch off audio enhancements and microphone effects in the system\'s sound settings if it offers them (noise reduction, voice focus, automatic gain): the browser cannot always switch off what the system does.',
+        'Where this browser lets you choose the sound output, choose the built-in speakers; elsewhere, disconnect headphones and Bluetooth audio so the system plays through them.',
+      ],
     },
     mobile: {
       name: 'Phone or tablet', noun: 'phone',
       place: 'Place the phone securely at the measuring position, on a stand or propped upright on a firm surface. Do not hold it during the measurement. Keep the microphone and speaker openings unobstructed.',
       support: 'On a stand, or propped upright. Laid flat, its speaker or microphone may be blocked. Turn on Do Not Disturb so no call or alert sounds during the take.',
+      checks: [
+        'A phone browser cannot choose or confirm the loudspeaker. While the microphone is on, some phones play sound through the earpiece instead: the test sweep must be clearly audible from the loudspeaker. If it is faint, measure on a laptop.',
+        'Small phone speakers give little sound below about 500 Hz, so 125 and 250 Hz may show "Not reliable". The average RT60 (500–2000 Hz) usually remains available.',
+        'Keep the screen on and this page in front during the take: locking the phone, a call or switching apps stops the take.',
+      ],
     },
   };
   // Placement for either kind (the device-specific line is DEVICE_KINDS[kind].support).
@@ -126,6 +136,7 @@
 
   /* Measurement data in a project. Nothing is filled in until it has been measured.
        setup.deviceKind       the measuring device: null (as detected from the browser), 'computer' or 'mobile'
+       setup.outputId         the sound output where the browser can choose one ('default': the system's)
        setup.permission       last microphone access result: not-requested | granted | denied | embedded | no-device | busy | unsupported | error
        setup.sweepLevelDb     the sweep level for the next take, dB relative to the default (AM.analysis.sweepLevel)
        setup.noise            the current valid background-noise measurement (status valid or warning), or null
@@ -145,7 +156,7 @@
       room: demo ? demoRoom() : blankRoom(),
       target: newTarget(),
       setup: {
-        deviceKind: null, deviceId: 'default', deviceLabel: '', permission: 'not-requested', input: null, position: 'P1', signal: 'sweep',
+        deviceKind: null, deviceId: 'default', deviceLabel: '', outputId: 'default', permission: 'not-requested', input: null, position: 'P1', signal: 'sweep',
         sweepLevelDb: 0, noise: null, noiseAttempt: null,
         prep: { doors: false, hvac: false, quiet: false, placed: false, uncovered: false, output: false },
       },

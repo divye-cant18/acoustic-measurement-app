@@ -18,7 +18,8 @@
   const state = {
     mic: { status: 'off', code: null, message: null, label: '', sampleRate: null, settings: null, deviceId: null, level: null, clipAt: 0, tap: null },
     devices: [],
-    output: null,    // the system sound output's name, when the browser reports it
+    outputs: [],     // outputs that can be chosen, where the browser can route to them (else empty)
+    output: null,    // the sound output's name in use, when the browser reports it
     access: null,    // { pid } while asking for access
     noise: null,     // { pid, sec, frac, ctl }
     take: null,      // { pid, phase, sec, frac, total, ctl, envelope }
@@ -33,6 +34,9 @@
   const isOpen = p => S().state.project === p;
   // The measuring device's kind: as chosen in Measurement Setup, otherwise as the browser reports it.
   const kindOf = p => (p && p.setup.deviceKind) || MEAS.deviceKind();
+  // The selection a session is opened with: one source of truth, the project's setup (profile, microphone, output).
+  const outputOf = p => (p && p.setup.outputId) || 'default';
+  const contextOf = p => ({ profile: kindOf(p), deviceKind: kindOf(p), profileChosen: !!(p && p.setup.deviceKind), position: p ? p.setup.position : null });
 
   function onLevel(level) {
     state.mic.level = level;
@@ -57,6 +61,18 @@
   const isReceiving = () => !!(state.mic.level && performance.now() - state.mic.level.at < 1000 && state.mic.level.samples > 0);
   const receiving = () => (shownReceiving = isReceiving());
 
+  /* What keeps the selected configuration from being used, as a sentence; null when nothing does. The selected output
+     has to be applied by the browser (where it can choose one); a configuration read under another selection is not
+     the one in force. */
+  function configProblem(p) {
+    const s = p.setup, cfg = s.input && s.input.config;
+    if (s.permission !== 'granted' || !cfg) return null;
+    if (cfg.output && cfg.output.error) return `The selected sound output could not be used (${cfg.output.error}). Choose another output, or the system default.`;
+    if (cfg.input && cfg.input.deviceId !== (s.deviceId || 'default')) return 'The microphone was changed: its configuration is being checked again.';
+    if (MEAS.canSelectOutput() && cfg.output && cfg.output.requested !== (s.outputId || 'default')) return 'The sound output was changed: it is being checked again.';
+    return null;
+  }
+
   // Microphone access results also update what the project knows about its input.
   function notePermission(p, e) {
     if (!isOpen(p)) return;
@@ -66,37 +82,44 @@
   }
 
   async function requestAccess(p) {
-    if (state.access) return;
+    // A request while one is running (the microphone or output changed again meanwhile) is run once that one ends,
+    // so the configuration read is always the latest selection's.
+    if (state.access) { if (state.access.pid === p.id) state.access.again = true; return; }
     state.access = { pid: p.id };
     render();
     try {
-      const info = await MEAS.requestAccess(p.setup.deviceId);
+      const info = await MEAS.requestAccess(p.setup.deviceId, outputOf(p), contextOf(p));
       state.devices = info.devices;
+      state.outputs = info.outputs;
       state.output = info.output;
       Object.assign(state.mic, { code: null, message: null });
-      if (isOpen(p)) S().update(pp => { Object.assign(pp.setup, { permission: 'granted', deviceLabel: info.label, input: { label: info.label, sampleRate: info.sampleRate, settings: info.settings, tap: info.tap, checkedAt: info.checkedAt } }); });
+      if (isOpen(p)) S().update(pp => { Object.assign(pp.setup, { permission: 'granted', deviceLabel: info.label, input: { label: info.label, sampleRate: info.sampleRate, settings: info.settings, tap: info.tap, checkedAt: info.checkedAt, config: info.config } }); });
     } catch (e) {
       Object.assign(state.mic, { code: e.code || 'error', message: e.message });
       notePermission(p, e);
-    } finally { state.access = null; render(); }
+    } finally {
+      const again = state.access && state.access.again;
+      state.access = null; render();
+      if (again && isOpen(p)) requestAccess(p);
+    }
   }
 
-  async function refreshDevices() { state.devices = await MEAS.devices(); state.output = await MEAS.outputLabel(); render(); }
+  async function refreshDevices(p) { state.devices = await MEAS.devices(); state.outputs = await MEAS.outputs(); state.output = await MEAS.outputLabel(outputOf(p)); render(); }
 
   async function startMonitor(p, force) {
-    if (monitor && state.mic.deviceId === p.setup.deviceId) return;
+    if (monitor && state.mic.deviceId === p.setup.deviceId && state.mic.outputId === outputOf(p)) return;
     // Failures are not retried on their own: the screen offers "Try again".
     if (!force && ['starting', 'error', 'stopped'].includes(state.mic.status)) return;
     if (monitor) stopMonitor();
-    Object.assign(state.mic, { status: 'starting', code: null, message: null, deviceId: p.setup.deviceId });
+    Object.assign(state.mic, { status: 'starting', code: null, message: null, deviceId: p.setup.deviceId, outputId: outputOf(p) });
     render();
     try {
-      const m = await MEAS.monitor(p.setup.deviceId, onLevel, onState);
+      const m = await MEAS.monitor(p.setup.deviceId, onLevel, onState, outputOf(p));
       if (!isOpen(p) || S().state.current !== 'measure') { m.stop(); state.mic.status = 'off'; return; }
       monitor = m;
       if (!watch) watch = setInterval(checkReceiving, 1000);
       const s = m.session;
-      Object.assign(state.mic, { status: s.status, label: s.label, sampleRate: s.sampleRate, settings: s.settings, tap: s.tap.kind });
+      Object.assign(state.mic, { status: s.status, label: s.label, sampleRate: s.sampleRate, settings: s.settings, tap: s.tap.kind, output: s.output || null });
       notePermission(p, null);
     } catch (e) {
       Object.assign(state.mic, { status: 'error', code: e.code || 'error', message: e.message });
@@ -117,7 +140,7 @@
   function measureNoise(p) {
     if (state.noise || state.take) return;
     const ctl = MEAS.measureNoise({
-      deviceId: p.setup.deviceId, onLevel,
+      deviceId: p.setup.deviceId, outputId: outputOf(p), context: contextOf(p), onLevel,
       onProgress: (sec, frac) => { if (state.noise) { state.noise.sec = sec; state.noise.frac = frac; notify(); } },
     });
     state.noise = { pid: p.id, sec: 0, frac: 0, ctl };
@@ -152,7 +175,7 @@
     if (state.take || state.noise) return;
     const env = new Float32Array(240);
     const ctl = MEAS.measureRT60({
-      deviceId: p.setup.deviceId, onLevel, context: { position: p.setup.position, deviceKind: kindOf(p) }, levelDb: AM.analysis.sweepLevel(p.setup.sweepLevelDb),
+      deviceId: p.setup.deviceId, outputId: outputOf(p), onLevel, context: contextOf(p), levelDb: AM.analysis.sweepLevel(p.setup.sweepLevelDb),
       onPhase: ph => { if (state.take) { state.take.phase = ph; render(); } },
       onProgress: (sec, frac, chunk, offset, total) => {
         const t = state.take;
@@ -191,5 +214,5 @@
   }
   function cancelTake(silent) { if (state.take) { state.take.ctl.cancel(); if (!silent) later('Measurement cancelled. No recording was stored.'); } }
 
-  AM.live = { state, bind, render, receiving, kindOf, requestAccess, refreshDevices, startMonitor, stopMonitor, resume, measureNoise, cancelNoise, measureRT60, cancelTake };
+  AM.live = { state, bind, render, receiving, kindOf, outputOf, contextOf, configProblem, requestAccess, refreshDevices, startMonitor, stopMonitor, resume, measureNoise, cancelNoise, measureRT60, cancelTake };
 })(window.AM);

@@ -12,6 +12,7 @@ Errors are classified for the caller:
   DbUncertain  the request may have been applied (timeout or lost response, a server error): look before retrying.
 """
 
+import http.client
 import json
 import socket
 import ssl
@@ -65,7 +66,13 @@ class SupabaseClient:
         try:
             with urllib.request.urlopen(req, timeout=self.timeout, context=self.ctx if url.startswith('https:') else None) as r:
                 raw = r.read()
-                return r.status, (json.loads(raw.decode('utf-8')) if raw else None)
+                status = r.status
+            try:
+                return status, (json.loads(raw.decode('utf-8')) if raw else None)
+            except (ValueError, UnicodeDecodeError) as e:  # a 2xx answer that is not JSON: not what PostgREST sends
+                if writes:
+                    raise DbUncertain('db_unexpected', f'Supabase answered {status} with a body that is not JSON: {e}', status)
+                raise DbDefinite('db_unexpected', f'Supabase answered {status} with a body that is not JSON: {e}', status)
         except urllib.error.HTTPError as e:
             try:
                 detail = json.loads(e.read().decode('utf-8') or '{}')
@@ -99,6 +106,10 @@ class SupabaseClient:
             if writes:
                 raise DbUncertain('db_timeout', f'No answer from Supabase: {e}')
             raise DbDefinite('db_timeout', f'No answer from Supabase: {e}')
+        except http.client.HTTPException as e:  # e.g. IncompleteRead: the answer broke off after the request was sent
+            if writes:
+                raise DbUncertain('db_unavailable', f'The answer from Supabase broke off: {type(e).__name__}')
+            raise DbDefinite('db_unavailable', f'The answer from Supabase broke off: {type(e).__name__}')
 
     # ---------- operations ----------
 

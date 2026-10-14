@@ -205,10 +205,13 @@
     {
       const { room, ir } = oneDevice(0.6, 160), own = { T20: ownDecay(room, 1000, 'T20'), T30: ownDecay(room, 1000, 'T30') };
       const q = DSP.butterworthQ(4);
-      function speech(n, levelDbfs, seed, spans) { // spans: [[from s, to s], …] where someone talks (syllables on/off inside)
+      // spans: [[from s, to s], …] where someone talks (syllables on/off inside). Each syllable rises and falls over
+      // `ramp` s, as speech does (10 ms); ramp 0 switches the noise on and off between two samples, which is a click in
+      // the recording at every syllable edge, not speech.
+      function speech(n, levelDbfs, seed, spans, ramp = 0.01) {
         const r = FIX.rng(seed), y = DSP.filter(FIX.noise(n, seed + 1), [...q.map(Q => DSP.rbj('highpass', 300, fs, Q)), ...q.map(Q => DSP.rbj('lowpass', 3400, fs, Q))]);
-        const env = new Float64Array(n);
-        for (const [a, b] of spans) for (let i = Math.round(a * fs), on = true; i < Math.min(n, Math.round(b * fs));) { const len = Math.round((on ? 0.12 + 0.18 * r() : 0.08 + 0.2 * r()) * fs); for (let j = i; j < Math.min(n, i + len, Math.round(b * fs)); j++) env[j] = on ? 1 : 0; i += len; on = !on; }
+        const env = new Float64Array(n), R = Math.max(1, Math.round(ramp * fs));
+        for (const [a, b] of spans) for (let i = Math.round(a * fs), on = true; i < Math.min(n, Math.round(b * fs));) { const len = Math.round((on ? 0.12 + 0.18 * r() : 0.08 + 0.2 * r()) * fs); for (let j = i; j < Math.min(n, i + len, Math.round(b * fs)); j++) env[j] = on ? (ramp ? Math.min(1, (j - i + 1) / R, (i + len - j) / R) : 1) : 0; i += len; on = !on; }
         let ms = 0, c = 0; for (let i = 0; i < n; i++) if (env[i]) { ms += y[i] * y[i]; c++; }
         const g = Math.pow(10, levelDbfs / 20) / Math.sqrt(ms / c);
         return Float64Array.from(y, (v, i) => v * env[i] * g);
@@ -218,14 +221,19 @@
       const words = speech(n, -45, 92, [[0.2, 0.7], [8.2, 8.9], [9.2, 9.7]]), recA = Float32Array.from(base, (v, i) => v + words[i]);
       // (b) Someone talking throughout, 25 dB above the background.
       const talk = speech(n, -40, 95, [[0, plan.total]]), recB = Float32Array.from(base, (v, i) => v + talk[i]);
-      const ra = evalRec(recA).res, rbb = evalRec(recB).res, a1 = band(ra, 1000), b1 = band(rbb, 1000);
+      const ra = evalRec(recA).res, rbb = evalRec(recB).res, a1 = band(ra, 1000) || {}, b1 = band(rbb, 1000);
       // Each band against the room's own decay in that band, over the range it was measured on.
       const okVal = b => b.rt60 == null || within(b.rt60, ownDecay(room, b.f, b.path), 0.05);
       tables.speech = { words: ra.bands.map(b => ({ f: b.f, disturbanceDb: b.disturbanceDb, usableDb: b.decayRangeDb, method: b.path, rt60: b.rt60, reason: b.reason })), talking: rbb.bands.map(b => ({ f: b.f, disturbanceDb: b.disturbanceDb, usableDb: b.decayRangeDb, method: b.path, rt60: b.rt60, reason: b.reason })) };
       check('A9 A few words spoken before the sweep and after the decay (20 dB above the background): the take finds them in the speech bands, and every value given stays within ±5 % of the room\'s own decay',
         ra.bands.some(b => b.disturbanceDb != null) && ra.bands.every(okVal), `bands with sounds: ${ra.bands.filter(b => b.disturbanceDb != null).map(b => `${b.f} Hz +${Math.round(b.disturbanceDb)} dB`).join(', ') || 'none'}; 1 kHz ${a1.rt60 == null ? `no value (${a1.reason})` : `${f3(a1.rt60)} s ${a1.path}`}`);
       check('A9 Someone talking throughout the take (25 dB above the background): the bands it covers give no value (their noise floor rises) rather than a biased one; no value given is off by more than 5 %',
-        rbb.bands.every(okVal) && b1.rt60 == null, `1 kHz: ${b1.rt60 == null ? `no value (${b1.reason})` : f3(b1.rt60)}; other bands: ${rbb.bands.filter(b => b.f !== 1000).map(b => `${b.f} ${b.rt60 == null ? '—' : f3(b.rt60)}`).join(', ')}`);
+        rbb.bands.length && rbb.bands.every(okVal) && b1 && b1.rt60 == null, b1 ? `1 kHz: ${b1.rt60 == null ? `no value (${b1.reason})` : f3(b1.rt60)}; other bands: ${rbb.bands.filter(b => b.f !== 1000).map(b => `${b.f} ${b.rt60 == null ? '—' : f3(b.rt60)}`).join(', ')}` : rbb.reason);
+      // The same talking switched on and off between two samples (no ramp): every syllable edge is a click in the
+      // recording, and the take is not used at all; never a biased value either way.
+      const hard = speech(n, -40, 95, [[0, plan.total]], 0), rh = evalRec(Float32Array.from(base, (v, i) => v + hard[i]));
+      check('A9 The same talking with syllables switched on and off between two samples: clicks in the recording, so the take is not used (no value in any band)',
+        rh.an.status === 'failed' && /click/.test(rh.an.reason) && !rh.res.valid && rh.res.bands.every(b => b.rt60 == null), (rh.an.reason || 'captured').slice(0, 140));
     }
 
     // A10. A band that fails, and the headline.
@@ -351,8 +359,8 @@
     const showsPrev = o3.res && shows(p, o3.res);
     check('B4 A newer take recorded but not yet processed: Results, the top bar and the report keep the current result (by design), and the Measure step says the new take is not processed yet',
       showsPrev && /not processed yet|Waiting to be processed/i.test(m4text), `still showing ${hero(p)} s from ${p.processing.result.recordingId}; latest recording ${t4.rec.id}`);
-    // OPEN FINDING F1 (docs/RT60-RESPONSIVENESS-AUDIT.md): fails until Results says so. Expected to pass after the fix.
-    check('B4 …and Results itself says that a newer take is waiting to be processed (otherwise a user who opens Results from the step list sees the previous value with nothing to say a newer take exists) [open finding F1]',
+    // Finding F1 (docs/RT60-RESPONSIVENESS-AUDIT.md), fixed: Results says so (AM.derive.laterTakes).
+    check('B4 …and Results itself says that a newer take is waiting to be processed (otherwise a user who opens Results from the step list sees the previous value with nothing to say a newer take exists) [finding F1, fixed]',
       /not (been )?processed|waiting to be processed|newer take/i.test(r4text), `Results text mentions the waiting take: ${/not (been )?processed|waiting to be processed|newer take/i.test(r4text) ? 'yes' : 'no'}`);
     const o4 = await processTake(p, t4.rec, 'take 4'); log(4, 'short', t4.rec, o4);
     check('B4 Once processed, take 4 (short room again) becomes current and every screen follows it', o4.res && o3.res && o4.res.headline.rt60 < o3.res.headline.rt60 - 0.25 && shows(p, o4.res),
@@ -364,8 +372,9 @@
     const o5 = t5.rec ? await processTake(p, t5.rec, 'take 5') : null; log(5, 'short, loud', t5.rec, o5);
     VR.setNoise(-66);
     const r5text = textOf(resultsHtml(p));
-    check('B5 A take with too little usable decay at 1 kHz gives no value; the previous valid result stays current on Results, the top bar and the report; the take list on Results marks the newest take "Not valid"',
-      o5 && !o5.res && o5.attempt && o4.res && p.processing.result.recordingId === t4.rec.id && shows(p, o4.res) && /Not valid/.test(r5text),
+    // Finding F2, fixed: next to the value it did not replace, Results says the latest take gave no value and why.
+    check('B5 A take with too little usable decay at 1 kHz gives no value; the previous valid result stays current on Results, the top bar and the report; the take list on Results marks the newest take "Not valid", and Results says beside the value that the latest take gave none, with its reason [finding F2, fixed]',
+      o5 && !o5.res && o5.attempt && o4.res && p.processing.result.recordingId === t4.rec.id && shows(p, o4.res) && /Not valid/.test(r5text) && /Your latest take \(.*\) gave no value\./.test(r5text) && r5text.includes(o5.attempt.reason.slice(0, 40)),
       `take 5: ${o5 && o5.attempt ? o5.attempt.reason : 'no attempt'}; Results headline still ${hero(p)} s (take 4)`);
 
     // B6. A take that cannot be used at all (background so loud the sweep barely rises above it).
@@ -373,8 +382,8 @@
     const t6 = await recordTake(p, 'take 6 (very loud background)'); log(6, 'short, very loud', null, null);
     VR.setNoise(-66);
     const r6text = textOf(resultsHtml(p));
-    check('B6 A take that cannot be analysed is not used: the recording and the current result are unchanged, the reason is kept, and the take list on Results marks it "Not used"',
-      !t6.rec && t6.failed && p.processing.result.recordingId === t4.rec.id && /Not used/.test(r6text), `failed: ${t6.failed && t6.failed.reason}`);
+    check('B6 A take that cannot be analysed is not used: the recording and the current result are unchanged, the reason is kept, the take list on Results marks it "Not used", and Results says the latest take could not be analysed [finding F2, fixed]',
+      !t6.rec && t6.failed && p.processing.result.recordingId === t4.rec.id && /Not used/.test(r6text) && /gave no value: it could not be analysed/.test(r6text), `failed: ${t6.failed && t6.failed.reason}`);
     status('Part B done.');
   }
 

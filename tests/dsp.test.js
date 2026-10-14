@@ -392,8 +392,10 @@
       check('Steady ventilation rumble (−49.5 dBFS): suitable, judged in the measured bands', r6.status === 'valid' && r6.inBand.spreadDb < 3 && r6.inBand.soundDb < 5,
         `${r6.status}; broadband L10 − L90 ${r6.spreadDb} dB, loudest above L90 ${r6.jumpDb} dB; in band ${r6.inBand.spreadDb} dB, loudest above the median ${r6.inBand.soundDb} dB`);
 
+      // A muted microphone and a device that silences a quiet room look the same: the room cannot be assessed, and the
+      // check says so (with both causes) instead of accepting a level or blaming the room.
       const r4 = AN.analyseNoise(new Float32Array(n), fs);
-      check('Silent input: noise measurement invalid, no level accepted', r4.status === 'invalid', r4.reasons.join(' '));
+      check('Silent input: background not assessed (no level accepted), with both possible causes named', r4.status === 'unassessed' && /Unable to assess/.test(r4.warnings[0]) && /muted/.test(r4.warnings[0]) && /noise suppression/.test(r4.warnings[0]), r4.warnings.join(' '));
 
       const loud = Float32Array.from(steady).map(v => Math.max(-1, Math.min(1, v * 900)));
       const r5 = AN.analyseNoise(loud, fs);

@@ -14,7 +14,7 @@
                               (AM.reportGate.check). build() makes the bytes without saving them, for tests.
 
    Measured, target and predicted values keep their own labels and colours, as in the app. The measured key figure is
-   the average RT60 across the measured bands (AM.services.rt60Average, the same value as on screen); the target, the
+   the average RT60 at 500, 1000 and 2000 Hz (AM.services.rt60Average, the same value as on screen); the target, the
    assessment and the prediction stay at the reference band, where the target is set, and say so. */
 (function (AM) {
   'use strict';
@@ -35,20 +35,18 @@
   const s2 = x => (isNum(x) ? fmt.s(x) : null);
   const range = t => `${t.min.toFixed(2)}–${fmt.s(t.max)}`;
   const trim = x => String(+x.toFixed(3));
+  // Dates in the report: always Latin digits and English month names. The browser's own locale can write them in a
+  // script the PDF's fonts do not have (ru-RU "14 окт.", hi-IN "14 अक्टू॰"), which would print as "?".
+  const when = iso => { const d = new Date(iso); return isNaN(d) ? '—' : d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
 
   /* ---------- the report's content ---------- */
   function model(p, now = new Date()) {
     const D = AM.derive, W = AM.workflow, A = AM.acoustics;
     const g = D.geometry(p), m = D.measured(p), t = D.target(p), a = D.assessment(p);
     const plan = D.treatmentPlan(p), pred = D.prediction(p), none = D.noTreatment(p);
-    const later = [];
-    if (m) {
-      // The report uses the CURRENT valid measurement. Later takes that were not used are named, not substituted.
-      const att = p.processing.attempt, fail = p.measurement.failed, rec = p.measurement.recording;
-      if (att && att.takenAt > m.takenAt) later.push(`A later take (${fmt.when(att.takenAt)}) was not valid and is not used: ${att.reason || 'see Processing'}`);
-      if (fail && fail.takenAt > m.takenAt) later.push(`A later take (${fmt.when(fail.takenAt)}) could not be used: ${fail.reason}`);
-      if (rec && rec.status === 'captured' && rec.id !== m.recordingId && rec.takenAt > m.takenAt && !(att && att.recordingId === rec.id)) later.push(`A later take (${fmt.when(rec.takenAt)}) has not been processed and is not used.`);
-    }
+    // The report uses the CURRENT valid measurement. Later takes that were not used are named, not substituted.
+    const later = D.laterTakes(p).map(k => (k.kind === 'invalid' ? `A later take (${when(k.takenAt)}) was not valid and is not used: ${k.reason || 'see Processing'}`
+      : k.kind === 'failed' ? `A later take (${when(k.takenAt)}) could not be used: ${k.reason}` : `A later take (${when(k.takenAt)}) has not been processed and is not used.`));
     const missing = m ? null
       : p.processing.attempt ? `The latest take was not valid: ${p.processing.attempt.reason || 'see Processing'}`
         : p.measurement.failed ? `The latest take could not be used: ${p.measurement.failed.reason}`
@@ -123,7 +121,7 @@
     // the report's measured key figure and a row of section 2; it is not repeated here, so a one-page report stays one page.
     const avg = M.measurement.average;
     if (!a) {
-      out.push(`At ${M.measurement.f} Hz the room measures ${fmt.s(M.measurement.headline.rt60)}${avg.available ? `; averaged across the ${avg.n} bands measured reliably, RT60 is ${fmt.s(avg.value)}` : ''}. No target is set, so it is not assessed.`);
+      out.push(`At ${M.measurement.f} Hz the room measures ${fmt.s(M.measurement.headline.rt60)}${avg.available ? `; averaged over 500, 1000 and 2000 Hz, RT60 is ${fmt.s(avg.value)}` : ''}. No target is set, so it is not assessed.`);
       out.push('Next: set the target RT60 in the app, then generate the report again.');
       return out;
     }
@@ -174,7 +172,12 @@
     const lineH = size => size * 1.3;
 
     /* text helpers */
-    const block = (x, w, str, o = {}) => { const h = doc.para(x, y, str, w, Object.assign({ size: Z.body, color: C.ink2 }, o)); y += h; return h; };
+    // A paragraph; it starts a new page when it would run into the footer (wrapped first, so its height is known).
+    const block = (x, w, str, o = {}) => {
+      const op = Object.assign({ size: Z.body, color: C.ink2 }, o), lead = op.lead || op.size * 1.32;
+      need(doc.wrap(str, op.size, w, op.bold).length * lead);
+      const h = doc.para(x, y, str, w, op); y += h; return h;
+    };
     const tag = (xRight, yBase, text, color) => {
       const size = 6.6, w = doc.textWidth(text, size, true) + 9;
       doc.rect(xRight - w, yBase - size - 2.6, w, size + 5.2, { stroke: color, lw: 0.7 });
@@ -251,6 +254,22 @@
       return yy - y0;
     }
     const cellText = c => (c == null ? '' : typeof c === 'object' ? c.t : String(c));
+    // A full-width table that starts a new page when it does not fit; one taller than a page continues on the next
+    // page with its header repeated, so a long treatment plan never runs into the footer.
+    function flowTable(cols, rows, before = 0) {
+      const sz = tableSize(cols, rows);
+      if (sz.total + before <= L.b - L.t) { need(sz.total + before); y += before; y += table(L.l, y, cols, rows, sz); return; }
+      need(sz.head + (sz.heights[0] || 0) + before);
+      y += before;
+      for (let i = 0; i < rows.length;) {
+        let h = sz.head, j = i;
+        while (j < rows.length && y + h + sz.heights[j] <= L.b) h += sz.heights[j++];
+        if (j === i) { if (y > L.t) { newPage(); continue; } h += sz.heights[j++]; } // a row taller than a page: drawn anyway
+        y += table(L.l, y, cols, rows.slice(i, j), { head: sz.head, heights: sz.heights.slice(i, j), total: h });
+        i = j;
+        if (i < rows.length) newPage();
+      }
+    }
 
     /* RT60 per octave band: bars for each series, the target range shaded, the preferred value dashed */
     function bandChart(x, y0, w, h, { series, target, bands }) {
@@ -274,7 +293,7 @@
       });
       const padL = 24, padB = 13, padT = 6 + legend.length * 10, px = x + padL, pw = w - padL - 4, py = y0 + padT, ph = h - padT - padB;
       const vals = series.flatMap(s => s.values).filter(isNum).concat(target ? [target.max] : []);
-      const step = Math.max(...vals, 0.1) > 1.6 ? 0.5 : 0.2, top = Math.max(step, Math.ceil(Math.max(...vals, 0.1) / step + 0.25) * step);
+      const vmax = Math.max(...vals, 0.1), step = [0.2, 0.5, 1, 2, 5, 10, 20].find(s => vmax / s <= 6) || 50, top = Math.max(step, Math.ceil(vmax / step + 0.25) * step);
       const Y = v => py + ph - (v / top) * ph;
       if (target) {
         doc.rect(px, Y(target.max), pw, Y(target.min) - Y(target.max), { fill: C.targetWash });
@@ -282,7 +301,7 @@
       }
       for (let v = 0; v <= top + 1e-9; v += step) {
         doc.line(px, Y(v), px + pw, Y(v), { color: v === 0 ? C.line : C.soft, lw: v === 0 ? 0.7 : 0.4 });
-        doc.text(px - 3, Y(v) + 2.3, v.toFixed(1), { size: 6.3, color: C.faint, align: 'right' });
+        doc.text(px - 3, Y(v) + 2.3, v.toFixed(step < 1 ? 1 : 0), { size: 6.3, color: C.faint, align: 'right' });
       }
       const gw = pw / bands.length, bw = Math.min(14, gw * 0.7 / series.length);
       bands.forEach((f, i) => {
@@ -331,7 +350,7 @@
     if (opts.logo) { doc.image('Logo', L.l, y, 26, 26 * opts.logo.height / opts.logo.width); bx = L.l + 33; }
     doc.text(bx, y + 11, M.brand.name, { size: 11, bold: true, color: C.ink });
     if (M.brand.descriptor) doc.text(bx, y + 21, M.brand.descriptor, { size: 7, color: C.muted });
-    doc.text(L.r, y + 9, `Generated ${fmt.when(M.generatedAt.toISOString())}`, { size: 7, color: C.muted, align: 'right' });
+    doc.text(L.r, y + 9, `Generated ${when(M.generatedAt.toISOString())}`, { size: 7, color: C.muted, align: 'right' });
     doc.text(L.r, y + 18.5, `Project ref. ${M.project.id}`, { size: 7, color: C.muted, align: 'right' });
     if (meas) doc.text(L.r, y + 28, `Measurement ref. ${meas.id}`, { size: 7, color: C.muted, align: 'right' });
     y += 36;
@@ -357,7 +376,7 @@
     // band, where the target is set (each label says which)
     const boxes = [], avg = meas && meas.average;
     boxes.push(meas
-      ? { label: 'AVERAGE RT60 · MEASURED BANDS', value: avg.available ? fmt.s(avg.value) : 'Unavailable', sub: `${avg.available ? `Mean of ${avg.n} of ${avg.total} octave bands` : avg.reason} · ${meas.status === 'warning' ? 'valid, with warnings' : 'valid'}`, color: C.ink }
+      ? { label: 'AVERAGE RT60 · 500–2000 Hz', value: avg.available ? fmt.s(avg.value) : 'Not available', sub: `${avg.available ? 'Mean of 500, 1000, 2000 Hz' : `${avg.missing.map(x => `${x.f} Hz`).join(', ')} not reliable`} · ${meas.status === 'warning' ? 'valid, with warnings' : 'valid'}`, color: C.ink }
       : { label: 'MEASURED RT60', value: 'Not measured', sub: 'No valid measurement in this project', color: C.ink });
     boxes.push(t ? { label: 'TARGET RT60 · PREFERRED', value: fmt.s(t.preferred), sub: `At ${AM.demo.REFERENCE_BAND} Hz · acceptable range ${range(t)}`, color: C.muted, dash: true }
       : { label: 'TARGET RT60', value: 'Not set', sub: 'No target in this project', color: C.muted, dash: true });
@@ -400,20 +419,21 @@
       block(L.l, WD, 'No RT60 is reported, and no assessment or prediction is made, until the project has a valid measurement.', { size: Z.small, color: C.muted });
     } else {
       const mm = meas.meta, lv = mm.levels || {}, nc = mm.noiseCheck, ref = meas.ref || {}, plan = mm.plan || {};
-      const noiseWord = nc ? (nc.status === 'valid' ? 'suitable' : nc.status === 'warning' ? 'suitable, measured with care' : nc.status) : null;
+      const noiseWord = nc ? (nc.status === 'valid' ? 'suitable' : nc.status === 'warning' ? 'suitable, measured with care' : nc.status === 'unassessed' ? 'not assessed (no signal)' : nc.status) : null;
       // The average across the bands (AM.services.rt60Average) heads the right column; the 1000 Hz result and its quality
       // share one row, so the section keeps its height and a one-page report stays one page.
       const av = meas.average;
       kv([
-        [['Measured', `${fmt.when(meas.takenAt)}${meas.superseded ? ` (replaces ${meas.superseded} earlier)` : ''}`],
+        [['Measured', `${when(meas.takenAt)}${meas.superseded ? ` (replaces ${meas.superseded} earlier)` : ''}`],
           ['Measuring device', `${meas.deviceKind || 'This device'}: built-in speaker and microphone`],
           ['Microphone', mm.deviceLabel || 'Not reported'],
           ['Position', meas.position ? `${meas.position.id} · ${meas.position.name}` : 'Not recorded'],
           ['Test signal', plan.f1 ? `Sine sweep ${plan.f1} Hz–${(plan.f2 / 1000).toFixed(plan.f2 % 1000 ? 1 : 0)} kHz, ${plan.seconds} s, level ${AM.ui.levelDb(plan.levelDb)}` : 'Not recorded']],
-        [['Average RT60', av.available ? `${fmt.s(av.value)}, mean of ${av.n} of ${av.total} bands` : 'Unavailable', { bold: true }],
-          ['Background noise', nc && isNum(nc.leqDbfs) ? `${fmt.dbfs(nc.leqDbfs)} (relative), ${noiseWord}` : 'Not measured'],
+        [['Average RT60', av.available ? `${fmt.s(av.value)} (500–2000 Hz)` : `Not available: ${av.missing.map(x => `${x.f} Hz`).join(', ')} not reliable`, { bold: true }],
+          ['Background noise', nc && isNum(nc.bandLeqDbfs) ? `${fmt.dbfs(nc.bandLeqDbfs)} (RT60 bands), ${noiseWord}` : nc && isNum(nc.leqDbfs) ? `${fmt.dbfs(nc.leqDbfs)} (relative), ${noiseWord}` : 'Not measured'],
           ['Signal above background', isNum(lv.snrDb) ? `${lv.snrDb.toFixed(1)} dB` : 'Not available'],
-          ['Arrival delay', isNum(mm.latencySec) ? `${Math.round(mm.latencySec * 1000)} ms, read from the recording` : 'Not available'],
+          // As the take recorded it: each feature reported off, on, or not reported (unknown, never shown as off).
+          ['Browser processing', mm.config && mm.config.processing ? AM.services.measurement.processingShort(mm.config.processing) : mm.settings ? AM.services.measurement.processingShort(AM.services.measurement.processingState(mm.settings, null)) : 'Not recorded'],
           [`Result at ${meas.f} Hz`, `${ref.fit ? `${meas.headline.method}, fitted ${fmt.db(ref.fit.from, 1)} to ${fmt.db(ref.fit.to, 1)}` : meas.headline.method} · ${meas.headline.quality}, ${meas.headline.confidence.toLowerCase()} confidence · ${meas.status === 'warning' ? 'valid, with warnings' : 'valid'}`, { color: meas.status === 'warning' ? C.warn : C.ink }]],
       ], { labelW: 90 });
       // band table and chart side by side
@@ -481,12 +501,9 @@
       const prows = items.map(it => [`#${it.no}`, { t: it.product.name, bold: true, sub: variant(it.product) },
         it.configuration ? { t: it.configuration.label, sub: `${it.configuration.test && it.configuration.test.certificate ? it.configuration.test.certificate : 'No certificate number in the source'}${alphaInline ? `\n${alphaText(it)}` : ''}` } : { t: 'No tested configuration chosen: not included in the prediction', color: C.warn },
         amount(it), { t: fmt.m2(it.areaM2), sub: it.placement }]);
-      const psz = tableSize(pcols, prows);
-      need(psz.total + 6);
-      y += 3;
-      y += table(L.l, y, pcols, prows, psz);
+      flowTable(pcols, prows, 3);
       y += 4;
-      const cov = M.coverage.map(c => `${c.label}s: ${fmt.m2(c.areaM2)} of ${fmt.m2(c.surfaceM2)} (${fmt.pct(c.fraction)})`).join(' · ');
+      const cov = M.coverage.map(c => `${c.label}: ${fmt.m2(c.areaM2)} of ${fmt.m2(c.surfaceM2)} (${fmt.pct(c.fraction)})${c.fraction > 1 ? ' – more than the surface holds' : ''}`).join(' · ');
       block(L.l, WD, `Total treatment area in the prediction: ${fmt.m2(M.plan.areaM2)}${items.length > 1 ? ` (${M.plan.complete.length} product${M.plan.complete.length > 1 ? 's' : ''})` : ''}.${cov ? ` Coverage: ${cov}.` : ''}`, { size: Z.small, color: C.ink2 });
       if (M.planProblem) block(L.l, WD, `Open issue in the plan: ${M.planProblem}`, { size: Z.small, color: C.warn, bold: true });
       // tested absorption of each configuration at the measurement bands (shorter plans: its own table)
@@ -519,7 +536,7 @@
           const s = t && isNum(b.predicted) ? AM.acoustics.classify(b.predicted, t) : null;
           return [{ t: fmt.hz(b.f), bold: b.f === h.f }, isNum(b.measured) ? fmt.s(b.measured) : { t: 'Not reliable', color: C.warn },
             isNum(b.predicted) ? { t: fmt.s(b.predicted), bold: true, color: C.predicted } : '—', isNum(b.predicted) ? fmt.signedS(b.predicted - b.measured) : '—',
-            !isNum(b.measured) ? { t: 'Not measured reliably', color: C.muted } : b.missingAlpha ? { t: 'No tested α at this band', color: C.muted } : s ? { t: BAND_STATUS[s], color: STATUS[s].color } : '—'];
+            !isNum(b.measured) ? { t: 'Not measured reliably', color: C.muted } : b.missingAlpha ? { t: 'No tested α at this band', color: C.muted } : b.coveredExceedsMeasured ? { t: 'Finish values do not fit the room', color: C.warn } : s ? { t: BAND_STATUS[s], color: STATUS[s].color } : '—'];
         });
         const sz = tableSize(cols, rows), tw = cols.reduce((s, c) => s + c.w, 0), ch = Math.max(sz.total, 96);
         need(ch + 8);
@@ -542,7 +559,7 @@
           ...pr.items.map((it, k) => {
             const al = it.alpha[f], x = h.items[k], add = x.addedA;
             // The covered finish's α is subtracted where Room Setup says what it is (no surface counted twice).
-            const fac = x.coveredKnown ? '(α − finish α)' : 'α', fv = x.coveredKnown ? `(${al.toFixed(2)} − ${x.coveredAlpha.toFixed(2)})` : al.toFixed(2);
+            const fac = x.coveredKnown ? '(α − finish α)' : 'α', fv = x.coveredKnown ? `(${al.toFixed(2)} − ${String(+x.coveredAlpha.toFixed(4))})` : al.toFixed(2);
             return it.mode === 'units'
               ? [`Added by #${it.no}`, `ΔA${it.no} = panels × panel area × ${fac}(${f} Hz)`, `${it.quantity} × ${String(+it.size.areaM2.toFixed(4))} × ${fv} = ${m2(add)} m²`]
               : [`Added by #${it.no}`, `ΔA${it.no} = area × ${fac}(${f} Hz)`, `${String(+it.areaM2.toFixed(4))} × ${fv} = ${m2(add)} m²`];
@@ -578,8 +595,11 @@
       const fy = doc.height - 26;
       doc.line(L.l, fy - 9, L.r, fy - 9, { color: C.line, lw: 0.5 });
       const left = `${M.brand.name} · Room Acoustic Measurement Report · ${M.room.name}`;
-      doc.text(L.l, fy, doc.wrap(left, 6.8, WD - 170)[0], { size: 6.8, color: C.muted });
-      doc.text(L.r, fy, `Generated ${fmt.when(M.generatedAt.toISOString())}${N > 1 ? `  ·  Page ${i + 1} of ${N}` : ''}`, { size: 6.8, color: C.muted, align: 'right' });
+      const room = doc.wrap(left, 6.8, WD - 170);
+      let first = room[0];
+      if (room.length > 1) { while (first && doc.textWidth(`${first}…`, 6.8) > WD - 170) first = first.slice(0, -1); first = `${first.replace(/\s+$/, '')}…`; }
+      doc.text(L.l, fy, first, { size: 6.8, color: C.muted });
+      doc.text(L.r, fy, `Generated ${when(M.generatedAt.toISOString())}${N > 1 ? `  ·  Page ${i + 1} of ${N}` : ''}`, { size: 6.8, color: C.muted, align: 'right' });
     });
     return doc;
   }
@@ -661,7 +681,11 @@
     const gate = AM.reportGate ? await AM.reportGate.check(p) : { ok: false, message: 'The report form is not available, so the PDF report is locked.' };
     if (!gate.ok) return { ok: false, message: gate.message || 'The PDF report is locked until the report form is received.' };
     const r = await build(p);
-    return save(r.name, r.bytes);
+    const out = await save(r.name, r.bytes);
+    // Characters the PDF's fonts do not have (non-Latin scripts in a room name or a device label) print as "?": say so.
+    const odd = [...(r.doc.unsupported || [])];
+    if (out.ok && odd.length) out.message = `PDF report ready: ${r.name}. Some characters (${odd.slice(0, 6).join(' ')}${odd.length > 6 ? ' …' : ''}) cannot be shown in the PDF and appear as "?".`;
+    return out;
   }
 
   AM.report = { model, render, make, filename, build, download, summary };

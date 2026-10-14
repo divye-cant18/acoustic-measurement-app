@@ -72,7 +72,7 @@
       body: `<div class="record">
         ${ui.kv([['Room', fmt.dims(g)], ['Volume', fmt.m3(g.V)], ['Use', esc(p.room.use || '—')]])}
         ${ui.kv([['Target', `${fmt.s(t.preferred)} (${t.min.toFixed(2)}–${fmt.s(t.max)})${p.target.basis ? `<div class="kv-note">${esc(p.target.basis)}</div>` : ''}`],
-          ['Average RT60', avg.available ? `${fmt.s(avg.value)}<div class="kv-note">across ${avg.n} of ${avg.total} measured bands</div>` : 'Unavailable'],
+          ['Average RT60', avg.available ? `${fmt.s(avg.value)}<div class="kv-note">500–2000 Hz</div>` : `Not available<div class="kv-note">${esc(avg.reason || '')}</div>`],
           [`Measured at ${fmt.hz(a.f)}`, `${fmt.s(a.rt)} · ${a.method}`], ['Confidence', `${a.confidence}<div class="kv-note">at ${fmt.hz(a.f)}</div>`]])}
         ${none
           ? ui.kv([['Treatment', 'None'], ['Predicted', '—']])
@@ -139,7 +139,7 @@
         reportBusy = true; AM.app.render();
         try {
           const r = await AM.report.download(p);
-          S.toast(r.ok ? `PDF report ready: ${r.name}` : r.message);
+          S.toast(r.ok ? (r.message || `PDF report ready: ${r.name}`) : r.message);
         } catch (e) {
           S.toast('The PDF report could not be created.');
         } finally { reportBusy = false; AM.app.render(); }

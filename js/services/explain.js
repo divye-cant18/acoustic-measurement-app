@@ -28,7 +28,9 @@
     target: p => {
       const rec = AM.services.target.recommend(p.room);
       return [
-        `RT60 is the time it takes for sound to fall by 60 dB after the source stops.${isNum(p.target.preferred) ? ` The target here is ${fmt.s(p.target.preferred)}, with an acceptable range of ${p.target.min.toFixed(2)}–${fmt.s(p.target.max)}.` : ''}`,
+        // Only a complete target (preferred, minimum and maximum) is quoted; a preferred value set while the range is still
+        // empty (the room size not entered yet) is not.
+        `RT60 is the time it takes for sound to fall by 60 dB after the source stops.${(t => (t ? ` The target here is ${fmt.s(t.preferred)}, with an acceptable range of ${t.min.toFixed(2)}–${fmt.s(t.max)}.` : ''))(AM.derive.target(p))}`,
         rec ? `The recommendation follows ${rec.source.short}, ${rec.criterion.name}, chosen from the room type and how the room is used. The room's volume${rec.inUse && rec.inUse.people ? ' and occupancy' : ''} then set${rec.inUse && rec.inUse.people ? '' : 's'} the value.` : 'Rooms for speech work best with short reverberation, so words stay distinct. Rooms for music usually want more.',
         'The target is a decision made before measuring. Keeping it separate from the measured value keeps the comparison honest.',
       ];
@@ -56,7 +58,7 @@
     results: p => {
       const m = AM.derive.measured(p), avg = AM.derive.averageRT60(p);
       return [
-        m ? `Averaged across the ${avg.n} octave bands with a reliable value, the room takes ${avg.available ? fmt.s(avg.value) : '—'} for sound to fall by 60 dB. This is the arithmetic mean of those bands, a summary rather than a standardised single-number rating; bands without a value are left out, not counted as zero.` : 'No valid result yet.',
+        m ? (avg.available ? `Averaged over 500, 1000 and 2000 Hz, the room takes ${fmt.s(avg.value)} for sound to fall by 60 dB. The average always uses these three bands, so it means the same on every device; if one of them has no reliable value there is no average, rather than one over fewer bands. It is a summary of the mid frequencies, not a standardised single-number rating.` : `There is no average RT60 (500–2000 Hz) for this measurement: ${avg.reason} The bands that have a value are listed on their own.`) : 'No valid result yet.',
         m ? `At ${m.headline.f} Hz, the band the target is compared at, it takes ${fmt.s(m.headline.rt60)}, calculated with ${m.headline.method} from the take recorded ${new Date(m.takenAt).toLocaleString()}.` : '',
         'Low frequencies usually ring longest, because most surfaces absorb bass poorly. A laptop or phone speaker produces little low-frequency sound: those bands may show "Not reliable" rather than a guess.',
         'This is a browser-based measurement with the device\'s built-in speaker and microphone. The RT60 comes from the room\'s measured decay, but neither the microphone nor the speaker is calibrated, so it is not a laboratory-grade measurement.',

@@ -97,31 +97,60 @@ The room's own (untreated) RT60 is not estimated from its dimensions or surfaces
 target, measurement, comparison with the target, treatment, the prediction after treatment and the report follow in
 that order.
 
-## Average RT60 across measured frequency bands
+## Average RT60, 500–2000 Hz (the headline)
 
 The headline measured value (Current measurement on the Measure step, the Results headline, the top bar, Home, Measurement
-History, Final Result, the report's key figure) is the **average RT60 across the measured frequency bands**
+History, Final Result, the report's key figure) is the **mean RT60 of the fixed bands 500, 1000 and 2000 Hz**
 (`services/rt60-average.js`, read through `AM.derive.averageRT60`):
 
-    average = Σ RT60(band) ÷ number of eligible bands
+    average = (RT60(500 Hz) + RT60(1000 Hz) + RT60(2000 Hz)) ÷ 3
 
-- Eligible: a band of the CURRENT measurement that the processing engine gave a value: a finite RT60 above 0, with its
-  calculation path (T30 or T20), quality not Insufficient or Not measured. The band's own RT60 is used; its T20 or T30 is
-  never taken in its place, so no band changes path to be counted.
-- Left out, never counted as 0: "Not reliable" and not-measured bands, and any missing, zero, negative or non-finite value.
-- The stored band values (to 1 ms) are averaged; the average is rounded only where it is shown.
-- One measurement only: a superseded measurement, a later take that is not valid and another project never enter it. A
-  take that is not valid has no average ("Unavailable", with the reason); so has a measurement with no eligible band.
-- Under each band table (Processing, Results): the value, the calculation with the band values, the bands included and
-  those left out with why. In the report: the measured key figure and the first row of the Measurement section, next to
-  the band table that marks the bands left out. The report's Summary paragraph stays the 1000 Hz assessment, and the
-  report keeps its length (a report with no treatment stays on one page).
+- All three are required. If one has no reliable value there is no headline, and it says which band failed and why; it is
+  never an average of whichever bands passed (that made the value depend on a device's band coverage, not the room).
+- A band counts when the processing engine gave it a value (finite, above 0, T30 or T20, not Insufficient). Its own RT60
+  is used; its T20 or T30 is never taken in its place.
+- 125, 250 and 4000 Hz are shown on their own and never change the headline.
+- The stored band values (to 1 ms) are averaged; the value is rounded only where it is shown. Only the current valid
+  measurement has one.
+- Why these bands: the mid-frequency bands ANSI/ASA S12.60 states classroom limits in, and the bands one device, phones
+  included, measures most reliably.
 
-It is a summary across bands, not a standardised single-number rating, and is labelled so. Every band keeps its own value
-in the tables and charts. The target is set at 1000 Hz, so the assessment, the amount of treatment for the target and the
-prediction keep working with the band values (1000 Hz for the target comparison), and every comparison says "at 1000 Hz".
-The report form's database row (`measured_rt60_s`) still holds the 1000 Hz value, next to `measurement_method` and
-`predicted_rt60_s`, which are 1000 Hz values too. See docs/AVERAGE-RT60.md.
+It is a summary of the mid frequencies, not a standardised single-number rating. The target is set at 1000 Hz, so the
+assessment, the amount of treatment and the prediction keep working with the band values, and every comparison says
+"at 1000 Hz". The report form's database row holds both: `measured_rt60_avg_s` (this average) and `measured_rt60_s` (1000 Hz). See
+docs/AVERAGE-RT60.md.
+
+## Measuring device, profiles and browser processing
+
+**One source of truth.** The project's setup holds the selection: the device profile (`setup.deviceKind`: null =
+detected, or Laptop/Phone chosen), the microphone (`setup.deviceId`) and, where the browser can route audio, the sound
+output (`setup.outputId`). Every session, background check and take is opened with that selection
+(`AM.live.contextOf`, `outputOf`), and each one stores the configuration it actually had (`config`,
+`services/measurement.js` `configOf`): profile, microphone, output (requested, applied, confirmed or not), the
+processing requested, reported and possible, sample rate, channels, and browser family. Results and the PDF report show
+the take's own configuration, never the current selection.
+
+**Profiles.** The audio request is the same for every profile (echo cancellation, noise suppression and automatic gain
+all requested off), because a decay must reach the analysis unprocessed either way. A profile changes the instructions
+and checks (`demo.DEVICE_KINDS[kind].checks`): a laptop is told to switch off system audio enhancements and choose the
+built-in speakers; a phone is told that the browser cannot choose or confirm the loudspeaker (some phones use the
+earpiece while the microphone is on), that 125 and 250 Hz may be unreliable, and that locking or switching apps stops a
+take. Changing the profile asks for the placement items of the checklist again and reads the input configuration again;
+a profile different from the detected device says the measurement still uses this device. Takes keep the profile they
+were made with.
+
+**Sound output.** Where the browser can route an AudioContext (`AudioContext.setSinkId`: Chrome and Edge on computers)
+and lists more than the default, Measurement Setup offers the outputs; the session applies the choice and reads back
+which one is in use. "Confirmed" means a specific output was selected and applied; the system default never counts as
+confirmed, since it does not say which device plays. Elsewhere (Safari, Firefox, phone browsers) the screen says the
+output cannot be chosen or confirmed. A selected output the browser could not apply blocks Measurement Setup and the take.
+
+**Browser processing.** Each feature is shown as requested off, reported off, reported ON, or not reported (unknown,
+never shown as off), with what the browser says it can switch (`getCapabilities`). Reported ON: the take is not valid.
+Not reported: the take carries a warning, so no band is High confidence.
+
+**Interruptions.** A recording is aborted, never analysed, when the page is hidden (screen locked, another app or tab),
+left, the system mutes the microphone, the AudioContext stops running, or the set of audio devices changes.
 
 ## Room surfaces
 
@@ -183,6 +212,14 @@ Processing          direct sound separated, decision cascade per band → CURREN
 Results …           every later step reads only the CURRENT measurement
 ```
 
+**Results and newer takes.** Results, the top bar and the report always show the CURRENT measurement. When a newer take
+is not it (recorded and not processed yet, processed and not valid, or not analysable), Results says so beside the value
+("A newer take … has not been processed yet", with a Process it button; "Your latest take … gave no value", with the
+reason), the top bar marks the measured value as an earlier take's, and the report names it (`AM.derive.laterTakes`).
+The Takes table lists each take's 500–2000 Hz average beside its 1000 Hz value. **Copy diagnostics** (Measurement
+record) copies the take's technical record as JSON (`AM.derive.diagnostics`): browser and device configuration, every
+check and every band; no audio, no project or room name, no position, no microphone or output label.
+
 **One device.** The device running the app is the whole measuring system: its own speaker (the system's sound output)
 plays the test signal and its own microphone records the room. There is no second device, no separate recorder and no
 required external speaker or microphone. Measurement Setup detects whether it is a laptop/computer or a phone/tablet
@@ -213,12 +250,20 @@ and does not need calibration.
 spread and change (shown as information); octave-band Leq; clipping. The verdict is judged in the bands RT60 is measured in
 (88 Hz–5.7 kHz, `CRITERIA.noise.band`), because room noise is mostly rumble below them whose broadband 125 ms levels
 scatter by 3–6 dB at random even when perfectly steady: judged broadband, harmless backgrounds were flagged or refused
-and speech was missed (tests/noise-study.html). Three outcomes, each with what to do:
+and speech was missed (tests/noise-study.html). The level shown is the one in those bands. All levels are dBFS =
+10·log10(mean square) relative to a digital full scale of ±1 (a full-scale sine reads −3.0 dBFS), never sound pressure.
+The unfiltered figures have the input's DC offset removed first and report it separately (`dcDbfs`): a constant offset
+is not sound, and counted, it made a very quiet room read up to 44 dB "louder" (the cause of "background is high"
+cautions in quiet rooms; tests/audio-config.html). The check cannot tell the room's noise from the microphone's own noise
+or from what the device's processing did to it, and says so. Four outcomes, each with what to do:
 - **Suitable for measuring** — nothing that may cost a take.
 - **Measure with care** (a caution; the take can start) — sounds such as voices, knocks or a door: the loudest 125 ms more
   than 10 dB above the median of the frames around it (±1 s), in any octave band; the level changing by more than 6 dB
-  between the first and last third; a usual (median) level above −30 dBFS in the bands.
-- **Measure the background again** — the input is silent or overloaded.
+  between the first and last third (the room, or the device adjusting its input level by itself); a usual (median) level
+  above −30 dBFS in the bands (room noise, or a quiet room raised by a high input level or automatic gain).
+- **Unable to assess** (the take can start) — digital silence (below −110 dBFS in the bands): a muted or covered
+  microphone and a device whose noise suppression silences a quiet room look the same; the take checks its own recording.
+- **Measure the background again** — the input is overloaded, the buffer is too short, or it holds invalid samples.
 A level fluctuating ±3 dB (L10 − L90 up to 11 dB) or falling 6 dB caused no RT60 error in the noise study, so it is no
 longer a warning; whether a take is reliable is decided on the take, which checks its own background (see Take). The figures
 behind the verdict are under Details on the screen. A noise measurement that cannot be used never replaces the last usable
@@ -244,7 +289,8 @@ response (it read known harmonics within 1.5 dB); information, with a caution fr
 The gentle start matters for one device:
 an abrupt start leaves a slowly fading artefact in the impulse response, and a direct sound 20–30 dB above the
 reverberation lifts it into the 125 Hz decay (it read 0.47–0.78 s for a 0.35 s room before). Checks on the recording:
-complete, not silent, no clipped sample, sweep at least 10 dB above the background before it. Deconvolution with the
+no invalid (non-number) sample, complete, not silent, no clipped sample, sweep at least 10 dB above the background
+before it, both read in the RT60 bands (a DC offset or rumble below them no longer fails a quiet room). Deconvolution with the
 inverse sweep (time-reversed sweep with a +6 dB/octave envelope) gives the impulse response. Its arrival — the delay
 between playing and recording through the browser, the system and the device's buffers — is read from the response,
 never assumed: it must be under 1 s and stand at least 20 dB above what the recording held before the sound arrived,
@@ -252,7 +298,29 @@ otherwise the take fails ("the arrival … could not be identified clearly … i
 recording while the sweep was arriving — a run of identical samples of 1 ms or more, which is how the browser fills audio
 it failed to deliver (one 128-sample render block is 1.3–2.9 ms) — also fails the take, with its position and length
 (`analysis.gap`): it spreads through the whole impulse response and gave wrong band values that passed every other
-check. Sounds during the take are read from the take's own background, band by band: the second before the sweep and the
+check. Samples dropped or repeated without a visible gap are found from the sweep's own timing (`analysis.sweepTiming`,
+`CRITERIA.take.timing`): each half-octave of the sweep from 200 Hz is matched against the recording, and a step of more
+than 3.5 ms between neighbours fails the take as not continuous. Intact synthetic takes stay at or below 2.2 ms; losing
+256 or 480 samples gives 4.2–15 ms. It needs the device's own direct sound to time by (largest headDb at least 6 dB).
+Smaller losses are found by the click they leave (`analysis.aboveSweep`, `CRITERIA.take.clicks`): where samples are
+dropped or repeated the waveform jumps, and the jump's energy reaches every frequency, while the sweep, its reverberation
+and its harmonics stay at and below a few multiples of the frequency playing at that moment. Above it, between its
+harmonics (folded back where a digital limiter put them above half the sample rate), the recording holds only the
+background: 5 ms frames there are compared with the frames before and after them, and a frame 8 dB above both, back down
+within a few frames, broadband (the median bin raised too, not one tone) and not one of a run (a buzzing speaker) is a
+click and fails the take. One 128-sample block lost or repeated anywhere from 0.9 to 4.5 s into the sweep is caught in
+the synthetic tests (15–63 dB); uncaught, one such loss read the 500–2000 Hz average 76 % long. Intact takes (seven kinds,
+distortion folding back, a loud sound stopping abruptly) show none. A loss before about 0.5 s reaches no band's decay;
+one in the reverberant tail leaves almost no click and changes no result. Where the browser keeps counts
+(`MediaStreamTrack.stats`, `AudioContext.playbackStats`: Chrome and Edge), the frames the microphone captured but did not
+deliver and the times the output ran dry during the take are read (`take.integrity`); any loss makes the take not valid.
+The same frames above the sweep, above its 7.5th harmonic, give the input level while the sweep played against before it
+(`CRITERIA.take.sweepGain`): nothing in a room makes the background quieter while the test signal plays, a device turning
+its input down does, so from 6 dB quieter the take is not valid and from 3 dB it costs confidence. This catches automatic
+gain or a suppressor that acts only during the sweep, which the background after the decay cannot show.
+A background that is louder (or quieter) after the test signal than before it by the same amount in every band means the
+input gain or the background changed during the take (`CRITERIA.take.levelChange`): from 6 dB the take is not valid,
+from 3 dB it costs confidence. Sounds during the take are read from the take's own background, band by band: the second before the sweep and the
 recording after every decay has reached the noise (`CRITERIA.take.disturbance`: 50 ms frames or longer in low bands; a
 sound starts 10 dB above that segment's median and lasts at most 2 s; a longer rise is a change of level, recorded as
 information). When sounds recur (at least twice), they act as a noise floor that comes and goes in the decay, so the usable
@@ -372,11 +440,18 @@ purpose, feedback (optional, 1000 characters), consent to send (required) and ma
 needed for the report). Fields are checked as they are left and again on submit; the server checks the same rules, and
 the table's own constraints check them once more.
 
-**What reaches the database: these 22 columns and nothing else** (`server/supabase/schema.sql`): submission_id,
+**What reaches the database: these 23 columns and nothing else** (`server/supabase/schema.sql`): submission_id,
 submitted_at (server, UTC), full_name, email, profession_role, organization, country, purpose, feedback, consent_given and
 consent_recorded_at, marketing_consent (yes/no, separate), project_id, project_name, room_type, room_volume_m3,
-target_rt60_s, measured_rt60_s, measurement_method, predicted_rt60_s, treatment_status (No treatment, Not selected,
-Planned, Predicted, Measured after treatment), app_version. Values are rounded as the app shows them; a value the project
+target_rt60_s, measured_rt60_s (the RT60 at 1000 Hz, where the target is compared), measured_rt60_avg_s (the average of
+500, 1000 and 2000 Hz shown as the headline; null when one of them has no value), measurement_method, predicted_rt60_s,
+treatment_status (No treatment, Not selected, Planned, Predicted, Measured after treatment), app_version. A number outside
+the range a column accepts is sent as null, so it never keeps the form from being sent.
+
+**A table made before measured_rt60_avg_s existed** keeps working: the database refuses a row with a column it does not
+have, so the server then stores the row without that column (everything else as before) and leaves it out until it
+restarts; `--check` lists it as missing. To add it, run `server/supabase/schema.sql` again in the SQL Editor: every
+statement in it can be repeated, and its `alter table … add column if not exists` adds the column to the existing table. Values are rounded as the app shows them; a value the project
 does not have, or an optional answer left empty, is null. The server refuses any request with a field that is not on
 that list, so recordings, measurement data, histories, project files, room surfaces, product records, the PDF, browser
 storage, cookies or device details cannot be sent. The server does not record IP addresses (it counts requests per
@@ -407,12 +482,16 @@ per address.
    works). **Project Settings → Data API** (or API): copy the **Project URL** (`https://<ref>.supabase.co`).
 3. Copy `server/.env.example` to `server/.env` and set `SUPABASE_URL` and `SUPABASE_SECRET_KEY`. Optionally set
    `SUPABASE_PUBLISHABLE_KEY` so `--check` can confirm the public key is shut out.
-4. `python server/app_server.py --check`: confirms the key, the table and all 22 columns (and, if given, that the public
-   key cannot read the table). It reads only.
+4. `python server/app_server.py --check`: confirms the key, the table, its 22 required columns and the optional
+   measured_rt60_avg_s (and, if given, that the public key cannot read the table). It reads only.
 5. `python server/app_server.py`, then open http://localhost:8780.
 
 Neither the Supabase account password nor the database password is used anywhere. The secret key and `server/.env` stay
-on the server: the server never serves `server/`, and the browser code holds no key. The server refuses to start the
+on the server: the server never serves `server/` (a path with a backslash, a colon or a NUL byte is refused, and the file
+must lie inside the served folder it was asked under), it answers only to this computer's own names (localhost,
+127.0.0.1, ::1, the address it listens on, and `REPORT_ALLOWED_HOSTS`), so a web page re-pointed at this computer cannot
+reach it, and the browser code holds no key. `vercel.json` and `.vercelignore` keep `.env` files, `server/data/` and
+`.git` out of a Vercel deployment. The server refuses to start the
 form with a publishable or anon key in `SUPABASE_SECRET_KEY`. Receipts are signed with `REPORT_RECEIPT_SECRET`, or with a
 key made on the first submission in `server/data/receipt-secret.key`; replacing it means earlier receipts stop unlocking
 (the user submits again). Submissions appear in the dashboard under **Table Editor → report_submissions**.
@@ -505,7 +584,7 @@ Vercel address.
   checks) runs the whole app with a virtual device: takes of a room that changes, a repeat, a take left unprocessed, a
   take that is not valid and one that is not used, and what Results, the top bar and the report show after each (the
   take's average RT60 across its bands). See
-  docs/RT60-RESPONSIVENESS-AUDIT.md (one check documents open finding F1).
+  docs/RT60-RESPONSIVENESS-AUDIT.md (its findings F1 and F2 are fixed; B4–B6 check the notices on Results).
 - `tests/rt60-average.html`: the average RT60 across the measured bands, in the whole app (its own storage prefix). The
   calculation against hand-worked values: all six bands; bands not reliable or not measured left out; missing, 0,
   negative, NaN, infinite and text values, a value without a path, a band with a T20 but no RT60 (no band changes path);
@@ -516,10 +595,31 @@ Vercel address.
   band values (a target 1000 Hz meets and the average does not); the report with no treatment still one page; a new take
   processed by the Processing step replacing the average without mixing takes; a later take that is not valid changing
   nothing. Runs on open, about 15 s. 31 checks.
+- `tests/mobile-study.html`: one synthetic room measured by the production analysis under laptop-like and phone-like
+  conditions, one factor at a time, five takes each (small speaker, closer direct sound, quiet playback, unreported
+  automatic gain, noise gate, dropouts removed or zero-filled, soft limiter, 44.1 kHz; level and background ladders).
+  A study, not pass/fail: it shows what the software does with each condition, not what a real phone does. See
+  docs/MOBILE-MEASUREMENT-AUDIT.md.
+- `tests/audio-config.html`: Part A on open (40 checks): the noise floor (units, the level in the RT60 bands, DC offset,
+  quiet and noisy inputs, silence, clipping, NaN/Infinity, a short buffer, level changes, thresholds unchanged); takes
+  (a DC offset no longer fails a quiet room; 256/480 samples dropped or repeated rejected; one 128-sample block lost or
+  repeated at 0.9–4.5 s rejected as a click, in a typical, a quiet and a phone-like take; seven kinds of intact take never
+  rejected and never showing a click; distortion folding back and a sound stopping abruptly not taken for clicks; no
+  direct sound: timing check not made; gaps, invalid samples, incomplete and clipped recordings rejected); the processing
+  decisions (a gain or background change, the input turned down only while the sweep plays, the browser's counts of lost
+  frames and output underruns, reported/unreported/ON processing, wording, rounding); the fixed-band headline; profile
+  switching and output readiness through the Setup step; the report using the take's configuration; Results naming a
+  newer take it does not show; the diagnostics record holding no names or labels. Part B, button (9 checks; keep the tab
+  in front, since a hidden page interrupts every take by design): the whole app with a virtual device: permission
+  denied, no microphone, the configuration read back, a complete take with its configuration and the browser's counts,
+  a take during which the browser counts lost frames (not valid), and takes interrupted by a hidden page, a muted track
+  and a disconnected microphone. Synthetic: it checks the software, not real hardware.
 - `tests/calculations.html`: geometry and units, Sabine absorption and RT60, the treatment prediction (one and several
   products, missing data), absorption needed and area for the target, octave-band α from one-third-octave data (mean,
   1.00 limit, missing bands), the prediction through `AM.derive`, the DIN 18041 targets (A1–A5, B4, occupancy, the ANSI
-  classroom limit) and the target classification, each against values worked out by hand in the test. 22 checks.
+  classroom limit) and the target classification (at the digits shown), and a prediction refused where the covered
+  finishes' library absorption exceeds what the room measured, each against values worked out by hand in the test.
+  25 checks.
 - `tests/virtual-room.html`: the whole application with a virtual device in a virtual room in place of the microphone and
   speaker (`tests/virtual-room.js`): getUserMedia returns the room's output; what the app plays is convolved with a
   synthetic impulse response of known RT60, with the direct sound of a speaker centimetres from the microphone, and mixed
@@ -530,13 +630,15 @@ Vercel address.
 - `tests/report_submission_test.py` (`python tests/report_submission_test.py`): the report server against
   `tests/fake_supabase.py`, a local stand-in for Supabase's REST API that checks the apikey, shuts out the publishable
   key, knows the table's columns and constraints, enforces the primary key and can drop answers, time out or refuse.
-  34 checks, 8 of them for Vercel (the api/*.py files loaded by path, as Vercel does: health, submit and verify; a cold
+  39 checks, 8 of them for Vercel (the api/*.py files loaded by path, as Vercel does: health, submit and verify; a cold
   start that loses the ledger; no receipt secret = not connected; no files served by a function; the rate limit per
   address from Vercel's header; the site's own origin; vercel.json publishing only the app). The others: validation, the 22 approved columns only, unlisted fields refused, text stored as typed, null optional
   values, one row per submission ID (repeats, concurrent repeats, lost answers, timeouts, server errors, the primary key
   without the ledger), refused keys, a missing table, public keys refused as the server key, `--check`, receipts, served
-  and unserved files, no key in browser files, origin and rate limits, a ledger without personal data, and schema.sql
-  against the spec. It never contacts Supabase. To try the whole app against the stand-in: run
+  and unserved files (Windows path tricks included), other host names refused, no key in browser files, origin and rate
+  limits, a ledger without personal data, schema.sql against the spec, a table without the new average column (rows
+  stored without it), a request from before the column existed (accepted, same content hash), half a character in a
+  name (removed, not a crash), and database answers that break off or are not JSON (uncertain, retried once). It never contacts Supabase. To try the whole app against the stand-in: run
   `python tests/fake_supabase.py --port 8791`, put the environment it prints in a .env file, and start
   `python server/app_server.py --env-file <that file>`.
 

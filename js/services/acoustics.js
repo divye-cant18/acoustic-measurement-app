@@ -16,10 +16,14 @@
   const absorptionFromRT = (V, rt) => SABINE * V / rt;   // equivalent absorption area A, m² Sabine
   const rtFromAbsorption = (V, A) => SABINE * V / A;
 
-  // Compare at the precision we display (0.01 s) so 0.70 is "within" a 0.60–0.70 range.
+  // Compare at the precision we display (0.01 s) so 0.70 is "within" a 0.60–0.70 range. Each value is rounded exactly as
+  // the screen and the report show it (toFixed(2)): rounding x·100 instead can differ from the shown digits (0.245 is
+  // shown "0.24" but x·100 rounds to 25; 202 of the values 0.100–5.000 s differ), and the verdict would contradict the
+  // number beside it.
+  const shown = x => Math.round(Number(x.toFixed(2)) * 100);
   function classify(rt, t) {
-    if (!isNum(rt) || !t) return null;
-    const r = Math.round(rt * 100), lo = Math.round(t.min * 100), hi = Math.round(t.max * 100);
+    if (!isNum(rt) || !t || !isNum(t.min) || !isNum(t.max)) return null;
+    const r = shown(rt), lo = shown(t.min), hi = shown(t.max);
     if (r > hi) return 'above';
     if (r < lo) return 'below';
     return 'within';

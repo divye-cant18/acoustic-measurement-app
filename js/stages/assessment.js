@@ -26,7 +26,7 @@
     // The comparison stays at the reference band, where the target is set; the average on Results is a summary only.
     const avg = AM.derive.averageRT60(ctx.project);
     const scale = ui.card({ title: `Measured against target at ${fmt.hz(a.f)}`, body: `${ui.rtScale({ target: t, measured: a.rt })}<p class="lead">${sentence(a)}</p>
-      ${avg.available ? `<p class="small muted">The average RT60 across the measured bands is ${fmt.s(avg.value)} (${avg.n} of ${avg.total} bands, Results). The target is set at ${fmt.hz(a.f)}, so the room is assessed with its ${fmt.hz(a.f)} value; the other bands are compared below.</p>` : ''}` });
+      ${avg.available ? `<p class="small muted">The average RT60 at 500–2000 Hz is ${fmt.s(avg.value)} (Results). The target is set at ${fmt.hz(a.f)}, so the room is assessed with its ${fmt.hz(a.f)} value; the other bands are compared below.</p>` : ''}` });
 
     const rows = a.bands.map(b => `<tr class="${b.f === a.f ? 'is-ref' : ''}"><td>${fmt.hz(b.f)}</td><td class="r">${fmt.s(b.rt)}</td><td class="r">${t.min.toFixed(2)}–${fmt.s(t.max)}</td><td class="r">${fmt.signedS(b.diff)}</td><td>${ui.status(b.status)}</td></tr>`).join('');
     const bands = ui.card({

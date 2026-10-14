@@ -21,10 +21,20 @@
    50 ‰) or too short for the band filter (bandwidth × RT60 < 4). Quality and confidence come only from these measured properties:
      Good / High    T30, ξ ≤ 10 ‰ and T30 within 10 % of T20 (curvature C = 100·(T30/T20 − 1); the note says whether
                     the decay slows down, C > 10 %, or speeds up, C < −10 %, which points to processing)
-     Fair / Medium  T20, or a straightness or curvature warning, or a background that changed since the noise check
+     Fair / Medium  T20, or a straightness or curvature warning, or any warning on the take (browser processing not
+                    reported, a small gain or background change). A background that changed since the noise check is
+                    information only: each band is judged on the take's own background.
    The measurement is valid when the reference band (1000 Hz) has a value. Every other band is reported for what it is.
    When the browser reports that echo cancellation, noise suppression or automatic gain control stayed on during the take,
-   no band gets a value: each of them works on the recorded decay itself, so the decay is no longer the room's. */
+   no band gets a value: each of them works on the recorded decay itself, so the decay is no longer the room's. One the
+   browser does not report is unknown, not off: the take carries a warning (services/measurement.js), so no band is
+   "High". A background that is louder (or quieter) after the test signal than before it, by the same amount in every
+   band, means the input level or the background changed during the take: from CRITERIA.take.levelChange.failDb no band
+   gets a value, from warnDb it costs confidence. A background above the sweep that was quieter while the sweep played
+   than before it (analysis.js aboveSweep, CRITERIA.take.sweepGain) means the device turned its input down while the
+   sound played, which nothing in a room does: from failDb no band gets a value, from warnDb it costs confidence.
+   The browser's own counts of lost input frames and output underruns during the take (take.integrity, where the
+   browser keeps them) make the take not valid when they show any. */
 (function (AM) {
   'use strict';
   const C = AM.analysis.CRITERIA, D = C.decay;
@@ -50,6 +60,19 @@
 
   const r3 = x => (x == null ? null : Math.round(x * 1000) / 1000);
   const r1 = x => (x == null ? null : Math.round(x * 10) / 10);
+  // A level against the level it had to reach: rounded to whole dB, except where rounding would make a shortfall read
+  // as the requirement itself ("Only 35 dB … T20 needs 35 dB" for 34.6 dB).
+  const short = (x, need) => (x < need && Math.round(x) >= need ? x.toFixed(1) : String(Math.max(0, Math.round(x))));
+
+  /* The background after the decay against before the sweep, per band (analysis.js backgroundSounds): the change all
+     supported bands share, signed, or null when fewer than CRITERIA.take.levelChange.minBands bands have one or they
+     disagree in direction. A shift common to every band is a gain or background change, not a sound in one band. */
+  function commonChange(bands) {
+    const v = bands.filter(b => b.supported && typeof b.backgroundChangeDb === 'number').map(b => b.backgroundChangeDb);
+    if (v.length < C.take.levelChange.minBands || !(v.every(x => x > 0) || v.every(x => x < 0))) return null;
+    const m = Math.min(...v.map(Math.abs));
+    return v[0] > 0 ? m : -m;
+  }
 
   function decideBand(b) {
     const out = {
@@ -73,9 +96,9 @@
     out.path = usable('T30') ? 'T30' : usable('T20') ? 'T20' : null;
     if (!out.path) {
       out.reason = dist && b.decayRangeDb >= REQUIRED.T20
-        ? `Sounds during the take, such as voices, knocks or movement, rose ${Math.round(dist.db)} dB above the background in this band (${dist.events} times). Counted as the noise floor, they leave ${Math.max(0, Math.round(R))} dB of the room's own decay; T20 needs ${REQUIRED.T20} dB. Measure again while the room is quiet.`
+        ? `Sounds during the take, such as voices, knocks or movement, rose ${Math.round(dist.db)} dB above the background in this band (${dist.events} times). Counted as the noise floor, they leave ${short(R, REQUIRED.T20)} dB of the room's own decay; T20 needs ${REQUIRED.T20} dB. Measure again while the room is quiet.`
         : b.decayRangeDb < REQUIRED.T20
-          ? `Only ${Math.round(b.decayRangeDb)} dB of the room's own decay above the noise floor${b.headDb >= 3 ? ` (after the direct sound, which lies ${Math.round(b.headDb)} dB above it)` : ''}. T20 needs ${REQUIRED.T20} dB.`
+          ? `Only ${short(b.decayRangeDb, REQUIRED.T20)} dB of the room's own decay above the noise floor${b.headDb >= 3 ? ` (after the direct sound, which lies ${Math.round(b.headDb)} dB above it)` : ''}. T20 needs ${REQUIRED.T20} dB.`
           : 'The room\'s decay did not reach −25 dB before the noise floor.';
       return out;
     }
@@ -108,7 +131,10 @@
         deviceKind: take.deviceKind || null, outputLabel: take.outputLabel || null, position: take.position || null,
         latencySec: take.analysis && take.analysis.latencySec, arrivalClarityDb: take.analysis && take.analysis.arrivalClarityDb,
         irSeconds: take.analysis && take.analysis.irSeconds, distortion: (take.analysis && take.analysis.distortion) || null,
-        noiseCheck: ctx.noise ? { leqDbfs: ctx.noise.leqDbfs, takenAt: ctx.noise.takenAt, status: ctx.noise.status } : null,
+        timing: (take.analysis && take.analysis.timing) || null, clicks: (take.analysis && take.analysis.clicks) || null,
+        sweepGainDb: take.analysis && take.analysis.sweepGain && take.analysis.sweepGain.checked ? take.analysis.sweepGain.changeDb : null,
+        integrity: take.integrity || null, config: take.config || null,
+        noiseCheck: ctx.noise ? { leqDbfs: ctx.noise.leqDbfs, bandLeqDbfs: ctx.noise.inBand ? ctx.noise.inBand.leqDbfs : null, takenAt: ctx.noise.takenAt, status: ctx.noise.status } : null,
       },
     };
     if (take.status !== 'captured' || !take.analysis) return Object.assign(base, { reason: take.reason || 'The take could not be used.' });
@@ -125,12 +151,67 @@
         issues: bands.map(b => `${b.f} Hz: ${b.reason}`),
       });
     }
+    // The input level or the background changed during the take, the same in every band (CRITERIA.take.levelChange).
+    // The decay was recorded under a level that did not stay put, so from failDb no band gets a value; the cause is
+    // named as what it can be, not guessed.
+    const LC = C.take.levelChange, change = commonChange(take.analysis.bands);
+    base.meta.levelChangeDb = change == null ? null : r1(change);
+    if (change != null && Math.abs(change) >= LC.failDb) {
+      const agc = take.settings && take.settings.autoGainControl, said = agc === false ? 'which this browser reports as off' : agc === true ? 'which this browser reports as on' : 'which this browser does not report';
+      // An input level that stayed steady while the sweep played (aboveSweep) makes a device's gain the less likely cause:
+      // automatic gain turns the input down under a loud test signal.
+      const sgd = take.analysis.sweepGain && take.analysis.sweepGain.checked ? take.analysis.sweepGain.changeDb : null, steadyIn = sgd != null && Math.abs(sgd) < 1.5;
+      const why = `The background was ${Math.abs(change).toFixed(1)} dB ${change > 0 ? 'louder' : 'quieter'} after the test signal than before it, in every band. Either the device changed its input level during the take (automatic gain, ${said}) or the room's background changed${steadyIn ? `; the input level stayed steady while the test signal played (${sgd > 0 ? '+' : sgd < 0 ? '−' : ''}${Math.abs(sgd).toFixed(1)} dB), so most likely the room's background changed (a machine, ventilation or traffic)` : ''}. A level that changes during the take distorts the decay, so no RT60 is given.`;
+      bands.forEach(b => { if (b.rt60 != null) Object.assign(b, { rt60: null, path: null, quality: 'Insufficient', confidence: 'None', notes: [], reason: why }); });
+      return Object.assign(base, {
+        bands, status: 'invalid', warnings: (take.warnings || []).slice(),
+        reason: `${why} Measure again with the background steady. If it happens again in a quiet room, switch off microphone enhancements or automatic gain in the system's sound settings.`,
+        issues: bands.map(b => `${b.f} Hz: ${b.reason}`),
+      });
+    }
+    // The input turned down while the sweep played (analysis.js aboveSweep): the decays recorded under it are not the
+    // room's. Below failDb no band gets a value.
+    const SG = C.take.sweepGain, sg = base.meta.sweepGainDb, agcSaid = () => {
+      const agc = take.settings && take.settings.autoGainControl;
+      return agc === false ? 'which this browser reports as off, so the system or the device itself' : agc === true ? 'which this browser reports as on' : 'which this browser does not report';
+    };
+    if (sg != null && sg <= -SG.failDb) {
+      const why = `While the test signal played, the background above it was ${Math.abs(sg).toFixed(1)} dB quieter than before it. Nothing in a room does that: the device turned its microphone input down while the sound played (automatic gain or a noise suppressor, ${agcSaid()}). A level that changes during the take distorts the decay, so no RT60 is given.`;
+      bands.forEach(b => { if (b.rt60 != null) Object.assign(b, { rt60: null, path: null, quality: 'Insufficient', confidence: 'None', notes: [], reason: why }); });
+      return Object.assign(base, {
+        bands, status: 'invalid', warnings: (take.warnings || []).slice(),
+        reason: `${why} Switch off microphone enhancements, voice isolation or automatic gain in the system's sound settings, or use a browser that lets the page switch them off (Chrome, Edge or Firefox on a computer), and measure again.`,
+        issues: bands.map(b => `${b.f} Hz: ${b.reason}`),
+      });
+    }
+    // Lost or late audio that the browser itself counted during the take (measurement.js, integrity): even a few
+    // frames lost shift and click the recording, so the take is not used.
+    const ig = take.integrity;
+    if (ig && ((ig.inputLostFrames || 0) > 0 || (ig.outputUnderruns || 0) > 0)) {
+      const what = [ig.inputLostFrames > 0 ? `${ig.inputLostFrames} audio frames from the microphone were lost` : null, ig.outputUnderruns > 0 ? `the sound output ran dry ${ig.outputUnderruns} time${ig.outputUnderruns > 1 ? 's' : ''} (the test signal had a gap)` : null].filter(Boolean).join(', and ');
+      const why = `The browser reports that during the take ${what}. That breaks the recording's continuity and distorts the decay, so no RT60 is given.`;
+      bands.forEach(b => { if (b.rt60 != null) Object.assign(b, { rt60: null, path: null, quality: 'Insufficient', confidence: 'None', notes: [], reason: why }); });
+      return Object.assign(base, {
+        bands, status: 'invalid', warnings: (take.warnings || []).slice(),
+        reason: `${why} Close other apps and tabs, keep the screen on and the app in front, and measure again.`,
+        issues: bands.map(b => `${b.f} Hz: ${b.reason}`),
+      });
+    }
     const ref = bands.find(b => b.f === base.referenceBand);
     const warnings = (take.warnings || []).slice();
+    // A sweep the playback chain distorted so heavily that its harmonics fill the band the click check reads
+    // (analysis.js aboveSweep, fillDb): a small gap in the recording could hide among them.
+    const ck = take.analysis.clicks;
+    if (ck && ck.checked && ck.fillDb != null && ck.fillDb >= C.take.clicks.coarseDb) warnings.push(`The test signal was heavily distorted: its harmonics filled the frequencies above it (${Math.round(ck.fillDb)} dB above the background), where gaps in the recording are looked for, so a small gap could have passed unseen. A lower sweep level or device volume gives a cleaner take.`);
+    if (sg != null && sg <= -SG.warnDb) warnings.push(`While the test signal played, the background above it was ${Math.abs(sg).toFixed(1)} dB quieter than before it: the device may have turned its microphone input down a little (automatic gain or a noise suppressor).`);
+    if (change != null && Math.abs(change) >= LC.warnDb) warnings.push(`The background was ${Math.abs(change).toFixed(1)} dB ${change > 0 ? 'louder' : 'quieter'} after the test signal than before it, in every band: the input level or the background changed a little during the take.`);
     if (warnings.length) bands.forEach(b => { if (b.confidence === 'High') { b.confidence = 'Medium'; b.quality = 'Fair'; } });
     // How the background during the take compares with the noise check: information only. Each band is judged on the
-    // take's own noise floor and background, so a background that changed since the check costs no confidence.
-    if (ctx.noise && take.levels && ctx.noise.leqDbfs != null) base.meta.backgroundChangeDb = r1(take.levels.preRollDbfs - ctx.noise.leqDbfs);
+    // take's own noise floor and background, so a background that changed since the check costs no confidence. Both
+    // levels in the RT60 bands where both have one (takes and checks made with this version), else both unfiltered.
+    const nc = ctx.noise, lv = take.levels;
+    if (nc && lv && lv.inBand && nc.inBand && nc.inBand.leqDbfs != null) base.meta.backgroundChangeDb = r1(lv.preRollDbfs - nc.inBand.leqDbfs);
+    else if (nc && lv && !lv.inBand && nc.leqDbfs != null) base.meta.backgroundChangeDb = r1(lv.preRollDbfs - nc.leqDbfs);
     const valid = !!ref && ref.rt60 != null;
     Object.assign(base, {
       valid, bands, warnings,

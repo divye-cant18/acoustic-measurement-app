@@ -44,9 +44,13 @@
         localStorage.setItem(PKEY(p.id), JSON.stringify(p)); // saved in the new format before the index is replaced
         remember(p);
       } else if (d && d.v === VERSION && Array.isArray(d.ids)) {
+        // Each project on its own: one that cannot be read or brought up to date (damaged, or saved by a version this
+        // one does not know) is left in storage, untouched, and the others still load.
         d.ids.forEach(id => {
-          const p = readJson(PKEY(id));
-          if (p && p.id === id) { state.projects.push(migrate(p)); remember(p); }
+          try {
+            const p = readJson(PKEY(id));
+            if (p && p.id === id) { state.projects.push(migrate(p)); remember(p); }
+          } catch (e) { console.warn(`Project ${id} could not be loaded and was skipped.`, e); }
         });
         state.project = state.projects.find(p => p.id === d.activeId) || null;
       }
@@ -285,7 +289,7 @@
     p.room = Object.assign(copy(src.room), { name: `${src.room.name || 'Untitled room'} · after treatment` });
     p.target = copy(src.target);
     // The same measuring setup, sweep level included, so the treated room is measured as the original was.
-    Object.assign(p.setup, { deviceKind: src.setup.deviceKind || null, deviceId: src.setup.deviceId || 'default', deviceLabel: src.setup.deviceLabel || '', position: src.setup.position, sweepLevelDb: AM.analysis.sweepLevel(src.setup.sweepLevelDb) });
+    Object.assign(p.setup, { deviceKind: src.setup.deviceKind || null, deviceId: src.setup.deviceId || 'default', deviceLabel: src.setup.deviceLabel || '', outputId: src.setup.outputId || 'default', position: src.setup.position, sweepLevelDb: AM.analysis.sweepLevel(src.setup.sweepLevelDb) });
     p.followUpOf = src.id;
     p.completed = ['home', 'room', 'target'];
     p.lastStage = 'setup';

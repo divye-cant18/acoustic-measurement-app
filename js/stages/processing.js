@@ -82,7 +82,7 @@
       const reasons = res.bands.filter(b => b.rt60 == null && b.reason).map(b => `<li><b>${fmt.hz(b.f)}:</b> ${esc(b.reason)}</li>`).join('');
       const notes = [...res.warnings, ...res.bands.flatMap(b => (b.notes || []).map(n => `${fmt.hz(b.f)}: ${n}`))];
       const curAvg = AM.derive.averageRT60(p);
-      const kept = cur && cur.recordingId !== rec.id ? ` The current measurement from ${fmt.when(cur.takenAt)} (average RT60 ${curAvg.available ? fmt.s(curAvg.value) : 'unavailable'} across ${curAvg.n} of ${curAvg.total} bands; ${fmt.s(cur.headline.rt60)} at ${fmt.hz(cur.headline.f)}) stays in force.` : '';
+      const kept = cur && cur.recordingId !== rec.id ? ` The current measurement from ${fmt.when(cur.takenAt)} (average RT60, 500–2000 Hz: ${curAvg.available ? fmt.s(curAvg.value) : 'not available'}; ${fmt.s(cur.headline.rt60)} at ${fmt.hz(cur.headline.f)}) stays in force.` : '';
       after = `${!res.valid ? ui.note(`<b>Unable to obtain a reliable RT60 measurement.</b> ${esc(res.reason || '')} RT60 is not calculated from data that cannot support it.${kept}<div class="note-actions"><button class="btn btn-primary btn-sm" data-action="repeat">${icon('refresh', 15, 2)} Measure again</button></div>`, 'critical') : ''}
       ${notes.length ? ui.note(`<b>Warnings.</b><ul class="bullets">${notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`, 'warn') : ''}
       <div class="grid split">
@@ -140,8 +140,10 @@
     mount() {
       const p = S.state.project, rec = p && p.measurement.recording;
       if (!rec || rec.status !== 'captured' || job || outcome(p, rec)) return;
-      job = { i: -1, recId: rec.id, ctl: PROC.run(rec, { noise: p.setup.noise, onStep: i => { if (job) { job.i = i; AM.app.render(); } } }) };
-      job.ctl.done.then(result => { job = null; apply(p, result); }, () => { job = null; });
+      // Each job clears only itself: a cancelled job's late answer must not end the job that replaced it (another
+      // project opened on this step meanwhile).
+      const mine = job = { i: -1, recId: rec.id, ctl: PROC.run(rec, { noise: p.setup.noise, onStep: i => { if (job === mine) { mine.i = i; AM.app.render(); } } }) };
+      mine.ctl.done.then(result => { if (job === mine) job = null; apply(p, result); }, () => { if (job === mine) job = null; });
     },
     leave() { if (job) { job.ctl.cancel(); job = null; } },
     // Developer tools: only a project with a real, valid measurement can pass this step.

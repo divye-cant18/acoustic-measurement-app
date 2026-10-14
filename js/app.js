@@ -10,6 +10,10 @@
   const $tip = document.getElementById('tip');
   let lastStage = null, lastSheet = '', lastToast = '', lastNav = false;
   let lastClick = null, returnTo = null; // the control that opened a panel gets focus back when it closes
+  // When the step last changed. The action bar's buttons sit in the same place on every step, so the second click of a
+  // double click on "Continue" would otherwise land on the next step's button and confirm a step nobody has seen.
+  let stepChangedAt = 0;
+  const STEP_CLICK_GUARD_MS = 450;
 
   const ctx = () => ({ project: S.state.project, state: S.state, store: S, render });
 
@@ -66,15 +70,17 @@
     const n = W.stepNo(stage.id);
     let facts = '';
     if (p && stage.id !== 'home') { // Home is the application's page; project values belong to project steps
-      // Measured: the average across the measured bands (AM.derive.averageRT60). Target and Predicted are at the
+      // Measured: the average RT60 at 500–2000 Hz (AM.derive.averageRT60). Target and Predicted are at the
       // reference band, where the target is set and compared; each says so in its tooltip.
       const g = AM.derive.geometry(p), t = AM.derive.target(p), avg = AM.derive.averageRT60(p), f = fmt.hz(AM.demo.REFERENCE_BAND);
       const pr = AM.derive.predictionStarted(p, S.state.current) ? AM.derive.prediction(p) : null;
-      const fact = (cls, ic, k, v, tip) => `<span class="fact ${cls}${v == null ? ' is-empty' : ''}" data-watch="fact-${cls}"${tip ? ` title="${esc(tip)}"` : ''}>${icon(ic, 13, 2)}<span class="fact-k">${k}</span><span class="fact-v">${v ?? '—'}</span></span>`;
+      // A newer take that the measured value does not include is flagged on the value itself (and named in the tooltip).
+      const later = AM.derive.laterTakes(p)[0];
+      const fact = (cls, ic, k, v, tip, stale) => `<span class="fact ${cls}${v == null ? ' is-empty' : ''}${stale ? ' is-stale' : ''}" data-watch="fact-${cls}"${tip ? ` title="${esc(tip)}"` : ''}>${icon(ic, 13, 2)}<span class="fact-k">${k}</span><span class="fact-v">${v ?? '—'}</span>${stale ? '<span class="sr-only"> (from an earlier take)</span>' : ''}</span>`;
       facts = `<div class="facts" aria-label="Project values">
         ${fact('room', 'room', 'Room', g ? fmt.m3(g.V) : null)}
         ${fact('target', 'target', 'Target', t && (W.isDone(p, 'target') || stage.id === 'target') ? fmt.s(t.preferred) : null, `Preferred target RT60 at ${f}`)}
-        ${fact('measured', 'mic', 'Measured avg', avg.available ? fmt.s(avg.value) : null, avg.available ? `${AM.services.rt60Average.LABEL}: mean of ${avg.n} of ${avg.total} bands` : '')}
+        ${fact('measured', 'mic', 'Measured avg', avg.available ? fmt.s(avg.value) : null, `${avg.available ? `${AM.services.rt60Average.LABEL}: the mean of 500, 1000 and 2000 Hz` : avg.reason || ''}${later ? ` · From an earlier take: the latest take (${fmt.when(later.takenAt)}) ${later.kind === 'unprocessed' ? 'has not been processed yet' : 'gave no value'}.` : ''}`, !!later)}
         ${fact('predicted', 'trend', 'Predicted', pr && pr.headline.predicted != null ? fmt.s(pr.headline.predicted) : null, `Predicted RT60 at ${f} after treatment (model estimate)`)}
       </div>`;
     }
@@ -256,6 +262,7 @@
     const keepScroll = lastStage === stage.id && content ? content.scrollTop : 0;
     const railScroll = rail ? rail.scrollTop : 0;
     const before = sameView ? watched() : null;
+    if (lastStage !== stage.id) stepChangedAt = performance.now();
 
     const v = stage.view(ctx());
     $app.innerHTML = `
@@ -283,8 +290,24 @@
       }
     }
     if (stage.mount) stage.mount($app, ctx());
+    markScrollableTables();
     renderLayers();
   }
+
+  // Tables wider than the screen scroll sideways; on a phone nothing shows that more columns are there. Such a table
+  // gets a hint under it (css: .tbl-wrap.is-scrollable), checked after each render and when the window changes size.
+  function markScrollableTables() {
+    $app.querySelectorAll('.tbl-wrap').forEach(w => {
+      const more = w.scrollWidth > w.clientWidth + 1, next = w.nextElementSibling, hint = next && next.classList.contains('tbl-hint') ? next : null;
+      w.classList.toggle('is-scrollable', more);
+      const end = () => w.classList.toggle('at-end', w.scrollLeft + w.clientWidth >= w.scrollWidth - 1);
+      end();
+      if (more && !w.dataset.scrollWatch) { w.dataset.scrollWatch = '1'; w.addEventListener('scroll', end, { passive: true }); }
+      if (more && !hint) w.insertAdjacentHTML('afterend', '<p class="tbl-hint">Scroll the table sideways to see every column.</p>');
+      if (!more && hint) hint.remove();
+    });
+  }
+  window.addEventListener('resize', () => { if ($app) markScrollableTables(); });
 
   /* ---------- actions ---------- */
   const coerce = (v, type) => (type === 'num' ? num(v) : type === 'int' ? int(v) : type === 'bool' ? v === 'true' : v);
@@ -331,6 +354,7 @@
     const fn = (stage.actions && stage.actions[name]) || GLOBAL[name];
     if (!fn) return;
     e.preventDefault();
+    if (el.closest('.actionbar') && performance.now() - stepChangedAt < STEP_CLICK_GUARD_MS) return; // see stepChangedAt
     if ($app.contains(el)) lastClick = { action: name, value: el.dataset.value != null ? el.dataset.value : null, id: el.id || null };
     fn(ctx(), el.dataset.value, el, e);
   });

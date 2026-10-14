@@ -1,0 +1,10 @@
+# Never uploaded to Vercel, however a deployment is made (Git or the CLI from this folder): secrets, run-time data and
+# local tool settings. The API reads its settings from the Vercel project's Environment Variables.
+.env
+.env.*
+*.env
+server/data/
+.claude/
+.vscode/
+.idea/
+Room-Acoustic-Report_*.pdf

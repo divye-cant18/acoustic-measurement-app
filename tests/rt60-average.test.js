@@ -1,4 +1,4 @@
-/* Tests of the average RT60 across measured frequency bands (AM.services.rt60Average) and of every place that shows it,
+/* Tests of the headline average RT60, 500–2000 Hz (AM.services.rt60Average) and of every place that shows it,
    in the whole application (tests/rt60-average.html). Development only. Results on the page and in
    window.RT60_AVERAGE_TEST (window.RT60_AVERAGE_DONE resolves).
 
@@ -6,10 +6,13 @@
    known rooms, tests/fixtures.js, through the production analysis and processing) the expected average is summed here
    from the result's own band values, without the service.
 
-    1 all six bands eligible
-    2 bands insufficient, not reliable or not measured are left out
-    3 missing, zero, negative, NaN, infinite and text values; a band without a path; a band with T20 but no RT60
-    4 no eligible bands, an invalid result, no result: "Unavailable", never 0 or NaN
+    The headline is the mean of the fixed bands 500, 1000 and 2000 Hz (AM.services.rt60Average); without all three it is
+    unavailable and names the band that failed.
+    1 all six bands: only the three required bands enter it
+    2 other bands without a value change nothing; a required band without one means no headline
+    3 missing, zero, negative, NaN, infinite and text values at a required band; a band without a path; a band with T20
+      but no RT60; a band's own T20 result used as it is
+    4 no band with a value, an invalid result, no result: "Unavailable", never 0 or NaN
     5 one measurement only: superseded measurements and later invalid takes are never mixed in
     6 unrounded values averaged, rounding only for display
     7 the same average on every screen and in the PDF
@@ -63,43 +66,43 @@
     /* ===== 1. all six bands ===== */
     status('Service…');
     {
-      // 0.62 + 0.55 + 0.50 + 0.48 + 0.45 + 0.40 = 3.00; 3.00 ÷ 6 = 0.500 s
+      // Fixed bands: (0.50 + 0.48 + 0.45) ÷ 3 = 1.43 ÷ 3 = 0.47667 s. 125, 250 and 4000 Hz are not part of it.
       const r = result(B.map((f, i) => band(f, [0.62, 0.55, 0.50, 0.48, 0.45, 0.40][i])));
       const a = RA.of(r);
-      check('1 All six bands with a value: (0.62 + 0.55 + 0.50 + 0.48 + 0.45 + 0.40) ÷ 6 = 0.500 s, six included, none left out',
-        a.available && a.n === 6 && a.total === 6 && close(a.value, 0.5) && !a.excluded.length && json(a.included.map(b => b.f)) === json(B), `${a.value} s, ${a.n} of ${a.total}`);
+      check('1 All six bands with a value: the headline is the mean of 500, 1000 and 2000 Hz only: (0.50 + 0.48 + 0.45) ÷ 3 = 0.4767 s; the other bands are listed as not part of it',
+        a.available && a.n === 3 && a.total === 3 && close(a.value, 1.43 / 3) && json(a.included.map(b => b.f)) === json([500, 1000, 2000]) && json(a.excluded.map(b => b.f)) === json([125, 250, 4000]), `${a.value} s`);
     }
 
     /* ===== 2. bands without a reliable value ===== */
     {
-      // As in the screenshot: 125 Hz not reliable; 250 Hz T20 0.504 (shown 0.50), 500 Hz 0.358 (0.36), 1000 Hz 0.274
-      // (0.27), 2000 Hz 0.276 (0.28), 4000 Hz 0.293 (0.29). (0.504 + 0.358 + 0.274 + 0.276 + 0.293) = 1.705; ÷ 5 = 0.341 s.
+      // As in the screenshot: 125 Hz not reliable; 500 Hz 0.358, 1000 Hz 0.274, 2000 Hz 0.276: (0.358 + 0.274 + 0.276) = 0.908;
+      // ÷ 3 = 0.30267 s, shown 0.30 s. 125 Hz (no value) and 250 / 4000 Hz (values) change nothing.
       const r = result([band(125, null), band(250, 0.504, { path: 'T20', t20: 0.504, t30: null, quality: 'Fair' }), band(500, 0.358), band(1000, 0.274), band(2000, 0.276, { quality: 'Fair' }), band(4000, 0.293, { quality: 'Fair' })]);
       const a = RA.of(r);
-      check('2 125 Hz "Not reliable" (Insufficient) is left out, not counted as 0: (0.504 + 0.358 + 0.274 + 0.276 + 0.293) ÷ 5 = 0.341 s, shown 0.34 s',
-        a.available && a.n === 5 && a.total === 6 && close(a.value, 0.341, 1e-12) && fmt.s(a.value) === '0.34 s' && a.excluded.length === 1 && a.excluded[0].f === 125 && a.excluded[0].reason === `Not reliable: ${NR}`,
-        `${a.value} s; excluded ${a.excluded.map(b => `${b.f} (${b.reason})`).join(', ')}`);
-      // Two left out: 125 Hz insufficient, 4000 Hz not measured. 0.55 + 0.50 + 0.48 + 0.45 = 1.98; ÷ 4 = 0.495 s
-      const r2 = result([band(125, null), band(250, 0.55), band(500, 0.50), band(1000, 0.48), band(2000, 0.45), band(4000, null, { quality: 'Not measured', reason: null })]);
+      check('2 125 Hz "Not reliable" and the values at 250 and 4000 Hz do not enter the headline: (0.358 + 0.274 + 0.276) ÷ 3 = 0.3027 s, shown 0.30 s',
+        a.available && a.n === 3 && close(a.value, 0.908 / 3, 1e-12) && fmt.s(a.value) === '0.30 s', `${a.value} s`);
+      // A required band not reliable, another not measured: no headline, both named with their reasons.
+      const r2 = result([band(125, 0.6), band(250, 0.55), band(500, null), band(1000, 0.48), band(2000, null, { quality: 'Not measured', reason: null }), band(4000, 0.4)]);
       const a2 = RA.of(r2);
-      check('2 Two bands without a value (125 Hz insufficient, 4000 Hz not measured): (0.55 + 0.50 + 0.48 + 0.45) ÷ 4 = 0.495 s; each left out with its reason',
-        a2.n === 4 && close(a2.value, 0.495) && json(a2.excluded.map(b => [b.f, b.reason.split(':')[0]])) === json([[125, 'Not reliable'], [4000, 'Not measured']]), `${a2.value} s; ${a2.excluded.map(b => `${b.f}: ${b.reason.split(':')[0]}`).join(', ')}`);
+      check('2 A required band not reliable (500 Hz) and one not measured (2000 Hz): no headline, both named with their reasons; never an average of what is left',
+        !a2.available && a2.value === null && json(a2.missing.map(b => [b.f, b.reason.split(':')[0]])) === json([[500, 'Not reliable'], [2000, 'Not measured']]) && /500 Hz and 2000 Hz have no reliable value/.test(a2.reason),
+        a2.reason);
     }
 
     /* ===== 3. values that are not a band RT60 ===== */
     {
-      // Only 1000 Hz (0.50) is a value: missing, 0, negative, NaN and infinite are left out. Counted as 0 they would
-      // give 0.5 ÷ 6 = 0.083 s.
-      const r = result([band(125, null), band(250, 0), band(500, -0.3), band(1000, 0.5), band(2000, NaN), band(4000, Infinity)]);
-      const a = RA.of(r);
-      check('3 Missing, 0, negative, NaN and infinite values are left out, not counted as 0: only 1000 Hz (0.50 s) is averaged, 0.500 s (not 0.083 s)',
-        a.n === 1 && close(a.value, 0.5) && json(a.excluded.map(b => b.f)) === json([125, 250, 500, 2000, 4000]) && Number.isFinite(a.value), `${a.value} s; excluded ${a.excluded.map(b => b.f).join(', ')}`);
-      // 125 Hz a value but no path; 250 Hz the value as text; 500 Hz T20 0.41 but no RT60 (the band's own verdict);
-      // 2000 Hz no rt60 at all. Averaged: 1000 Hz T20 0.45 and 4000 Hz T30 0.55 → 0.500 s, each with its own path.
-      const r2 = result([band(125, 0.6, { path: null }), band(250, '0.5'), band(500, null, { t20: 0.41 }), band(1000, 0.45, { path: 'T20', t20: 0.45, t30: null, quality: 'Fair' }), { f: 2000, quality: 'Good', path: 'T30' }, band(4000, 0.55)]);
-      const a2 = RA.of(r2);
-      check('3 A value without a calculation path, a value as text, and a band with a T20 but no RT60 are left out: no band changes path to be counted (1000 Hz stays T20, 4000 Hz T30); (0.45 + 0.55) ÷ 2 = 0.500 s',
-        a2.n === 2 && close(a2.value, 0.5) && json(a2.included.map(b => [b.f, b.path])) === json([[1000, 'T20'], [4000, 'T30']]) && a2.excluded.length === 4, `included ${a2.included.map(b => `${b.f} ${b.path} ${b.rt60}`).join(', ')}`);
+      // In a required band, missing, 0, negative, NaN or infinite is no value: no headline, not 0 and not NaN.
+      const bad = [null, 0, -0.3, NaN, Infinity, '0.5'];
+      const got = bad.map(v => RA.of(result([band(500, 0.5), band(1000, 0.48), band(2000, v)])));
+      check('3 Missing, 0, negative, NaN, infinite or text at a required band (2000 Hz): no headline each time, value null, the band named',
+        got.every(a => !a.available && a.value === null && /2000 Hz/.test(a.reason)), got.map(a => `${a.available}/${a.value}`).join(' '));
+      // A value without a calculation path, and a band with a T20 but no RT60: no value (no band changes path to be
+      // counted); a required band that keeps its own T20 path is used as it is.
+      const noPath = RA.of(result([band(500, 0.5, { path: null }), band(1000, 0.48), band(2000, 0.45)]));
+      const t20only = RA.of(result([band(500, null, { t20: 0.41 }), band(1000, 0.48), band(2000, 0.45)]));
+      const ownPath = RA.of(result([band(500, 0.5, { path: 'T20', t20: 0.5, t30: null, quality: 'Fair' }), band(1000, 0.48), band(2000, 0.45)]));
+      check('3 A value without a calculation path, and a T20 where the band has no RT60, do not count; a band\'s own T20 result is used as it is (no path switching)',
+        !noPath.available && !t20only.available && ownPath.available && ownPath.included[0].path === 'T20' && close(ownPath.value, 1.43 / 3), `${noPath.reason.slice(0, 40)} | ${t20only.reason.slice(0, 40)} | ${ownPath.value}`);
     }
 
     /* ===== 4. nothing to average ===== */
@@ -109,7 +112,7 @@
       const missing = RA.of(null);
       const html = [none, invalid, missing].map(ui.averageSummary).join(''), txt = textOf(html);
       check('4 No band with a value, a take that is not valid, and no measurement: no average (value null), with the reason; nothing averaged from an invalid take',
-        [none, invalid, missing].every(a => !a.available && a.value === null && a.n === 0 && a.reason) && invalid.excluded.every(b => b.reason === 'Take not valid') && !invalid.included.length,
+        [none, invalid, missing].every(a => !a.available && a.value === null && a.n === 0 && a.reason) && invalid.missing.every(b => b.reason === 'Take not valid') && !invalid.included.length,
         [none, invalid, missing].map(a => a.reason).join(' · '));
       check('4 The summary then says "Unavailable" with the reason, never 0, 0.00 or NaN',
         (txt.match(/Unavailable/g) || []).length === 3 && !/NaN|0\.00|Infinity|undefined/.test(txt), txt.slice(0, 200));
@@ -117,13 +120,13 @@
 
     /* ===== 6. unrounded values ===== */
     {
-      // 0.304 × 4 + 0.314 = 1.530; ÷ 5 = 0.306 → shown 0.31 s. Averaging the values as shown (0.30 × 4 + 0.31 = 1.51;
-      // ÷ 5 = 0.302) would show 0.30 s.
-      const r = result([band(125, null), band(250, 0.304), band(500, 0.304), band(1000, 0.304), band(2000, 0.304), band(4000, 0.314)]);
+      // (0.304 + 0.304 + 0.314) = 0.922; ÷ 3 = 0.30733 → shown 0.31 s. Averaging the values as shown (0.30 + 0.30 + 0.31 =
+      // 0.91; ÷ 3 = 0.3033) would show 0.30 s.
+      const r = result([band(125, null), band(250, 0.304), band(500, 0.304), band(1000, 0.304), band(2000, 0.314), band(4000, 0.304)]);
       const a = RA.of(r), shownMean = a.included.reduce((s, b) => s + Number(b.rt60.toFixed(2)), 0) / a.n;
       const html = ui.averageSummary(a);
-      check('6 The stored band values are averaged, not the values as shown: 1.530 ÷ 5 = 0.306 s (kept unrounded) → 0.31 s on screen, where the shown values would give 0.302 → 0.30 s',
-        close(a.value, 0.306) && a.value !== Number(a.value.toFixed(2)) && fmt.s(a.value) === '0.31 s' && shownMean.toFixed(2) === '0.30' && /class="avg-v">0\.31<small>/.test(html) && html.includes('÷ 5 = 0.306 s'),
+      check('6 The stored band values are averaged, not the values as shown: 0.922 ÷ 3 = 0.3073 s (kept unrounded) → 0.31 s on screen, where the shown values would give 0.3033 → 0.30 s',
+        close(a.value, 0.922 / 3) && a.value !== Number(a.value.toFixed(2)) && fmt.s(a.value) === '0.31 s' && shownMean.toFixed(2) === '0.30' && /class="avg-v">0\.31<small>/.test(html) && html.includes('÷ 3 = 0.307 s'),
         `average ${a.value}; shown ${fmt.s(a.value)}; from the shown values ${shownMean.toFixed(3)}`);
       const r0 = copy(r);
       RA.of(r);
@@ -141,8 +144,10 @@
       return Object.assign({ id, takenAt, status: 'captured', reason: an.reason || null, deviceLabel: 'Test fixture recording', outputLabel: '', deviceKind: 'computer', position: 'P1',
         sampleRate: plan.fs, settings: {}, plan: Object.assign({}, plan, { levelDb: 0 }), levels: an.levels, waveform: [], analysis: an, warnings: [] }, extra);
     }
-    const manual = r => { const v = r.bands.filter(b => typeof b.rt60 === 'number' && b.rt60 > 0).map(b => b.rt60); return v.reduce((s, x) => s + x, 0) / v.length; };
-    const roomA = [0.62, 0.55, 0.5, 0.45, 0.42, 0.38], roomB = [1.1, 1.0, 0.95, 0.9, 0.85, 0.8];
+    // The headline summed here, without the service: the mean of 500, 1000 and 2000 Hz.
+    const manual = r => { const v = [500, 1000, 2000].map(f => r.bands.find(b => b.f === f).rt60); return v.reduce((s, x) => s + x, 0) / v.length; };
+    // Room A: 500 and 2000 Hz longer than 1000 Hz, so its 500–2000 Hz average differs clearly from its 1000 Hz value.
+    const roomA = [0.62, 0.58, 0.60, 0.45, 0.56, 0.40], roomB = [1.1, 1.0, 0.95, 0.9, 0.85, 0.8];
     const takeA = take('avg-take-a', '2026-10-13T09:00:00.000Z', roomA, 21);
     const resA = PROC.evaluate(takeA, {});
 
@@ -162,7 +167,7 @@
     S.state.current = 'results';
     S.emit();
     const ctx = () => ({ project: S.state.project, state: S.state });
-    check('Take A (room 0.62 … 0.38 s) is valid through the production analysis, with an average that differs from its 1000 Hz value',
+    check('Take A (room 0.62 … 0.40 s) is valid through the production analysis, with an average that differs from its 1000 Hz value',
       resA.valid && Math.abs(avgA - r1k) > 0.005, `bands ${resA.bands.map(b => `${b.f}: ${b.rt60}`).join(', ')}; 1000 Hz ${r1k} s; average ${avgA.toFixed(4)} s`);
 
     /* ===== 8. the band tables keep every band ===== */
@@ -192,13 +197,13 @@
       out.resultsHero = (resultsHtml.match(/class="hero-v"[^>]*>([\d.]+)<small>/) || [])[1];
       out.resultsSummary = (resultsHtml.match(/class="avg-v">([\d.]+)<small>/) || [])[1];
       out.processing = (W.get('processing').view(ctx()).body.match(/class="avg-v">([\d.]+)<small>/) || [])[1];
-      out.measure = (W.get('measure').view(ctx()).body.match(/class="stat-v">([\d.]+)<small>s<\/small><\/span><span class="muted">Average RT60 across measured bands/) || [])[1];
+      out.measure = (W.get('measure').view(ctx()).body.match(/class="stat-v">([\d.]+)<small>s<\/small><\/span><span class="muted">Average RT60, 500–2000 Hz/) || [])[1];
       S.state.current = 'results'; AM.app.render();
       const fv = document.querySelector('#app [data-watch="fact-measured"] .fact-v');
       out.topBar = fv ? fv.textContent.trim() : null;
       out.home = pairs(ui.projectCard(D.summary(pp)), '.pc-stat', '.pc-k', '.pc-v')['Avg RT60'] || null;
-      out.history = (textOf(ui.historyList([D.summary(pp)], pp.id)).match(/RT60 ([\d.]+ s) average of (\d) bands/) || [])[1];
-      out.assessment = (textOf(W.get('assessment').view(ctx()).body).match(/average RT60 across the measured bands is ([\d.]+ s)/) || [])[1];
+      out.history = (textOf(ui.historyList([D.summary(pp)], pp.id)).match(/RT60 ([\d.]+ s) average 500–2000 Hz/) || [])[1];
+      out.assessment = (textOf(W.get('assessment').view(ctx()).body).match(/average RT60 at 500–2000 Hz is ([\d.]+ s)/) || [])[1];
       out.explain = (AM.services.explain.forStage('results', pp).paragraphs[0].match(/the room takes ([\d.]+ s)/) || [])[1];
       const M = AM.report.model(pp);
       const shown = [out.resultsHero, out.resultsSummary, out.processing, out.measure].every(x => x === v2) && [out.topBar, out.home, out.history, out.assessment, out.explain].every(x => x === vs);
@@ -212,9 +217,9 @@
       try { pdf = await AM.report.build(pp); } catch (e) { err = e.message; }
       const raw = pdf && pdf.bytes ? Array.from(pdf.bytes, c => String.fromCharCode(c)).join('') : '';
       const txt = [...raw.matchAll(/<([0-9A-F]+)> Tj/g)].map(m => m[1].replace(/../g, h => String.fromCharCode(parseInt(h, 16)))).join(' ').replace(/\s+/g, ' ');
-      const row = `${vs}, mean of ${avg.n} of ${avg.total} bands`, said = AM.report.summary(M).join(' ');
-      check(`7 ${label}: the PDF shows the same average: the key figure "AVERAGE RT60 · MEASURED BANDS" ${vs} (mean of ${avg.n} of ${avg.total} octave bands), the row "Average RT60 ${row}" in the measurement section, and every band value; the comparison boxes say 1000 Hz; the summary assesses at 1000 Hz`,
-        raw.length > 1000 && txt.includes('AVERAGE RT60 · MEASURED BANDS') && txt.includes(`Mean of ${avg.n} of ${avg.total} octave bands`) && txt.includes('Average RT60') && txt.includes(row)
+      const row = `${vs} (500`, said = AM.report.summary(M).join(' ');
+      check(`7 ${label}: the PDF shows the same average: the key figure "AVERAGE RT60 · 500–2000 Hz" ${vs} (mean of 500, 1000, 2000 Hz), the row "Average RT60 ${vs} (500–2000 Hz)" in the measurement section, and every band value; the comparison boxes say 1000 Hz; the summary assesses at 1000 Hz`,
+        raw.length > 1000 && txt.includes('AVERAGE RT60') && txt.includes('Mean of 500, 1000, 2000 Hz') && txt.includes('Average RT60') && txt.includes(row)
           && res.bands.filter(b => b.rt60 != null).every(b => txt.includes(fmt.s(b.rt60))) && txt.includes(`MEASURED VS TARGET · ${res.referenceBand} Hz`)
           && said.includes(`At ${res.referenceBand} Hz the room measures ${fmt.s(res.headline.rt60)}`) && ![...(pdf.doc.unsupported || [])].length,
         pdf ? `${pdf.bytes.length} bytes, ${pdf.doc.pages.length} page(s); unsupported characters: ${[...(pdf.doc.unsupported || [])].join(' ') || 'none'}` : err);
@@ -225,7 +230,7 @@
       const fin = pairs(W.get('final').view(ctx()).body, '.kv-r', 'dt', 'dd');
       const vs = fmt.s(avgA);
       check('7 Final Result (no treatment needed at 1000 Hz): the project record shows the average and, separately, the value at 1000 Hz',
-        fin['Average RT60'] === `${vs}across ${RA.of(resA).n} of 6 measured bands` && fin['Measured at 1000 Hz'] === `${fmt.s(r1k)} · ${resA.headline.method}`,
+        fin['Average RT60'] === `${vs}500–2000 Hz` && fin['Measured at 1000 Hz'] === `${fmt.s(r1k)} · ${resA.headline.method}`,
         `Average RT60: ${fin['Average RT60']} · Measured at 1000 Hz: ${fin['Measured at 1000 Hz']}`);
       // Final Result promises a one-page report when no treatment is needed. The average takes no extra line: with up to
       // three short notes the report stayed on one page before the average was added, and must still.
@@ -271,7 +276,7 @@
       await until(() => p.processing.result && p.processing.result.recordingId === takeB.id, 'take B to become current');
       await sleep(150);
       const resB = p.processing.result, avgB = D.averageRT60(p), hist = p.processing.history || [];
-      const mixed = manual({ bands: resA.bands.concat(resB.bands) });
+      const mixed = (manual(resA) + manual(resB)) / 2; // what averaging over both takes would give
       check('10 Take B (a more reverberant room) processed by the Processing step becomes current; take A is kept as superseded',
         resB.valid && hist.length === 1 && hist[0].recordingId === takeA.id && hist[0].status === 'superseded', `current ${resB.recordingId}; superseded ${hist.map(h => h.recordingId).join(', ')}`);
       check('10 The average is take B\'s alone: from take B\'s bands, longer than take A\'s, and not a mix of both takes',

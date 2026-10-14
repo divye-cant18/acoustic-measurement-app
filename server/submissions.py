@@ -50,6 +50,12 @@ def columns(spec):
     return [c['column'] for c in spec['columns']]
 
 
+def optional_columns(spec):
+    """Columns added after the table was first created ("optional": true). A table made with an older schema.sql may not
+    have them yet: the row is then stored without them (app_server.py) until schema.sql is run again."""
+    return [c['column'] for c in spec['columns'] if c.get('optional')]
+
+
 def utc_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
 
@@ -73,8 +79,13 @@ class Invalid(Exception):
         self.errors = errors
 
 
+LONE_SURROGATE = re.compile(r'[\ud800-\udfff]')
+
+
 def clean_text(value, multiline=False):
-    s = unicodedata.normalize('NFC', value)
+    # JSON can carry half of a character (an unpaired UTF-16 surrogate, e.g. an emoji cut in two). It cannot be stored,
+    # or even encoded as UTF-8, so it is removed; json.loads has already joined every complete pair into one character.
+    s = unicodedata.normalize('NFC', LONE_SURROGATE.sub('', value))
     s = s.replace('\r\n', '\n').replace('\r', '\n')
     s = CONTROL.sub('', s)
     if not multiline:
@@ -181,18 +192,23 @@ def validate(spec, body):
     return sid, form, project
 
 
-def content_hash(sid, form, project):
-    """What one submission ID stands for: the same ID with different content is refused."""
-    blob = json.dumps({'id': sid, 'form': form, 'project': project}, sort_keys=True, ensure_ascii=False)
+def content_hash(sid, form, project, spec=None):
+    """What one submission ID stands for: the same ID with different content is refused. Optional project values that
+    are absent (None) are left out, so a submission first sent before such a value existed hashes as it did then."""
+    optional = {f['key'] for f in (spec or {}).get('project', []) if f.get('optional')}
+    project = {k: v for k, v in project.items() if not (k in optional and v is None)}
+    blob =json.dumps({'id': sid, 'form': form, 'project': project}, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(blob.encode('utf-8')).hexdigest()
 
 
-def build_record(spec, sid, form, project, timestamp):
+def build_record(spec, sid, form, project, timestamp, skip=()):
     """One database row {column: value}, from the allowlisted values only. A value the project does not have, or an
     optional answer left empty, is null. Text is stored as typed: the REST API sends it as a JSON value, never as SQL,
-    and a database never evaluates it as a formula."""
+    and a database never evaluates it as a formula. Columns in `skip` (optional ones the table lacks) are left out."""
     record = {}
     for c in spec['columns']:
+        if c['column'] in skip:
+            continue
         kind, _, key = c['source'].partition('.')
         if kind == 'form':
             v = form.get(key, '')

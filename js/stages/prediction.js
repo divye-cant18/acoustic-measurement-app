@@ -23,7 +23,7 @@
         body: `${ui.rtScale({ target: a.target, measured: a.rt })}
           <p class="lead">No treatment was selected, so there is nothing to predict. The room measures ${fmt.s(a.rt)} at ${fmt.hz(a.f)}, ${a.status === 'within' ? 'inside the target range' : 'below the target range'}.</p>` }) };
     }
-    if (!pred || !a) return { body: ui.note('Prediction needs a valid measurement and a selected product configuration.', 'warn') };
+    if (!pred || !a) return { body: ui.note(esc(AM.derive.planProblem(p) || 'Prediction needs a valid measurement and a selected product configuration.'), 'warn') };
     const h = pred.headline, t = a.target, items = pred.items, multi = items.length > 1;
     const st = AM.acoustics.classify(h.predicted, t);
     // The "reach the target" suggestion is for the product being edited, given what the others add.
@@ -82,7 +82,7 @@
 
     const rows = pred.bands.map(b => {
       const s = AM.acoustics.classify(b.predicted, t);
-      return `<tr class="${b.f === h.f ? 'is-ref' : ''}"><td>${fmt.hz(b.f)}</td><td class="r">${fmt.s(b.measured)}</td><td class="r">${fmt.s(b.predicted)}</td><td class="r">${b.predicted != null ? fmt.signedS(b.predicted - b.measured) : '—'}</td><td>${b.measured == null ? '<span class="small muted">Not measured reliably</span>' : b.missingAlpha ? '<span class="small muted">No tested α at this band</span>' : ui.predStatus(s)}</td></tr>`;
+      return `<tr class="${b.f === h.f ? 'is-ref' : ''}"><td>${fmt.hz(b.f)}</td><td class="r">${fmt.s(b.measured)}</td><td class="r">${fmt.s(b.predicted)}</td><td class="r">${b.predicted != null ? fmt.signedS(b.predicted - b.measured) : '—'}</td><td>${b.measured == null ? '<span class="small muted">Not measured reliably</span>' : b.missingAlpha ? '<span class="small muted">No tested α at this band</span>' : b.coveredExceedsMeasured ? '<span class="small muted">Finish values do not fit the room here</span>' : ui.predStatus(s)}</td></tr>`;
     }).join('');
     const bands = ui.card({
       title: 'Band by band',

@@ -78,19 +78,25 @@
 
   /* ---------- what is sent ---------- */
   function projectSummary(p) {
-    const D = AM.derive, g = D.geometry(p), t = D.target(p), m = D.measured(p), pred = D.prediction(p);
-    const r = (x, d) => (isNum(x) ? Number(x.toFixed(d)) : null); // as the app shows them
+    const D = AM.derive, g = D.geometry(p), t = D.target(p), m = D.measured(p), pred = D.prediction(p), avg = D.averageRT60(p);
+    // A number as the app shows it, or null when the project has none, or one outside the range the database accepts
+    // (every one of them may be null): a value the server would refuse must not keep the whole form from being sent.
+    const PF = Object.fromEntries(SPEC.project.map(f => [f.key, f]));
+    const r = (key, x) => { const f = PF[key]; if (!isNum(x)) return null; const v = Number(x.toFixed(f.decimals)); return v >= f.min && v <= f.max ? v : null; };
+    // Text cut to whole characters: cutting inside an emoji would send half of it, which no database can store.
+    const cut = (x, n) => Array.from(String(x || '')).slice(0, n).join('');
     const treatmentStatus = p.followUpOf ? 'Measured after treatment' : pred ? 'Predicted' : D.noTreatment(p) ? 'No treatment'
       : D.treatmentItems(p).length ? 'Planned' : 'Not selected';
     return {
       projectId: p.id,
-      projectName: String(p.room.name || '').slice(0, 120),
-      roomType: String(p.room.type || '').slice(0, 80),
-      roomVolumeM3: g ? r(g.V, 1) : null,
-      targetRt60: t ? r(t.preferred, 2) : null,
-      measuredRt60: m ? r(m.headline.rt60, 2) : null,
-      measurementMethod: m && m.headline.method ? String(m.headline.method).slice(0, 40) : '',
-      predictedRt60: pred ? r(pred.headline.predicted, 2) : null,
+      projectName: cut(p.room.name, PF.projectName.maxLength),
+      roomType: cut(p.room.type, PF.roomType.maxLength),
+      roomVolumeM3: g ? r('roomVolumeM3', g.V) : null,
+      targetRt60: t ? r('targetRt60', t.preferred) : null,
+      measuredRt60: m ? r('measuredRt60', m.headline.rt60) : null,               // at 1000 Hz
+      measuredRt60Avg: avg && avg.available ? r('measuredRt60Avg', avg.value) : null, // 500–2000 Hz, the headline
+      measurementMethod: m && m.headline.method ? cut(m.headline.method, PF.measurementMethod.maxLength) : '',
+      predictedRt60: pred ? r('predictedRt60', pred.headline.predicted) : null,
       treatmentStatus,
     };
   }
@@ -188,7 +194,9 @@
       dr.attempted = true;
       dr.errors = {};
       Object.entries(d.errors || {}).forEach(([k, v]) => { if (F[k]) dr.errors[k] = v; });
-      problems.set(p.id, { kind: 'failed', message: Object.keys(dr.errors).length ? 'Some details need correcting. Nothing was recorded.' : 'The form could not be sent as it is. Nothing was recorded.' });
+      // Errors outside the form (the project summary, the request itself) are named, so the reason is not hidden.
+      const other = Object.entries(d.errors || {}).filter(([k]) => !F[k]).map(([k, v]) => `${k.replace(/^project\./, '')}: ${v}`);
+      problems.set(p.id, { kind: 'failed', message: Object.keys(dr.errors).length ? 'Some details need correcting. Nothing was recorded.' : `The form could not be sent as it is${other.length ? ` (${other.join('; ')})` : ''}. Nothing was recorded.` });
     } else {
       const reason = d.reason || ([404, 405, 501].includes(res.http) ? 'no_server' : 'failed');
       if (reason === 'conflict') forget(p); else saveRecord(p, Object.assign({}, rec, { status: 'failed' }));

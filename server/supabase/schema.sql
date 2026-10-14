@@ -25,12 +25,17 @@ create table if not exists public.report_submissions (
   room_type            text check (char_length(room_type) <= 80),
   room_volume_m3       numeric(12, 1),
   target_rt60_s        numeric(6, 2),
-  measured_rt60_s      numeric(6, 2),
+  measured_rt60_s      numeric(6, 2),                          -- RT60 at 1000 Hz, the band the target is compared at
+  measured_rt60_avg_s  numeric(6, 2),                          -- average RT60 of 500, 1000 and 2000 Hz (the app's headline)
   measurement_method   text check (char_length(measurement_method) <= 40),
   predicted_rt60_s     numeric(6, 2),
   treatment_status     text not null check (treatment_status in ('No treatment', 'Not selected', 'Planned', 'Predicted', 'Measured after treatment')),
   app_version          text check (char_length(app_version) <= 40)
 );
+
+-- Columns added after the table was first created. Running this whole file again adds them to an existing table and
+-- changes nothing else (every statement here can be repeated).
+alter table public.report_submissions add column if not exists measured_rt60_avg_s numeric(6, 2);
 
 comment on table public.report_submissions is 'Report form submissions from the Acoustic Measurement app. Written only by the app server (secret key).';
 

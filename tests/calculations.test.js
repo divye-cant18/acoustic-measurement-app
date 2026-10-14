@@ -118,6 +118,24 @@
     const t = { min: 0.6, max: 0.7 };
     check('Classification at 0.01 s: 0.704 s is within 0.60–0.70 s, 0.706 s is above, 0.594 s is below', A.classify(0.704, t) === 'within' && A.classify(0.706, t) === 'above' && A.classify(0.594, t) === 'below',
       `${A.classify(0.704, t)}, ${A.classify(0.706, t)}, ${A.classify(0.594, t)}`);
+    // The verdict follows the digits shown (toFixed(2)), never x·100 rounded on its own: 0.245 s is shown "0.24 s", so it
+    // is within 0.20–0.24 s; 0.105 s is shown "0.10 s", so it is below 0.11–0.20 s (x·100 rounding read 25 and 11).
+    const w = A.classify(0.245, { min: 0.2, max: 0.24 }), b = A.classify(0.105, { min: 0.11, max: 0.2 });
+    check('Classification uses the digits shown: 0.245 s ("0.24 s") is within 0.20–0.24 s; 0.105 s ("0.10 s") is below 0.11–0.20 s', w === 'within' && b === 'below' && (0.245).toFixed(2) === '0.24' && (0.105).toFixed(2) === '0.10', `${w}, ${b}`);
+  }
+
+  // ---------- a covered finish whose library absorption exceeds what the room measured ----------
+  {
+    // 6 × 5 × 3 m: V = 90 m³; measured 1.00 s at 125 Hz → A0 = 0.161 × 90 ÷ 1.00 = 14.49 m². The product (α 0.05) covers
+    // walls whose library α is 0.29. 50 m²: covered absorption 50 × 0.29 = 14.5 m² > 14.49 m² → no prediction (before
+    // the fix: A = 14.49 + 50 × (0.05 − 0.29) = 2.49 m² → 5.82 s; 66 m²: −1.35 m² → −10.7 s). 40 m²: 11.6 m² ≤ 14.49 m²,
+    // A = 14.49 − 40 × 0.24 = 4.89 m² → 0.161 × 90 ÷ 4.89 = 2.9632 s, kept (the model's own answer).
+    const run = area => P.predict({ V: 90, bands: [{ f: 125, rt60: 1.0 }, { f: 1000, rt60: 0.6 }], treatment: { items: [{ areaM2: area, alpha: { 125: 0.05, 1000: 0.9 }, coveredAlpha: { 125: 0.29, 1000: 0.05 } }] }, referenceBand: 1000 });
+    const r50 = run(50), r66 = run(66), r40 = run(40), b = r => r.bands.find(x => x.f === 125);
+    check('Prediction: where the covered finishes would absorb more than the room measured (50 or 66 m² at 0.29 against 14.49 m²), no value (never 5.82 s or −10.7 s), and a check says why',
+      b(r50).predicted === null && b(r66).predicted === null && b(r50).coveredExceedsMeasured && r50.checks.some(c => c.id === 'covered-exceeds-measured' && /125 Hz/.test(c.text)) && r50.headline.predicted > 0,
+      `50 m²: ${b(r50).predicted}; 66 m²: ${b(r66).predicted}; ${(r50.checks.find(c => c.id === 'covered-exceeds-measured') || {}).text}`);
+    check('Prediction: 40 m² (11.6 m² covered of 14.49 m²) keeps its value, 0.161 × 90 ÷ 4.89 = 2.9632 s', close(b(r40).predicted, 2.963190, 1e-5) && !b(r40).coveredExceedsMeasured, b(r40).predicted);
   }
 
   const el = document.getElementById('out');

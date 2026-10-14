@@ -79,6 +79,8 @@ class App:
     def __init__(self):
         self.spec = subs.load_spec()
         self.columns = subs.columns(self.spec)
+        self.optional = subs.optional_columns(self.spec)
+        self.missing_optional = set()  # optional columns the table turned out not to have (schema.sql not run again yet)
         data_dir = os.environ.get('REPORT_DATA_DIR') or os.path.join(SERVER_DIR, 'data')
         self.ledger = subs.Ledger(os.path.join(data_dir, 'submissions-ledger.json'))
         self.receipts = subs.Receipts(os.path.join(data_dir, 'receipt-secret.key'), os.environ.get('REPORT_RECEIPT_SECRET') or None)
@@ -122,7 +124,7 @@ class App:
             sid, form, project = subs.validate(self.spec, body)
         except subs.Invalid as e:
             return 400, {'status': 'invalid', 'errors': e.errors}
-        digest = subs.content_hash(sid, form, project)
+        digest = subs.content_hash(sid, form, project, self.spec)
         with self.ledger.id_lock(sid):
             rec = self.ledger.get(sid)
             if rec and rec.get('hash') != digest:
@@ -139,9 +141,9 @@ class App:
                     if row:
                         return self.stored(sid, row, pid, digest, 'found on retry')
                 timestamp = subs.utc_now()
-                record = subs.build_record(self.spec, sid, form, project, timestamp)
+                record = subs.build_record(self.spec, sid, form, project, timestamp, skip=self.missing_optional)
                 self.ledger.put(sid, status='pending', hash=digest, projectId=pid, submittedAt=timestamp)
-                outcome = self.db.insert(record)
+                outcome = self.insert(record)
                 if outcome == 'exists':  # the database already holds this submission ID: nothing new was written
                     row = self.db.find(sid)
                     if not row:
@@ -159,6 +161,20 @@ class App:
             rec = self.ledger.put(sid, status='success')
             log(f'Submission {sid}: stored in {self.db.table}')
             return self.success(rec, sid)
+
+    def insert(self, record):
+        """Insert the row. When the table lacks an optional column (made before that column existed), the database refuses
+        the whole row and writes nothing: the row is then stored without the optional columns the table lacks, and they
+        are left out of later rows until the server restarts. Run server/supabase/schema.sql again to add them."""
+        try:
+            return self.db.insert(record)
+        except DbDefinite as e:
+            absent = [c for c in self.optional if c in record and e.code == 'db_request' and f"'{c}'" in str(e)]
+            if not absent:
+                raise
+            self.missing_optional.update(absent)
+            log(f'The table has no column {", ".join(absent)}: stored without it. Run server/supabase/schema.sql again to add it.')
+            return self.db.insert({k: v for k, v in record.items() if k not in self.missing_optional})
 
     def stored(self, sid, row, pid, digest, how):
         """A row for this submission ID is already in the table: success if it is this project's, without a new row."""
@@ -219,6 +235,17 @@ class Handler(BaseHTTPRequestHandler):
         host = self.headers.get('Host', '')
         return {f'http://{host}', f'https://{host}'}
 
+    # The names this server answers to. Another name in the Host header is how a web page re-pointed at this computer
+    # (DNS rebinding) would reach it, and since same_origins() is built from Host, it would pass the Origin check too.
+    allowed_hosts = None  # set in main: this computer's own names, the address it listens on, REPORT_ALLOWED_HOSTS
+
+    def host_allowed(self):
+        if self.allowed_hosts is None:
+            return True
+        host = (self.headers.get('Host') or '').strip().lower()
+        name = host[1:host.index(']')] if host.startswith('[') and ']' in host else host.rsplit(':', 1)[0] if host.count(':') == 1 else host
+        return name in self.allowed_hosts
+
     def _send(self, status, body, ctype='application/json; charset=utf-8', extra=None):
         data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode('utf-8')
         self.send_response(status)
@@ -240,20 +267,30 @@ class Handler(BaseHTTPRequestHandler):
         self.do_GET()
 
     def do_GET(self):
+        if not self.host_allowed():
+            return self._send(421, b'Unknown host', 'text/plain; charset=utf-8')
         path = self.request_path()
         if path == '/api/health':
             a = self.app
             return self._send(200, {'ok': True, 'store': 'configured' if a.db else 'not_configured'})
         if path.startswith('/api/'):
             return self._send(404, {'error': 'not_found'})
-        rel = posixpath.normpath(urllib.parse.unquote(path)).lstrip('/')
+        decoded = urllib.parse.unquote(path)
+        # Only forward slashes separate parts. A backslash is a separator on Windows that the checks below would not see
+        # (/js/x\..\..\server\.env), a colon can name a drive or a stream, and a NUL byte ends a path early.
+        if any(c in decoded for c in '\\:\x00'):
+            return self._send(404, b'Not found', 'text/plain; charset=utf-8')
+        rel = posixpath.normpath(decoded).lstrip('/')
         if rel in ('', '.'):
             rel = 'index.html'
         parts = rel.split('/')
         if parts[0] not in SERVED or any(p in ('..', '') or p.startswith('.') for p in parts):
             return self._send(404, b'Not found', 'text/plain; charset=utf-8')
+        # The resolved file must lie inside the served entry it was asked under (index.html itself, or css/, js/, …),
+        # not merely somewhere under the project folder.
+        top = os.path.realpath(os.path.join(ROOT, parts[0]))
         full = os.path.realpath(os.path.join(ROOT, *parts))
-        if not full.startswith(os.path.realpath(ROOT) + os.sep) or not os.path.isfile(full):
+        if not (full == top or full.startswith(top + os.sep)) or not os.path.isfile(full):
             return self._send(404, b'Not found', 'text/plain; charset=utf-8')
         with open(full, 'rb') as f:
             data = f.read()
@@ -271,6 +308,8 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             return self._send(413, {'status': 'failed', 'reason': 'size', 'message': 'The request is empty or too large.'})
         raw = self.rfile.read(length)  # read before any answer: an unread body can reset the connection on Windows
+        if not self.host_allowed():
+            return self._send(421, {'status': 'failed', 'reason': 'host', 'message': 'Requests to this address are not accepted.'})
         if path not in ('/api/report-submissions', '/api/report-submissions/verify'):
             return self._send(404, {'error': 'not_found'})
         origin = self.headers.get('Origin')
@@ -286,11 +325,21 @@ class Handler(BaseHTTPRequestHandler):
         if path.endswith('/verify'):
             if not self.app.verify_limit.allow(client):
                 return self._send(429, {'verified': False, 'reason': 'rate_limited'}, extra={'Retry-After': '60'})
-            status, out = self.app.verify(body)
+            try:
+                status, out = self.app.verify(body)
+            except Exception as e:  # noqa: BLE001 - an answer, never a dropped connection
+                log(f'Verify: unexpected error: {type(e).__name__}: {e}')
+                status, out = 500, {'verified': False, 'reason': 'unavailable'}
         else:
             if not self.app.submit_limit.allow(client):
                 return self._send(429, {'status': 'failed', 'reason': 'rate_limited', 'message': 'Too many submissions from this device. Wait a minute and try again.'}, extra={'Retry-After': '60'})
-            status, out = self.app.submit(body)
+            try:
+                status, out = self.app.submit(body)
+            except Exception as e:  # noqa: BLE001
+                # The write may or may not have happened: "uncertain", so the browser retries with the same ID, and the
+                # retry looks in the table before inserting (the ledger keeps the attempt as pending).
+                log(f'Submission: unexpected error: {type(e).__name__}: {e}')
+                status, out = 500, {'status': 'uncertain', 'reason': 'server_error', 'message': 'The report server could not finish the request.'}
         self._send(status, out)
 
 
@@ -302,9 +351,10 @@ def check(app):
         return 2
     db = app.db
     print(f'Supabase project: {db.url}   table: {db.table}   key: {"secret (sb_secret_)" if db.key.startswith("sb_secret_") else "legacy service_role"}')
+    required = [c for c in app.columns if c not in app.optional]
     try:
-        db.check_columns(app.columns)
-        print(f'Secret key and table: OK (all {len(app.columns)} columns found)')
+        db.check_columns(required)
+        print(f'Secret key and table: OK (all {len(required)} required columns found)')
     except DbError as e:
         print(f'FAILED: {e}')
         if e.code == 'db_auth':
@@ -314,6 +364,12 @@ def check(app):
         elif e.code == 'db_request':
             print('A column is missing or different: compare the table with server/supabase/schema.sql.')
         return 1
+    for c in app.optional:
+        try:
+            db.check_columns([c])
+            print(f'Optional column {c}: OK')
+        except DbError as e:
+            print(f'Optional column {c}: MISSING ({e.code}). Rows are stored without it. Run server/supabase/schema.sql again to add it.')
     public = os.environ.get('SUPABASE_PUBLISHABLE_KEY', '').strip()
     if public:
         try:
@@ -325,6 +381,16 @@ def check(app):
     else:
         print('Public key check skipped (set SUPABASE_PUBLISHABLE_KEY to confirm the browser key cannot read the table).')
     return 0
+
+
+def allowed_hosts(bound):
+    """Host names the local server answers to: this computer's own, the address it was told to listen on (unless that is
+    every address), and REPORT_ALLOWED_HOSTS (comma-separated), e.g. a LAN address when listening on 0.0.0.0."""
+    names = {'localhost', '127.0.0.1', '::1'}
+    if bound and bound not in ('0.0.0.0', '::'):
+        names.add(bound.lower())
+    names |= {h.strip().lower() for h in os.environ.get('REPORT_ALLOWED_HOSTS', '').split(',') if h.strip()}
+    return names
 
 
 def main():
@@ -341,6 +407,7 @@ def main():
     host = args.host or os.environ.get('REPORT_SERVER_HOST') or '127.0.0.1'
     port = args.port or int(os.environ.get('REPORT_SERVER_PORT') or 8780)
     Handler.app = app
+    Handler.allowed_hosts = allowed_hosts(host)
     httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.daemon_threads = True
     log(f'Acoustic Measurement app: http://{"localhost" if host in ("127.0.0.1", "0.0.0.0") else host}:{port}/')

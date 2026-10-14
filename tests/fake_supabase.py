@@ -37,8 +37,9 @@ def pg_time(value):
 
 
 class FakeSupabase:
-    def __init__(self, table=True):
-        self.columns = submissions.columns(submissions.load_spec())
+    def __init__(self, table=True, without=()):
+        # without: columns the table does not have (a table made with an older schema.sql)
+        self.columns = [c for c in submissions.columns(submissions.load_spec()) if c not in without]
         self.rows = [] if table else None
         self.lock = threading.Lock()
         self.faults = []
@@ -146,6 +147,23 @@ class FakeSupabase:
                         return self.pg_error(500, 'XX000', 'internal error')
                     if mode == 'wrong_answer':
                         return self.reply(201, [dict(row, submission_id='00000000-0000-0000-0000-000000000000')])
+                    if mode == 'not_json_after_write':  # a 2xx answer that is not JSON (a proxy's page)
+                        data = b'<html>OK</html>'
+                        self.send_response(201)
+                        self.send_header('Content-Type', 'text/html')
+                        self.send_header('Content-Length', str(len(data)))
+                        self.end_headers()
+                        self.wfile.write(data)
+                        return
+                    if mode == 'incomplete_after_write':  # the answer breaks off: fewer bytes than announced
+                        self.send_response(201)
+                        self.send_header('Content-Type', 'application/json')
+                        self.send_header('Content-Length', '500')
+                        self.end_headers()
+                        self.wfile.write(b'[{"submission_id"')
+                        self.close_connection = True
+                        self.connection.close()
+                        return
                     if 'return=representation' not in prefer:
                         self.send_response(201)
                         self.send_header('Content-Length', '0')

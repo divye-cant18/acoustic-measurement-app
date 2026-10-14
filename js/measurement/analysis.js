@@ -22,9 +22,12 @@
         response are told apart (below); least-squares fits of the room's decay over −5…−25 dB (T20), −5…−35 dB (T30)
         and −5…−65 dB (T60, for information only), each with r².
    Whether T30 or T20 is used, and whether a band is reliable, is decided in services/processing.js.
-   A take is rejected before any band is analysed when the recording is incomplete, silent, clipped, too quiet, has no
-   clear arrival, or has a gap (a run of identical samples, which is how a browser fills audio it failed to deliver)
-   during the test signal: a gap there spreads through the whole impulse response.
+   A take is rejected before any band is analysed when the recording is corrupted (samples that are not numbers),
+   incomplete, silent, clipped, too quiet in the RT60 bands, has no clear arrival, has a gap (a run of identical
+   samples, which is how a browser fills audio it failed to deliver) during the test signal, has a click (the jump a lost
+   or repeated block of samples leaves, read above the sweep: aboveSweep), or is not continuous (samples dropped or
+   inserted shift the sweep's own timing: sweepTiming): each spreads through the whole impulse response. aboveSweep also
+   reads the input level while the sweep played against before it (processing.js decides on it).
    After the bands, the take's own background (before the sweep, and after every decay has ended) is read band by band
    for recurring sounds (CRITERIA.take.disturbance); processing.js counts them as noise.
 
@@ -96,12 +99,55 @@
       // fills the missing render blocks (128 samples: 1.3–2.9 ms) with zeros; a real microphone signal never holds one
       // value for 1 ms. Checked from the end of the fade-in (plus margin) to just before the sweep ends.
       gapSeconds: 0.001, gapSkip: [0.35, 0.02],
+      // Continuity of the recording while the sweep played (sweepTiming). Samples a browser or device drops without
+      // filling them in (or inserts) shift everything recorded after them, which no level check sees; the sweep's own
+      // timing does: each half-octave of it, matched against the recording, must arrive at the same moment. Steps
+      // between neighbouring half-octaves of intact synthetic takes stay ≤ 2.2 ms (speaker high-pass group delay and a
+      // desk reflection included); losing 256 or 480 samples gives 4.2–15 ms (tests/audio-config.html). Below `fromHz`
+      // the sweep's own timing is too coarse to check, and segments whose match stands less than `minClarityDb` above
+      // its surroundings are skipped.
+      // The check needs the device's direct sound to time each segment by: the largest headDb of any band at least
+      // minHeadDb (one device: 13–25 dB; a microphone far from the source: below 1 dB; a weak direct sound: about 3 dB).
+      timing: { fromHz: 200, ratio: Math.SQRT2, searchMs: 15, minClarityDb: 8, maxStepMs: 3.5, minHeadDb: 6 },
+      // Clicks (aboveSweep). Where samples are dropped or repeated, the waveform jumps: a click, whose energy reaches
+      // every frequency. The sweep, its reverberation and its harmonics stay at and below a few multiples of the
+      // frequency playing at that moment, so above it, between its harmonics, the recording holds only the background:
+      // a click stands out there, whatever its timing does. It is also what does the damage: deconvolved, a click
+      // spreads into the decay of every band swept before it (one 128-sample loss read the 500–2000 Hz average up to
+      // 76 % long in tests/audio-config.html), while a loss at a point where the waveform happens to join smoothly is
+      // harmless and shows no click. Frames of `frame` s (Blackman–Harris), a quarter frame apart; per frame, the level
+      // in the bins from the sweep's frequency + `margin` bins up to min(maxHz, nyquistShare·fs), leaving out ±margin bins
+      // around its 2nd to `harmonics`-th harmonic, against the same bins before the sweep. A click: a frame `db` above
+      // both the median of the frames before it and that of the frames after it (`context` s each side, the closest
+      // `guard` frames left out; the edge of a sound that stops abruptly stands above one side only), that falls back by
+      // `sharpDb` within the next frames and rose by as much from the ones before (a sound in the room rings on), with
+      // fewer than `events` other such peaks within ±context (a buzzing speaker clicks every period), standing
+      // `scatterK` times the frames' own scatter above them where they scatter (a heavily distorted sweep), and
+      // broadband: the
+      // median bin `broadDb` above its surroundings too (a harmonic folded back from above half the sample rate by a
+      // digital limiter is a tone: it raises a few bins only). A playback chain that clips fills the band with the
+      // sweep's harmonics (its median bin `coarseDb` or more above the background while the sweep plays; −1.6 dB when
+      // clean, 3–15 dB in the synthetic clipping and buzz models): smaller losses then pass unseen, and processing.js
+      // says so. Read from `from` s into the
+      // sweep (clicks before it reach no band's decay) to `tail` s after it. Intact synthetic takes stay below 4 dB;
+      // the losses that changed a result gave 9–58 dB.
+      clicks: { frame: 0.005, from: 0.45, tail: 1.0, minHz: 1000, maxHz: 20000, margin: 4.5, harmonics: 6, minBins: 8, context: 0.04, guard: 4, db: 8, scatterK: 5, sharpDb: 6, broadDb: 3, events: 3, coarseDb: 3 },
+      // The input level while the sweep played (aboveSweep, the bins above its 7.5th harmonic, from `from` s): the
+      // background there against the same bins before the sweep. Nothing in the room makes the background quieter
+      // while the test signal plays; automatic gain or a suppressor turning the input down does. From failDb lower the
+      // take is not valid, from warnDb it costs confidence (processing.js), as levelChange.
+      sweepGain: { above: 7.5, from: 0.3, warnDb: 3, failDb: 6, minFrames: 100 },
       // Sounds during the take (voices, knocks, movement), read band by band from the take's own background: the second
       // before the sweep and the recording after every decay has reached the noise. Frames of max(frame, 8 / bandwidth)
       // seconds; a sound is a run of frames at least `db` above the median. Recurring (at least `events` of them), they
       // were most likely also there while the sweep played, where they cannot be seen, and in the decay they act as a
       // noise floor that comes and goes: processing.js then requires the usable decay above them.
       disturbance: { frame: 0.05, db: 10, events: 2, maxSeconds: 2 },
+      // The background after the decay against before the sweep, the same in every band (processing.js): a change of
+      // input gain during the take (automatic gain the browser does not report: +9…+12 dB in tests/mobile-study.html,
+      // ±0.3 dB without it) or a background that changed. From failDb the take is not valid (the noise check's own
+      // change criterion, 6 dB); from warnDb it costs confidence. Needs at least minBands bands to tell.
+      levelChange: { warnDb: 3, failDb: 6, minBands: 4 },
     },
     decay: {
       // Usable decay of the room's reverberation (from its start, below the direct sound, to the noise floor):
@@ -129,6 +175,17 @@
 
   const r1 = x => Math.round(x * 10) / 10, r3 = x => Math.round(x * 1000) / 1000;
   const peakDb = a => 20 * Math.log10(Math.max(a, 1e-10));
+  // Units: every level here is dBFS = 10·log10(mean square), relative to a digital full scale of ±1 (a full-scale sine
+  // reads −3.0 dBFS). Never sound pressure: no microphone is calibrated.
+
+  // The first sample that is not a finite number, or −1. A browser that delivers corrupted audio can produce NaN or
+  // Infinity; no level, threshold or fit computed from such a buffer means anything.
+  function firstNonFinite(x) { for (let i = 0; i < x.length; i++) if (!Number.isFinite(x[i])) return i; return -1; }
+  // The bands RT60 is measured in (125–4000 Hz, edge to edge), as one filter: no DC offset, no rumble below them and
+  // no hiss above them, so a level read through it is what those bands hear.
+  const inBandSections = fs => { const b = CRITERIA.noise.band, q = DSP.butterworthQ(6); return [...q.map(Q => DSP.rbj('highpass', b[0], fs, Q)), ...q.map(Q => DSP.rbj('lowpass', b[1], fs, Q))]; };
+  // DC offset (mean) of x[a…b), dBFS of its magnitude: diagnostic only.
+  function dcDbfs(x, a, b) { let s = 0; for (let i = a; i < b; i++) s += x[i]; return r1(peakDb(Math.abs(s / Math.max(1, b - a)))); }
   const pct = (sorted, p) => { const i = (sorted.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i); return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo); };
   const energyMeanDb = dbs => DSP.dbOf(dbs.reduce((s, d) => s + Math.pow(10, d / 10), 0) / dbs.length);
 
@@ -171,23 +228,35 @@
     };
   }
 
+  /* Status: valid (suitable) · warning (suitable, with a caution and what to do) · unassessed (the input is digitally
+     silent, so the room cannot be assessed: a muted microphone and a device that silences a quiet room look the same;
+     the take checks its own recording) · invalid (measure again: too short, corrupted or overloaded).
+     The verdict is read in the RT60 bands (inBand). The unfiltered figures have the DC offset removed first: a
+     microphone's constant offset is not sound, but left in, it made a quiet room read up to 44 dB "louder"
+     (tests/audio-config.html). dcDbfs reports that offset. */
   function analyseNoise(x, fs) {
     const c = CRITERIA.noise, a0 = Math.round(c.settle * fs), fr = Math.round(c.frame * fs);
     const res = {
-      status: 'invalid', reasons: [], warnings: [], sampleRate: fs, seconds: 0,
+      status: 'invalid', reasons: [], warnings: [], sampleRate: fs, seconds: 0, unit: 'dBFS',
       leqDbfs: null, l10: null, l50: null, l90: null, spreadDb: null, jumpDb: null, driftDb: null, inBand: null,
-      peakDbfs: null, clippedSamples: 0, frames: [], bands: [],
+      peakDbfs: null, dcDbfs: null, clippedSamples: 0, frames: [], bands: [],
     };
     const nFrames = Math.floor((x.length - a0) / fr);
-    if (nFrames < 8) { res.reasons.push('The recording was too short to measure the background noise.'); return res; }
+    if (nFrames < 8) { res.reasons.push('The recording was too short to measure the background noise. Measure it again.'); return res; }
     const end = a0 + nFrames * fr;
     res.seconds = r1((end - a0) / fs);
+    const bad = firstNonFinite(x.subarray(0, end));
+    if (bad >= 0) { res.reasons.push(`The recording is corrupted: the browser delivered invalid samples (not numbers) ${r1(bad / fs)} s into it, so no level can be read from it. Measure the background again; if it happens again, reload the page.`); return res; }
 
-    let peak = 0, clipped = 0;
-    for (let i = a0; i < end; i++) { const a = Math.abs(x[i]); if (a > peak) peak = a; if (a >= CRITERIA.take.clipLevel) clipped++; }
-    // Broadband: the level as the input receives it. In the bands: what the RT60 bands hear, which the verdict uses.
-    const bb = frameStats(x, a0, fr, nFrames);
-    const q = DSP.butterworthQ(6), inBand = DSP.filter(x.subarray(0, end), [...q.map(Q => DSP.rbj('highpass', c.band[0], fs, Q)), ...q.map(Q => DSP.rbj('lowpass', c.band[1], fs, Q))]);
+    let peak = 0, clipped = 0, sum = 0;
+    for (let i = a0; i < end; i++) { const a = Math.abs(x[i]); if (a > peak) peak = a; if (a >= CRITERIA.take.clipLevel) clipped++; sum += x[i]; }
+    const mean = sum / (end - a0), xb = new Float32Array(end);
+    for (let i = a0; i < end; i++) xb[i] = x[i] - mean;
+    res.dcDbfs = r1(peakDb(Math.abs(mean)));
+    // Unfiltered (DC removed): the level as the input receives it. In the bands: what the RT60 bands hear, which the
+    // verdict uses.
+    const bb = frameStats(xb, a0, fr, nFrames);
+    const inBand = DSP.filter(x.subarray(0, end), inBandSections(fs));
     const ib = frameStats(inBand, a0, fr, nFrames);
     const leq = bb.leq;
 
@@ -207,16 +276,22 @@
       inBand: { leqDbfs: r1(ib.leq), l50: r1(ib.l50), spreadDb: r1(ib.spread), driftDb: r1(ib.drift), soundDb: loudest ? loudest.soundDb : null, soundBand: loudest ? loudest.f : null, frames: ib.frames.map(r1) },
     });
 
-    // Verdict. invalid = measure the background again (the input itself is not usable); warning = suitable, with a
-    // caution about what may cost a take; valid = suitable. Whether a take's decay is reliable is decided on the take.
+    // Verdict. A digital level is all this check has: it cannot tell the room's noise from the microphone's own noise,
+    // or from what the device's processing (gain, noise suppression) did to either. Each caution says so and gives the
+    // next step; none blames the room for what the input chain may have done.
     const R = res.reasons, Wn = res.warnings, I = res.inBand;
-    if (peak < 1e-6 || leq < c.silenceDbfs) R.push('No sound reached the input. The microphone may be muted, switched off, covered or not connected.');
-    if (clipped) R.push(`The input was overloaded (${clipped} samples at full scale). Move away from the noise source or lower the input gain in the system settings.`);
+    if (clipped) R.push(`The input was overloaded (${clipped} samples at full scale). Move away from the noise source or lower the input level in the system's sound settings, then measure the background again.`);
+    const silent = peak < 1e-6 || I.leqDbfs < c.silenceDbfs;
+    if (!R.length && silent) {
+      res.status = 'unassessed';
+      Wn.push(`Unable to assess the background: no signal reached the input in the RT60 bands (${I.leqDbfs <= -199 ? 'digital silence' : `${I.leqDbfs} dBFS, below ${c.silenceDbfs} dBFS`}). A working microphone always picks up some noise, so either the microphone is muted, switched off or covered, or the device's noise suppression silences a quiet room. Speak near the device: if the level meter does not move, check the microphone and its settings. If it does, you can measure; the take checks its own recording.`);
+      return res;
+    }
     if (!R.length) {
       if (I.soundDb > c.soundDb) Wn.push(`Sounds such as voices, knocks or a door rose ${Math.round(I.soundDb)} dB above the background (${I.soundBand} Hz band). Keep the room quiet during the take; if they happen again, the take will show it and say so.`);
-      if (Math.abs(I.driftDb) > c.changeDb) Wn.push(`The background ${I.driftDb > 0 ? 'rose' : 'fell'} by ${Math.abs(I.driftDb).toFixed(1)} dB during the check, for example ventilation switching ${I.driftDb > 0 ? 'on' : 'off'}. Measure while it stays one way.`);
-      // The usual level (median), so passing sounds already named above do not also make the background "loud".
-      if (I.l50 > c.highDbfs) Wn.push(`The background is loud for this input (usually ${I.l50} dBFS in the measured bands). The test signal may not rise far enough above it: turn the volume up, or reduce the noise.`);
+      if (Math.abs(I.driftDb) > c.changeDb) Wn.push(`The level in the RT60 bands ${I.driftDb > 0 ? 'rose' : 'fell'} by ${Math.abs(I.driftDb).toFixed(1)} dB during the check. This can be the room (for example ventilation switching ${I.driftDb > 0 ? 'on' : 'off'}) or the device adjusting its input level by itself (automatic gain). Measure again while it stays steady. If it keeps changing in a quiet room, switch off microphone enhancements or automatic gain in the system's sound settings.`);
+      // The usual level (median), so passing sounds already named above do not also make the background "high".
+      if (I.l50 > c.highDbfs) Wn.push(`The input's background is high: usually ${I.l50} dBFS in the RT60 bands (relative to the input's full scale, not sound pressure). This can be room noise, or a quiet room raised by a high input level or automatic gain; this check cannot tell which. It leaves less room for the test signal above it. If the room is noisy, reduce the noise; if it is quiet, lower the input level or switch off microphone enhancements in the system's sound settings, then measure the background again. The take checks its own signal and decay either way.`);
     }
     res.status = R.length ? 'invalid' : Wn.length ? 'warning' : 'valid';
     return res;
@@ -431,18 +506,185 @@
     return { h2Db: rel(2), h3Db: rel(3), floorDb: r1(10 * Math.log10(Math.max(noise, 1e-30) / main)) };
   }
 
+  // Magnitude of the analytic signal (Hilbert envelope) of x.
+  function envelope(x) {
+    const n = DSP.nextPow2(x.length), re = new Float64Array(n), im = new Float64Array(n);
+    re.set(x); DSP.fft(re, im);
+    for (let k = 1; k < n / 2; k++) { re[k] *= 2; im[k] *= 2; }
+    for (let k = n / 2 + 1; k < n; k++) { re[k] = 0; im[k] = 0; }
+    DSP.fft(re, im, true);
+    const e = new Float64Array(x.length);
+    for (let i = 0; i < x.length; i++) e[i] = Math.hypot(re[i], im[i]);
+    return e;
+  }
+
+  /* When each half-octave of the sweep arrived, relative to the take's arrival (CRITERIA.take.timing). Each segment of
+     the played sweep, tapered, is matched against the recording around where it should be; the peak of the match's
+     envelope gives its arrival (ms; parabolic interpolation). A continuous recording gives the same arrival for every
+     segment, apart from the speaker's own delay at low frequencies and early reflections; samples dropped or inserted
+     shift every segment after them, so the largest step between neighbouring segments shows them. Returns
+     { segments, maxStepMs, stepMs, atHz, driftMs } (drift: last segment against the first, clock difference between
+     playback and recording), or null when fewer than three segments can be read. */
+  function sweepTiming(rec, plan, sweep, arrival) {
+    const c = CRITERIA.take.timing, fs = plan.fs, T = plan.seconds, R = Math.log(plan.f2 / plan.f1);
+    const tOf = f => T * Math.log(f / plan.f1) / R, S = Math.round(c.searchMs / 1000 * fs);
+    const edges = [];
+    for (let f = c.fromHz; f < plan.f2 * 0.999; f *= c.ratio) edges.push(f);
+    edges.push(plan.f2);
+    const seg = [];
+    for (let k = 0; k + 1 < edges.length; k++) {
+      const i0 = Math.round(tOf(edges[k]) * fs), i1 = Math.min(sweep.signal.length, Math.round(tOf(edges[k + 1]) * fs)), m = i1 - i0;
+      const a = arrival + i0 - S, b = arrival + i1 + S;
+      if (m < 0.05 * fs || a < 0 || b > rec.length) continue;
+      const ref = new Float64Array(m), tp = Math.round(0.1 * m); // time-reversed, so convolution is correlation
+      for (let i = 0; i < m; i++) {
+        const w = i < tp ? 0.5 - 0.5 * Math.cos(Math.PI * i / tp) : i >= m - tp ? 0.5 - 0.5 * Math.cos(Math.PI * (m - 1 - i) / tp) : 1;
+        ref[m - 1 - i] = sweep.signal[i0 + i] * w;
+      }
+      const cc = DSP.convolve(rec.subarray(a, b), ref), xc = new Float64Array(2 * S + 1);
+      for (let lag = -S; lag <= S; lag++) xc[lag + S] = cc[S + lag + m - 1];
+      const env = envelope(xc);
+      let j = 0;
+      for (let i = 1; i < env.length; i++) if (env[i] > env[j]) j = i;
+      const y0 = env[Math.max(0, j - 1)], y1 = env[j], y2 = env[Math.min(env.length - 1, j + 1)], den = y0 - 2 * y1 + y2;
+      const sorted = Array.from(env).sort((p, q) => p - q), floor = sorted[sorted.length >> 1];
+      const clarity = 20 * Math.log10(y1 / Math.max(floor, 1e-30));
+      if (clarity >= c.minClarityDb) seg.push({ f: Math.round(edges[k]), ms: (j - S + (den ? (y0 - y2) / (2 * den) : 0)) / fs * 1000 });
+    }
+    if (seg.length < 3) return null;
+    let k = 1;
+    for (let i = 2; i < seg.length; i++) if (Math.abs(seg[i].ms - seg[i - 1].ms) > Math.abs(seg[k].ms - seg[k - 1].ms)) k = i;
+    const step = seg[k].ms - seg[k - 1].ms;
+    return { segments: seg.length, maxStepMs: r3(Math.abs(step)), stepMs: r3(step), atHz: seg[k].f, driftMs: r3(seg[seg.length - 1].ms - seg[0].ms) };
+  }
+
+  /* The recording above the sweep (CRITERIA.take.clicks, sweepGain): clicks, and the input level while the sweep played.
+     Returns { clicks: { checked, fromSec, toSec, share, worstDb, atSec, found: [{ atSec, db }] }, gain: { checked,
+     changeDb, frames } }. Times are seconds into the sweep. A frame is only read where the background before the sweep
+     shows in its bins (a recording that holds nothing up there, such as a band-limited Bluetooth microphone, cannot
+     be checked this way: checked false). */
+  function aboveSweep(rec, plan, arrival) {
+    const c = CRITERIA.take.clicks, g = CRITERIA.take.sweepGain, fs = plan.fs, T = plan.seconds, R = Math.log(plan.f2 / plan.f1);
+    const N = DSP.nextPow2(Math.round(c.frame * fs)), hop = N / 4, half = N / 2, binHz = fs / N;
+    const kTop = Math.floor(Math.min(c.maxHz, CRITERIA.take.nyquistShare * fs) / binHz), margin = c.margin * binHz;
+    const w = new Float64Array(N);
+    let U = 0;
+    for (let i = 0; i < N; i++) { const x = 2 * Math.PI * i / N; w[i] = 0.35875 - 0.48829 * Math.cos(x) + 0.14128 * Math.cos(2 * x) - 0.01168 * Math.cos(3 * x); U += w[i] * w[i]; }
+    const re = new Float64Array(N), im = new Float64Array(N);
+    const spectrum = s => {
+      for (let i = 0; i < N; i++) { const k = s + i; re[i] = (k >= 0 && k < rec.length ? rec[k] : 0) * w[i]; im[i] = 0; }
+      DSP.fft(re, im);
+      const p = new Float64Array(kTop + 1);
+      for (let q = 0; q <= kTop; q++) p[q] = (re[q] * re[q] + im[q] * im[q]) / U;
+      return p;
+    };
+    // The background before the sweep, per bin: the median over its frames (a sound in it does not count), ÷ ln 2,
+    // the median of a noise bin's power being ln 2 times its mean.
+    const p0 = Math.round(0.1 * fs), p1 = Math.round((plan.preRoll - 0.05) * fs), pre = [];
+    for (let s = p0; s + N <= p1; s += hop) pre.push(spectrum(s));
+    const bg = new Float64Array(kTop + 1);
+    if (pre.length >= 8) for (let q = 0; q <= kTop; q++) { const v = pre.map(p => p[q]).sort((a, b) => a - b); bg[q] = v[v.length >> 1] / Math.LN2; }
+    const floor = 1e-15; // a bin's background below this (−150 dB) shows nothing to compare with
+
+    const frames = [];
+    for (let s = arrival + Math.round(c.from * fs) - half; s + N <= rec.length && s + half <= arrival + (T + c.tail) * fs; s += hop) {
+      const tau = (s + half - arrival) / fs, f = plan.f1 * Math.exp(Math.min(T, Math.max(0, tau)) * R / T), p = spectrum(s);
+      // Harmonics where they land: one above half the sample rate folds back below it when the distortion happened
+      // before the converter (a digital limiter in the playback chain).
+      const fold = v => { const m = v % fs; return m > fs / 2 ? fs - m : m; }, harm = [];
+      for (let h = 2; h <= c.harmonics; h++) harm.push(fold(h * f));
+      let e = 0, x = 0, n = 0, eg = 0, xg = 0, ng = 0;
+      const ratio = [];
+      for (let q = Math.ceil(Math.max(f + margin, c.minHz) / binHz); q <= kTop; q++) {
+        const fq = q * binHz;
+        let near = false;
+        for (const hf of harm) if (Math.abs(fq - hf) < margin) { near = true; break; }
+        if (fq >= g.above * f && !near) { eg += p[q]; xg += bg[q]; ng++; }
+        if (!near) { e += p[q]; x += bg[q]; n++; if (bg[q] > floor) ratio.push(p[q] / bg[q]); }
+      }
+      // r: the band's level against its background; m: the median bin's. A click raises every bin, so both; a tone
+      // passing through the band (a harmonic of the sweep folded back from above half the sample rate, by a limiter
+      // that clips digitally) raises a few bins only, so r and not m.
+      frames.push({ tau, r: n >= c.minBins && x / n > floor ? DSP.dbOf(e / x) : null, m: ratio.length >= c.minBins ? DSP.dbOf(pct(ratio.sort((a, b) => a - b), 0.5)) : null,
+        g: tau >= g.from && ng >= c.minBins && xg / ng > floor ? DSP.dbOf(eg / xg) : null });
+    }
+
+    // Clicks: each frame against the frames before it and the frames after it, each side's median, whichever is
+    // higher. A click stands above both; the edge of a sound that stops (or starts) abruptly stands above one side only.
+    const M = Math.round(c.context * fs / hop), G = c.guard, ex = frames.map(() => null), exM = frames.map(() => null);
+    const sideMedian = (i, dir, key) => {
+      const v = [];
+      for (let k = G + 1; k <= M; k++) { const j = i + dir * k; if (j >= 0 && j < frames.length && frames[j][key] != null) v.push(frames[j][key]); }
+      return v.length >= (M - G) / 2 ? pct(v.sort((a, b) => a - b), 0.5) : null;
+    };
+    const above = (i, key) => {
+      const lo = sideMedian(i, -1, key), hi = sideMedian(i, 1, key);
+      return lo == null && hi == null ? null : frames[i][key] - Math.max(lo == null ? -Infinity : lo, hi == null ? -Infinity : hi);
+    };
+    // How much the frames around one scatter (MAD × 1.4826, a standard deviation that ignores outliers). Above a sweep
+    // that the playback chain distorts heavily (a digital clipper), the band holds a restless mix of harmonics whose
+    // frames vary by several dB; a click there has to stand out of that scatter, not just 8 dB above its median.
+    const scatter = frames.map(() => 0);
+    for (let i = 0; i < frames.length; i++) {
+      if (frames[i].r == null) continue;
+      ex[i] = above(i, 'r');
+      if (frames[i].m != null) exM[i] = above(i, 'm');
+      const v = [];
+      for (let j = Math.max(0, i - M); j <= Math.min(frames.length - 1, i + M); j++) if (Math.abs(j - i) > G && frames[j].r != null) v.push(frames[j].r);
+      if (v.length >= M) { const med = pct(v.sort((a, b) => a - b), 0.5); scatter[i] = 1.4826 * pct(v.map(x => Math.abs(x - med)).sort((a, b) => a - b), 0.5); }
+    }
+    const peaks = [];
+    for (let i = 0; i < ex.length; i++) {
+      if (ex[i] == null || ex[i] < Math.max(c.db, c.scatterK * scatter[i])) continue;
+      let top = true;
+      for (let j = Math.max(0, i - G); j <= Math.min(ex.length - 1, i + G); j++) if (j !== i && ex[j] != null && (ex[j] > ex[i] || (ex[j] === ex[i] && j < i))) { top = false; break; }
+      if (top) peaks.push(i);
+    }
+    // Sharp: just outside the click's own frames, the level is back down (and was down before it).
+    const side = (i, dir) => { const v = []; for (let k = G + 1; k <= G + 6; k++) { const j = i + dir * k; if (j >= 0 && j < ex.length && ex[j] != null) v.push(ex[j]); } return v.length ? pct(v.sort((a, b) => a - b), 0.5) : null; };
+    const found = peaks.filter(i => {
+      const before = side(i, -1), after = side(i, 1);
+      const sharp = (before == null || ex[i] - before >= c.sharpDb) && (after == null || ex[i] - after >= c.sharpDb);
+      // Broadband: the median bin rose too (within the click's own frames), not just a few bins.
+      let broad = -Infinity;
+      for (let j = Math.max(0, i - 2); j <= Math.min(ex.length - 1, i + 2); j++) if (exM[j] != null) broad = Math.max(broad, exM[j]);
+      return sharp && broad >= c.broadDb && peaks.filter(j => j !== i && Math.abs(j - i) <= M).length < c.events;
+    }).map(i => ({ atSec: r3(frames[i].tau), db: r1(ex[i]) }));
+    const read = frames.filter(fr => fr.r != null), worst = ex.reduce((m, v) => (v != null && v > m ? v : m), -Infinity);
+    const gains = frames.map(fr => fr.g).filter(v => v != null).sort((a, b) => a - b);
+    return {
+      clicks: {
+        checked: read.length > 0, fromSec: read.length ? r3(read[0].tau) : null, toSec: read.length ? r3(read[read.length - 1].tau) : null,
+        share: frames.length ? r3(read.length / frames.length) : 0, worstDb: isFinite(worst) ? r1(worst) : null,
+        // The level a click had to reach over most of the sweep: `db` where the band holds only background, more where
+        // a distorted sweep makes it scatter.
+        thresholdDb: read.length ? r1(pct(frames.map((fr, i) => (fr.r == null ? null : Math.max(c.db, c.scatterK * scatter[i]))).filter(v => v != null).sort((a, b) => a - b), 0.5)) : null,
+        // How full of the sweep's own harmonics the band is while it plays: the median bin against the background, over
+        // the sweep. About −1.6 dB (a noise bin's median) when it holds only background; well above when a distorted
+        // playback chain fills it with harmonics, which hide smaller clicks (processing.js warns from coarseDb).
+        fillDb: (v => (v.length ? r1(pct(v.sort((a, b) => a - b), 0.5)) : null))(frames.filter(fr => fr.m != null && fr.tau <= T).map(fr => fr.m)),
+        atSec: found.length ? found.reduce((a, b) => (b.db > a.db ? b : a)).atSec : null, found,
+      },
+      gain: gains.length >= g.minFrames ? { checked: true, changeDb: r1(pct(gains, 0.5)), frames: gains.length } : { checked: false, changeDb: null, frames: gains.length },
+    };
+  }
+
   /* ---------- one take ---------- */
   function analyseTake(rec, plan, sweep) {
     const fs = plan.fs, C = CRITERIA.take, n = rec.length;
-    const out = { status: 'failed', reason: null, levels: {}, waveform: waveform(rec), latencySec: null, arrivalClarityDb: null, onsetSec: null, irSeconds: null, gap: null, distortion: null, bands: [] };
+    const out = { status: 'failed', reason: null, levels: {}, waveform: waveform(rec), latencySec: null, arrivalClarityDb: null, onsetSec: null, irSeconds: null, gap: null, clicks: null, sweepGain: null, timing: null, distortion: null, bands: [] };
     const fail = reason => Object.assign(out, { status: 'failed', reason });
 
+    const bad = firstNonFinite(rec);
+    if (bad >= 0) return fail(`The recording is corrupted: the browser delivered invalid samples (not numbers) ${r1(bad / fs)} s into the take, so nothing can be calculated from it. Measure again; if it happens again, reload the page.`);
     let peak = 0, clipped = 0;
     for (let i = 0; i < n; i++) { const a = Math.abs(rec[i]); if (a > peak) peak = a; if (a >= C.clipLevel) clipped++; }
     const sw0 = Math.round(plan.preRoll * fs), sw1 = Math.min(n, Math.round((plan.preRoll + plan.seconds) * fs));
-    const pre = DSP.dbOf(DSP.meanSquare(rec, Math.round(0.1 * fs), Math.round((plan.preRoll - 0.05) * fs)));
-    const during = DSP.dbOf(DSP.meanSquare(rec, sw0, sw1));
-    out.levels = { peakDbfs: r1(peakDb(peak)), preRollDbfs: r1(pre), sweepDbfs: r1(during), snrDb: r1(during - pre), clippedSamples: clipped };
+    // Background before the sweep and the sweep's level, both in the RT60 bands (inBand: true): a DC offset or rumble
+    // below them is not background those bands hear, and counted, it made a quiet room look too loud for the sweep.
+    const ib = DSP.filter(rec, inBandSections(fs)), p0 = Math.round(0.1 * fs), p1 = Math.round((plan.preRoll - 0.05) * fs);
+    const pre = DSP.dbOf(DSP.meanSquare(ib, p0, p1)), during = DSP.dbOf(DSP.meanSquare(ib, sw0, sw1));
+    out.levels = { peakDbfs: r1(peakDb(peak)), preRollDbfs: r1(pre), sweepDbfs: r1(during), snrDb: r1(during - pre), clippedSamples: clipped, dcDbfs: dcDbfs(rec, p0, p1), inBand: true };
 
     if (n < Math.round(plan.total * fs * 0.98)) return fail('The recording is incomplete: the microphone stopped delivering audio during the take.');
     if (peak < 1e-6) return fail('No sound reached the microphone during the take. It may be muted, switched off or covered.');
@@ -480,6 +722,17 @@
       }
     }
 
+    // Clicks, and the input level while the sweep played, read above the sweep (aboveSweep). processing.js decides
+    // on the level; a click ends the take here.
+    {
+      const above = aboveSweep(rec, plan, arrival);
+      out.clicks = above.clicks; out.sweepGain = above.gain;
+      if (above.clicks.found.length) {
+        const k = above.clicks.found.reduce((a, b) => (b.db > a.db ? b : a)), more = above.clicks.found.length - 1;
+        return fail(`The recording has a click ${k.atSec.toFixed(2)} s into the test signal (${Math.round(k.db)} dB above the background around it${more ? `, and ${more} more` : ''}). Most likely the device or browser dropped or repeated a moment of audio; a tap on the device or a sharp sound nearby does the same. A click spreads into the decay of every band, so this take is not used. Close other apps and tabs, keep the device still, the screen on and the app in front, and measure again.`);
+      }
+    }
+
     // Onset: within 10 ms before the peak, the first point whose energy is within 20 dB of the peak (0.5 ms smoothing).
     const sm = Math.max(1, Math.round(0.0005 * fs)), floor = pk * pk * Math.pow(10, -C.onsetDb / 10);
     let onset = pi;
@@ -506,6 +759,22 @@
     out.irSeconds = r3(valid / fs);
 
     out.bands = BANDS.map(f => analyseBand(seg, onset - start, f, plan));
+
+    // Samples dropped or inserted while the sweep played (CRITERIA.take.timing). Each segment's arrival is the device's
+    // direct sound, so the check needs one: with the speaker and microphone on one device it stands well above the
+    // room's decay (headDb); without it (a microphone far from the source) the matches peak on random reflections and
+    // the check is not made.
+    // The largest headDb of any band: samples dropped mid-sweep smear the direct sound in the bands swept around them
+    // (their headDb falls towards 0), so a median would let a dropout switch off its own check; the bands swept away
+    // from it keep their direct sound.
+    const heads = out.bands.map(b => b.headDb).filter(v => v != null), head = heads.length ? Math.max(...heads) : null;
+    if (head != null && head >= C.timing.minHeadDb) {
+      const t = out.timing = Object.assign({ checked: true }, sweepTiming(rec, plan, sweep, arrival) || { checked: false, reason: 'too few parts of the sweep stood clear of the background' });
+      if (t.checked && t.maxStepMs > C.timing.maxStepMs) {
+        return fail(`The recording is not continuous: from about ${t.atHz} Hz on, the test signal arrived ${Math.abs(t.stepMs).toFixed(1)} ms ${t.stepMs < 0 ? 'earlier' : 'later'} than before it. The device or browser ${t.stepMs < 0 ? 'dropped' : 'repeated'} audio samples during the take, which distorts the result even though no gap shows in the recording. Close other apps and tabs, keep the screen on and the app in front, and measure again.`);
+      }
+    } else out.timing = { checked: false, reason: 'no dominant direct sound to time the sweep by' };
+
     backgroundSounds(rec, out.bands, fs, [
       [Math.round(0.1 * fs), Math.round((plan.preRoll - 0.05) * fs)],
       [arrival + L + Math.round((Math.max(0, ...out.bands.map(b => b.crossSec || 0)) + 0.1) * fs), n - Math.round(0.02 * fs)],
@@ -544,5 +813,5 @@
     });
   }
 
-  AM.analysis = { CRITERIA, analyseNoise, sweepPlan, makeSweep, levelRange, sweepLevel, levelGain, playbackSignal, analyseTake, analyseBand, lundeby, regress, waveform };
+  AM.analysis = { CRITERIA, analyseNoise, sweepPlan, makeSweep, levelRange, sweepLevel, levelGain, playbackSignal, analyseTake, analyseBand, sweepTiming, aboveSweep, lundeby, regress, waveform };
 })(window.AM);

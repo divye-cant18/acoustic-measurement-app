@@ -10,8 +10,20 @@
    One microphone session is shared. Holders acquire and release it; the stream is stopped and the AudioContext closed
    when the last holder releases it, so the browser's microphone indicator goes off as soon as nothing is listening.
 
+   What is asked for (REQUESTED), what the browser says it can do (getCapabilities, getSupportedConstraints) and what it
+   reports it applied (getSettings) are kept apart; a setting the browser does not report stays unknown.
+
+   The sound output: where the browser can route this AudioContext to a chosen output (AudioContext.setSinkId: Chrome
+   and Edge on computers), the session applies the selected one and reads back which one is in use; elsewhere (Safari,
+   Firefox, every phone browser) the test signal plays through the system's current output, and the session says it
+   could not choose or confirm it (output.selectable false). A phone's loudspeaker can never be selected or verified.
+
+   A recording is aborted (code 'interrupted') when anything could change or cut the audio while it runs: the page is
+   hidden (screen locked, another app or tab in front) or left, the microphone track is muted by the system, the
+   AudioContext stops running, or the audio devices change. A partial recording is never analysed.
+
    Errors are AudioError objects with a code: denied, embedded, no-device, busy, unsupported, insecure, stopped,
-   suspended, cancelled, error. Nothing here ever substitutes a value for audio that did not arrive. */
+   suspended, interrupted, cancelled, error. Nothing here ever substitutes a value for audio that did not arrive. */
 (function (AM) {
   'use strict';
 
@@ -25,6 +37,7 @@
     insecure: 'Microphone access needs a secure page (https, or a file or server on this computer).',
     stopped: 'The microphone stopped delivering audio.',
     suspended: 'The browser has paused audio for this page. Click the button again to start it.',
+    interrupted: 'The measurement was interrupted, so nothing from it is used. Keep the screen on and this page in front, with nothing else using the microphone or the sound, and measure again.',
     cancelled: 'Cancelled.',
     error: 'The microphone could not be started.',
   };
@@ -46,6 +59,8 @@
   }
 
   const AC = () => window.AudioContext || window.webkitAudioContext;
+  // Whether this browser can route an AudioContext to a chosen output and say which one it uses.
+  const canSelectOutput = () => { const C = AC(); return !!(C && C.prototype && 'setSinkId' in C.prototype); };
   function support() {
     const C = AC();
     return {
@@ -53,7 +68,19 @@
       getUserMedia: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
       audioContext: !!C,
       worklet: !!(C && typeof AudioWorkletNode !== 'undefined'),
+      outputSelection: canSelectOutput(),
     };
+  }
+
+  // What is asked of the browser for every measurement, whatever the device profile: a decay must reach the analysis as
+  // the microphone recorded it, so every kind of processing is asked to be off.
+  const REQUESTED = Object.freeze({ echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 1 } });
+  // The constraints this browser recognises at all (getSupportedConstraints), for the three processing features.
+  function supportedConstraints() {
+    try {
+      const s = navigator.mediaDevices.getSupportedConstraints();
+      return { echoCancellation: !!s.echoCancellation, noiseSuppression: !!s.noiseSuppression, autoGainControl: !!s.autoGainControl };
+    } catch (e) { return null; }
   }
 
   async function permissionState() {
@@ -69,14 +96,27 @@
     } catch (e) { return []; }
   }
 
-  // The sound output the test signal plays through (the system's default), as the browser names it. Some browsers list
-  // it once the microphone is allowed; others do not say, and then this is null.
-  async function outputLabel() {
+  // The sound output the test signal plays through, as the browser names it: the chosen one (id) where outputs can be
+  // chosen, else the system's default. Some browsers list it once the microphone is allowed; others do not say, and
+  // then this is null.
+  async function outputLabel(id) {
     try {
       const list = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audiooutput' && d.label);
-      const d = list.find(x => x.deviceId === 'default') || list[0];
+      const d = (id && id !== 'default' && list.find(x => x.deviceId === id)) || list.find(x => x.deviceId === 'default') || list[0];
       return d ? d.label.replace(/^Default\s*-\s*/i, '') : null;
     } catch (e) { return null; }
+  }
+  // The audio inputs and outputs present, as one comparable string (ids only), or null when the browser will not say.
+  async function deviceIds() {
+    try { return (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind !== 'videoinput').map(d => `${d.kind}:${d.deviceId}`).sort().join('|'); } catch (e) { return null; }
+  }
+  // Outputs that can be chosen, only where the browser can route to them (canSelectOutput); [] elsewhere.
+  async function outputs() {
+    if (!canSelectOutput()) return [];
+    try {
+      return (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audiooutput' && d.deviceId && d.deviceId !== 'communications')
+        .map((d, i) => ({ id: d.deviceId, label: (d.label || `Output ${i + 1}`).replace(/^Default\s*-\s*/i, d.deviceId === 'default' ? 'System default: ' : '') }));
+    } catch (e) { return []; }
   }
 
   // The kind of device this page runs on, from what the browser reports. Only used to word the placement advice.
@@ -147,38 +187,83 @@
 
   /* ---------- one microphone session ---------- */
   class Session {
-    constructor(deviceId) {
+    constructor(deviceId, outputId) {
       this.deviceId = deviceId || 'default';
+      this.outputId = outputId || 'default';
       this.status = 'starting';     // starting | live | suspended | muted | stopped | closed
       this.levelListeners = new Set(); this.stateListeners = new Set();
-      this.level = null; this.receivedAt = 0; this.recording = null;
+      this.level = null; this.receivedAt = 0; this.recording = null; this.listeners = [];
     }
 
     async open() {
       const s = support();
       if (!s.secure) throw err('insecure');
       if (!s.getUserMedia || !s.audioContext) throw err('unsupported');
-      const audio = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 1 } };
+      const audio = Object.assign({}, REQUESTED);
       if (this.deviceId !== 'default') audio.deviceId = { exact: this.deviceId };
       try { this.stream = await navigator.mediaDevices.getUserMedia({ audio, video: false }); } catch (e) { throw mapError(e); }
       const track = this.track = this.stream.getAudioTracks()[0];
       if (!track) { this.close(); throw err('no-device'); }
+      // Reported (what the browser says it applied), possible (what it says it could apply) and recognised at all.
       this.settings = track.getSettings ? track.getSettings() : {};
+      try { this.capabilities = track.getCapabilities ? track.getCapabilities() : null; } catch (e) { this.capabilities = null; }
+      this.supported = supportedConstraints();
       this.label = track.label || 'Microphone';
       track.addEventListener('ended', () => this.setStatus('stopped'));
-      track.addEventListener('mute', () => this.setStatus('muted'));
+      track.addEventListener('mute', () => { this.setStatus('muted'); this.interrupt('the system muted the microphone, for example for a call or another app'); });
       track.addEventListener('unmute', () => this.setStatus(this.ctx && this.ctx.state === 'running' ? 'live' : 'suspended'));
 
       const C = AC();
       this.ctx = new C({ latencyHint: 'interactive' });
       this.sampleRate = this.ctx.sampleRate;
+      // The output, where the browser can choose it; otherwise the system's current one, not confirmable from here.
+      this.output = { requested: this.outputId, selectable: canSelectOutput(), applied: null, error: null };
+      if (this.output.selectable) {
+        if (this.outputId !== 'default') { try { await this.ctx.setSinkId(this.outputId); } catch (e) { this.output.error = (e && e.message) || 'it could not be selected'; } }
+        this.output.applied = typeof this.ctx.sinkId === 'string' ? (this.ctx.sinkId || 'default') : null;
+      }
       this.source = this.ctx.createMediaStreamSource(this.stream);
       this.tap = await makeTap(this.ctx, m => this.onMessage(m));
       this.source.connect(this.tap.node);
-      this.ctx.onstatechange = () => { if (this.status !== 'stopped' && this.status !== 'closed') this.setStatus(this.ctx.state === 'running' ? 'live' : 'suspended'); };
+      this.ctx.onstatechange = () => {
+        if (this.status !== 'stopped' && this.status !== 'closed') this.setStatus(this.ctx.state === 'running' ? 'live' : 'suspended');
+        if (this.ctx.state !== 'running') this.interrupt('the browser or the system paused audio for this page');
+      };
+      // Anything that can change or cut the audio during a recording ends that recording.
+      const on = (target, type, fn) => { if (target && target.addEventListener) { target.addEventListener(type, fn); this.listeners.push(() => target.removeEventListener(type, fn)); } };
+      on(document, 'visibilitychange', () => { if (document.hidden) this.interrupt('the page was hidden: the screen locked, or another app or tab came to the front'); });
+      on(window, 'pagehide', () => this.interrupt('the page was left'));
+      // Browsers also fire devicechange when device names become visible after permission is given; only a different set
+      // of audio devices than when the recording started counts.
+      on(navigator.mediaDevices, 'devicechange', async () => {
+        const rec = this.recording, before = this.devicesAtStart;
+        if (!rec || !before) return;
+        const now = await deviceIds();
+        if (now !== null && now !== before && this.recording === rec) this.interrupt('the audio devices changed, for example headphones or Bluetooth audio connected or disconnected');
+      });
       if (this.ctx.state !== 'running') { try { await this.ctx.resume(); } catch (e) { /* needs a click: status says so */ } }
       this.setStatus(this.ctx.state === 'running' ? 'live' : 'suspended');
       return this;
+    }
+
+    interrupt(detail) { if (this.recording) this.recording.abort(new AudioError('interrupted', `${MESSAGES.interrupted} (Cause: ${detail}.)`)); }
+
+    /* The browser's own counts, where it keeps them: audio frames the microphone track captured and delivered
+       (MediaStreamTrack.stats: frames captured but not delivered were lost), and how often the output ran dry
+       (AudioContext.playbackStats: underruns). Running totals; a take compares two readings. null where the browser
+       does not have them (Safari and Firefox at the time of writing). The output's totals are refreshed about once a
+       second, so a reading meant to cover a recording is taken a second after it ends. */
+    counters() {
+      const out = { at: performance.now(), input: null, output: null };
+      try {
+        const st = this.track && this.track.stats;
+        if (st && typeof st.totalFrames === 'number' && typeof st.deliveredFrames === 'number') out.input = { total: st.totalFrames, delivered: st.deliveredFrames };
+      } catch (e) { /* not available */ }
+      try {
+        const ps = this.ctx && this.ctx.playbackStats;
+        if (ps && typeof ps.underrunEvents === 'number') out.output = { underruns: ps.underrunEvents, underrunSec: ps.underrunDuration, totalSec: ps.totalDuration };
+      } catch (e) { /* not available */ }
+      return out;
     }
 
     onMessage(m) {
@@ -228,6 +313,8 @@
         },
         abort: e => { stop(); rejectDone(e); },
       };
+      this.devicesAtStart = null;
+      deviceIds().then(ids => { if (this.recording === rec) this.devicesAtStart = ids; });
       let last = 0, lastAt = performance.now();
       timer = setInterval(() => {
         if (got !== last) { last = got; lastAt = performance.now(); }
@@ -252,6 +339,7 @@
 
     close() {
       if (this.recording) this.recording.abort(err('cancelled'));
+      this.listeners.forEach(off => off()); this.listeners = [];
       try { if (this.source) this.source.disconnect(); } catch (e) { /* ignore */ }
       if (this.stream) this.stream.getTracks().forEach(t => t.stop());
       if (this.ctx && this.ctx.state !== 'closed') this.ctx.close().catch(() => {});
@@ -264,11 +352,13 @@
   const holders = new Set();
   let shared = null, pending = null;
 
-  async function acquire(holder, deviceId = 'default') {
-    if (shared && (shared.deviceId !== (deviceId || 'default') || shared.status === 'stopped' || shared.status === 'closed') && !shared.recording) { shared.close(); shared = null; }
+  // A session for this microphone and output. A different microphone or output reopens it (never during a recording),
+  // so the configuration in use is always the one selected.
+  async function acquire(holder, deviceId = 'default', outputId = 'default') {
+    if (shared && (shared.deviceId !== (deviceId || 'default') || shared.outputId !== (outputId || 'default') || shared.status === 'stopped' || shared.status === 'closed') && !shared.recording) { shared.close(); shared = null; }
     if (!shared) {
       if (!pending) {
-        const s = new Session(deviceId);
+        const s = new Session(deviceId, outputId);
         pending = s.open().then(() => { shared = s; return s; }, e => { s.close(); throw e; }).finally(() => { pending = null; });
       }
       await pending;
@@ -282,5 +372,5 @@
   }
   const current = () => shared;
 
-  AM.audioIO = { AudioError, MESSAGES, support, permissionState, devices, outputLabel, deviceKind, acquire, release, current };
+  AM.audioIO = { AudioError, MESSAGES, REQUESTED, support, supportedConstraints, canSelectOutput, permissionState, devices, outputs, outputLabel, deviceKind, acquire, release, current };
 })(window.AM);

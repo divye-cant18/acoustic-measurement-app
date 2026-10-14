@@ -5,7 +5,7 @@
   "outputDirectory": "public",
   "functions": {
     "api/**/*.py": {
-      "excludeFiles": "{tests/**,docs/**,assets/**,css/**,public/**,README.md}"
+      "excludeFiles": "{tests/**,docs/**,assets/**,css/**,public/**,README.md,.env,.env.*,server/.env,server/.env.*,server/data/**,.git/**,.claude/**}"
     }
   },
   "headers": [

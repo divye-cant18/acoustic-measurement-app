@@ -53,9 +53,10 @@
     if (inverse) for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
   }
 
-  // Linear convolution a * b (length a + b − 1), real inputs.
+  // Linear convolution a * b (length a + b − 1), real inputs. An empty input gives an empty result.
   function convolve(a, b) {
-    const L = a.length + b.length - 1, n = nextPow2(L);
+    if (!a.length || !b.length) return new Float64Array(0);
+    const L = a.length + b.length - 1, n = Math.max(2, nextPow2(L));
     const ar = new Float64Array(n), ai = new Float64Array(n), br = new Float64Array(n), bi = new Float64Array(n);
     ar.set(a); br.set(b);
     fft(ar, ai); fft(br, bi);

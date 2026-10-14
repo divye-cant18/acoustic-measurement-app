@@ -62,18 +62,20 @@
   ui.chart = (type, spec, height) =>
     `<div class="chart" data-chart="${type}" data-spec="${esc(JSON.stringify(spec))}" style="min-height:${height}px"></div>`;
 
-  /* Average RT60 across the measured bands, as a summary under a band table: the value, the calculation with the band
-     values as stored, and the bands left out with why. avg = AM.services.rt60Average.of(result) or AM.derive.averageRT60(p). */
+  /* The headline average (500–2000 Hz) as a summary under a band table: the value and its calculation with the band
+     values as stored, or which required band has no value and why. avg = AM.services.rt60Average.of(result) or
+     AM.derive.averageRT60(p). */
   ui.averageSummary = avg => {
     const RA = AM.services.rt60Average, inc = avg.included;
     const short = r => String(r || '').split(':')[0].toLowerCase();
-    const excluded = avg.excluded.length ? avg.excluded.map(b => `${fmt.hz(b.f)} (${esc(short(b.reason))})`).join(', ') : 'none';
+    const others = avg.excluded.map(b => fmt.hz(b.f)).join(', ');
     return `<div class="avg-sum" data-watch="avg-summary">
       <div class="avg-h"><span class="label">${RA.LABEL}</span>${avg.available
-        ? `<span class="avg-v">${avg.value.toFixed(2)}<small>s</small></span><span class="small muted">mean of ${avg.n} of ${avg.total} bands</span>`
-        : `<span class="avg-v is-empty">Unavailable</span><span class="small muted">${esc(avg.reason || '')}</span>`}</div>
-      ${avg.available ? `<p class="small avg-calc">(${inc.map(b => b.rt60.toFixed(3)).join(' + ')}) ÷ ${avg.n} = ${avg.value.toFixed(3)} s · included: ${inc.map(b => fmt.hz(b.f)).join(', ')} · excluded: ${excluded}</p>` : ''}
-      <p class="small muted">${RA.METHOD} Each band's own RT60 is in the table.</p>
+        ? `<span class="avg-v">${avg.value.toFixed(2)}<small>s</small></span><span class="small muted">mean of ${RA.REQUIRED.map(f => fmt.hz(f)).join(', ')}</span>`
+        : '<span class="avg-v is-empty">Unavailable</span>'}</div>
+      ${avg.available ? `<p class="small avg-calc">(${inc.map(b => b.rt60.toFixed(3)).join(' + ')}) ÷ ${avg.n} = ${avg.value.toFixed(3)} s${others ? ` · not part of the average: ${others}` : ''}</p>`
+        : `<p class="small">${avg.missing.length && avg.missing[0].reason !== 'Take not valid' ? `Required band${avg.missing.length > 1 ? 's' : ''} without a reliable value: ${avg.missing.map(m => `${fmt.hz(m.f)} (${esc(short(m.reason))})`).join(', ')}. The reason for each is listed with the band table.` : esc(avg.reason || '')}</p>`}
+      <p class="small muted">${RA.METHOD}</p>
     </div>`;
   };
 
@@ -177,7 +179,7 @@
           <span class="hist-date">Last updated ${esc(fmt.when(s.updatedAt))}</span>
         </span>
         <span class="hist-side">
-          <span class="hist-rt">${s.average != null ? `RT60 ${fmt.s(s.average)} <span class="muted">average of ${s.averageBands} bands</span>` : '<span class="muted">Not measured yet</span>'}</span>
+          <span class="hist-rt">${s.average != null ? `RT60 ${fmt.s(s.average)} <span class="muted">average ${AM.services.rt60Average.SHORT}</span>` : s.measured != null ? '<span class="muted">Measured; no 500–2000 Hz average</span>' : '<span class="muted">Not measured yet</span>'}</span>
           <span class="hist-step${s.review ? ' is-review' : ''}">${step}</span>
           <span class="progress"><i style="width:${(s.done / s.total) * 100}%"></i></span>
         </span>

@@ -163,8 +163,8 @@ last-result.
 | Fixed ranges forcing slopes, or RT60 clipped to limits | The ranges are the ISO 3382-2 ranges and do not constrain the slope. There is no min/max clip on RT60 (only the bandwidth × RT < 4 rejection, about 6 ms at 1 kHz) | **Ruled out** |
 | Early rounding | Fits are rounded to 0.001 s (`analysis.js:322`); the display to 0.01 s | **Ruled out** (display resolution 0.01 s) |
 | Wrong or mismatched reference | Not possible in the app (the played copy is made from the same sweep object). Test A7: a mismatched, shorter or zero reference gives no value | **Ruled out** |
-| **F1. Results with a newer take not yet processed** | `stages/results.js` shows `derive.measured(p)` with its time but no notice that a newer recording exists. The take list (`derive.takeComparison`) does not include an unprocessed take. Measure says "Take recorded, not processed yet" (`measure.js:137, 176`). Test B4: Results text has no mention of it | **Confirmed bug (display)** |
-| **F2. Results and top bar after a rejected take** | By design (`stages/processing.js:111–123`, `live.js:174–177`), a take that is not valid never replaces the current measurement. The top bar (`app.js:75`) and the large Results figure keep the earlier value; only the take list lower on Results marks the newest take "Not valid" or "Not used". Tests B5 and B6 | **Confirmed gap (behaviour by design, under-signalled)** |
+| **F1. Results with a newer take not yet processed** | `stages/results.js` shows `derive.measured(p)` with its time but no notice that a newer recording exists. The take list (`derive.takeComparison`) does not include an unprocessed take. Measure says "Take recorded, not processed yet" (`measure.js:137, 176`). Test B4: Results text has no mention of it | **Fixed (2026-10-14):** Results says "A newer take, recorded …, has not been processed yet" with a Process it button; the top bar's measured value is marked as an earlier take's (`AM.derive.laterTakes`); B4 passes |
+| **F2. Results and top bar after a rejected take** | By design (`stages/processing.js:111–123`, `live.js:174–177`), a take that is not valid never replaces the current measurement. The top bar (`app.js:75`) and the large Results figure keep the earlier value; only the take list lower on Results marks the newest take "Not valid" or "Not used". Tests B5 and B6 | **Fixed (2026-10-14):** next to the value, Results says "Your latest take (…) gave no value", with its reason, and which measurement is shown; the top bar marks the value; B5 and B6 check it |
 
 ---
 
@@ -289,7 +289,7 @@ The test pages ran in the app's browser preview, served by `python -B server/app
 | Suite | How to run | Result |
 |---|---|---|
 | **New:** `tests/rt60-responsiveness.html` part A (production analysis on known rooms) | open the page; it runs on load | **18 / 18 passed** |
-| **New:** part B (the whole app, virtual device) | click "Run part B" (about 2 minutes) | **7 / 8 passed**: the B4 check for F1 fails, as expected until it is fixed |
+| **New:** part B (the whole app, virtual device) | click "Run part B" (about 2 minutes) | **7 / 8 passed** at the time of this audit (the B4 check for F1 failed until it was fixed); **8 / 8** since the fix (2026-10-14) |
 | `tests/dsp.html` | open | 62 / 62 passed |
 | `tests/validation.html` | open | RT60 validation: 71 / 71 passed |
 | `tests/calculations.html` | open | 22 / 22 passed |
@@ -324,7 +324,8 @@ validation (section 11).
 
 ## 10. Ranked fixes
 
-Not applied yet; the brief asks for findings before changes.
+Fixes 1 and 2 were applied on 2026-10-14 (see the table above); 3 to 5 remain proposals (4 is superseded by the
+500–2000 Hz average, docs/AVERAGE-RT60.md).
 
 | # | Fix | Impact | Confidence | Size | Regression test |
 |---|---|---|---|---|---|

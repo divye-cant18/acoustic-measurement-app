@@ -24,8 +24,13 @@
      from the one in force at the time by more than 6 dB. Returns the difference in dB, or null. */
   function noiseChange(p) {
     const m = measured(p), n = p && p.setup.noise, ref = m && m.meta && m.meta.noiseCheck;
-    if (!m || !n || !ref || ref.takenAt === n.takenAt || n.leqDbfs == null || ref.leqDbfs == null) return null;
-    const d = n.leqDbfs - ref.leqDbfs;
+    if (!m || !n || !ref || ref.takenAt === n.takenAt) return null;
+    // In the RT60 bands where both measurements have that level (a DC offset or rumble is no change in the room);
+    // otherwise the unfiltered levels, as measurements from before the in-band level were compared.
+    const both = ref.bandLeqDbfs != null && n.inBand && n.inBand.leqDbfs != null;
+    const now = both ? n.inBand.leqDbfs : n.leqDbfs, then = both ? ref.bandLeqDbfs : ref.leqDbfs;
+    if (now == null || then == null) return null;
+    const d = now - then;
     return Math.abs(d) > 6 ? Math.round(d * 10) / 10 : null;
   }
 
@@ -78,6 +83,9 @@
     if (empty) return `Set ${empty.mode === 'units' ? 'how many panels of' : 'the area of'} #${empty.no} ${empty.product.name}, or remove it.`;
     const gap = plan.items.find(i => i.missingBands.includes(f));
     if (gap) return `#${gap.no} ${gap.product.name}: this configuration has no usable α at ${f} Hz in the source.`;
+    // The covered finishes' library absorption does not fit the measured room at the reference band (prediction.js).
+    const raw = predictionRaw(p), clash = raw && raw.headline && raw.headline.coveredExceedsMeasured && raw.checks.find(c => c.id === 'covered-exceeds-measured');
+    if (clash) return clash.text;
     return null;
   }
 
@@ -88,10 +96,16 @@
   // counted twice), else null (the prediction then says the covered finish is not known).
   const covered = (p, item) => { const c = AM.services.surfaces.coveredBy(p.room, item.placement); return c.known ? c : null; };
 
+  const runPrediction = (p, m, g, list) => AM.services.prediction.predict({ V: g.V, S: g.total, bands: m.bands, treatment: { items: list.map(i => { const c = covered(p, i); return { areaM2: i.areaM2, alpha: i.alpha, coveredAlpha: c ? c.alpha : null }; }) }, referenceBand: m.referenceBand });
+  // The prediction as computed, even when it gives no value at the reference band (planProblem says why).
+  function predictionRaw(p) {
+    const m = measured(p), g = geometry(p), plan = treatmentPlan(p);
+    return m && g && plan.complete.length ? runPrediction(p, m, g, plan.complete) : null;
+  }
   function prediction(p) {
     const m = measured(p), g = geometry(p), plan = treatmentPlan(p);
     if (!m || !g || !plan.complete.length) return null;
-    const run = list => AM.services.prediction.predict({ V: g.V, S: g.total, bands: m.bands, treatment: { items: list.map(i => { const c = covered(p, i); return { areaM2: i.areaM2, alpha: i.alpha, coveredAlpha: c ? c.alpha : null }; }) }, referenceBand: m.referenceBand });
+    const run = list => runPrediction(p, m, g, list);
     const out = run(plan.complete);
     if (!out.headline || out.headline.predicted == null) return null;
     out.plan = plan;
@@ -157,6 +171,53 @@
     }).filter(Boolean);
   }
 
+  /* Takes newer than the current measurement that it does not include, newest kinds first: [{ kind, takenAt, reason }],
+     kind 'unprocessed' (recorded, not processed yet), 'invalid' (processed, no valid result) or 'failed' (could not be
+     analysed). The current measurement stays what Results, the top bar and the report show; these say why a newer
+     take is not it. Empty without a current measurement (the screens then say what is missing instead). */
+  function laterTakes(p) {
+    const m = measured(p), out = [];
+    if (!m) return out;
+    const att = p.processing.attempt, fail = p.measurement.failed, rec = p.measurement.recording;
+    if (rec && rec.status === 'captured' && rec.id !== m.recordingId && rec.takenAt > m.takenAt && !(att && att.recordingId === rec.id)) out.push({ kind: 'unprocessed', takenAt: rec.takenAt, reason: null });
+    if (att && att.takenAt > m.takenAt) out.push({ kind: 'invalid', takenAt: att.takenAt, reason: att.reason || null });
+    if (fail && fail.takenAt > m.takenAt) out.push({ kind: 'failed', takenAt: fail.takenAt, reason: fail.reason || null });
+    return out.sort((a, b) => (a.takenAt < b.takenAt ? 1 : a.takenAt > b.takenAt ? -1 : 0));
+  }
+
+  /* The current measurement's technical record, to send when a device measures oddly: how the browser and device were
+     configured and what each check found, band by band. No audio, and nothing that names a person, a place or a
+     device: no project or room name, no position, no microphone or output label or id. null without a measurement. */
+  function diagnostics(p) {
+    const m = measured(p);
+    if (!m) return null;
+    const meta = m.meta || {}, cfg = meta.config || {}, plan = meta.plan || {}, out = cfg.output || {}, nc = p.setup && p.setup.noise;
+    const pick = (o, keys) => (o ? Object.fromEntries(keys.filter(k => o[k] !== undefined).map(k => [k, o[k]])) : null);
+    return {
+      kind: 'acoustic-measurement-diagnostics', version: 1, app: (AM.reportForm && AM.reportForm.appVersion) || null,
+      takenAt: m.takenAt, processedAt: m.processedAt, status: m.status, valid: m.valid,
+      device: {
+        profile: cfg.profile || meta.deviceKind || null, profileChosen: cfg.profileChosen != null ? cfg.profileChosen : null, detected: cfg.detected || null,
+        browser: cfg.browser || null, sampleRate: meta.sampleRate || cfg.sampleRate || null, channelCount: cfg.channelCount != null ? cfg.channelCount : null, tap: cfg.tap || meta.tap || null,
+        processing: (cfg.processing || []).map(s => ({ feature: s.key, requested: s.requested, reported: s.reported, state: s.state, capable: s.capable })),
+        settingsReported: pick(meta.settings, ['echoCancellation', 'noiseSuppression', 'autoGainControl', 'channelCount', 'sampleRate', 'latency']),
+        supported: cfg.supported || null,
+        output: { selectable: out.selectable != null ? out.selectable : null, systemDefault: out.requested ? out.requested === 'default' : null, confirmed: out.verified != null ? out.verified : null, error: out.error ? 'the selected output could not be used' : null },
+      },
+      signal: pick(plan, ['f1', 'f2', 'seconds', 'preRoll', 'tail', 'levelDb', 'playedPeakDbfs']),
+      recording: {
+        levels: meta.levels || null, latencySec: meta.latencySec != null ? meta.latencySec : null, arrivalClarityDb: meta.arrivalClarityDb != null ? meta.arrivalClarityDb : null,
+        irSeconds: meta.irSeconds != null ? meta.irSeconds : null, distortion: meta.distortion || null,
+        timing: meta.timing || null, clicks: meta.clicks || null, inputLevelDuringSweepDb: meta.sweepGainDb != null ? meta.sweepGainDb : null,
+        backgroundChangeAfterSweepDb: meta.levelChangeDb != null ? meta.levelChangeDb : null, browserCounts: meta.integrity || null,
+      },
+      backgroundCheck: nc ? { status: nc.status, takenAt: nc.takenAt, leqDbfs: nc.leqDbfs, inBandLeqDbfs: nc.inBand ? nc.inBand.leqDbfs : null, dcDbfs: nc.dcDbfs != null ? nc.dcDbfs : null, driftDb: nc.inBand ? nc.inBand.driftDb : null } : null,
+      bands: m.bands.map(b => ({ f: b.f, rt60: b.rt60, path: b.path, t20: b.t20, t30: b.t30, decayRangeDb: b.decayRangeDb, headDb: b.headDb, xi: b.xi, curvature: b.curvature, quality: b.quality, confidence: b.confidence, reason: b.reason || null })),
+      average500to2000: (a => ({ available: a.available, value: a.available ? a.value : null, reason: a.available ? null : a.reason }))(averageRT60(p)),
+      warnings: m.warnings || [],
+    };
+  }
+
   /* One processed take in brief, for comparing takes made at different sweep levels: its level; at the reference band
      the usable decay, T20, T30, r² and quality; how many bands have a value; the distortion products. */
   function takeSummary(r) {
@@ -166,6 +227,9 @@
       t20: ref.t20 == null ? null : ref.t20, t30: ref.t30 == null ? null : ref.t30, r2: ref.r2 == null ? null : ref.r2,
       quality: ref.rt60 != null ? ref.quality : null, bandsValid: r.bands.filter(b => b.rt60 != null).length, bandsTotal: r.bands.length,
       distortion: meta.distortion || null,
+      // The 500–2000 Hz average of this take, as the headline would have shown it (null when one of its bands failed or
+      // the take was not valid). Kept with superseded takes, whose bands are not stored.
+      average: (a => (a.available ? a.value : null))(AM.services.rt60Average.of(r)),
     };
   }
 
@@ -204,5 +268,5 @@
     };
   }
 
-  AM.derive = { geometry, target, measured, headlineMeasured, averageRT60, noiseChange, treatmentItems, treatmentSelection, treatmentPlan, planProblem, prediction, predictionStarted, assessment, absorptionGap, treatmentForTarget, treatmentRequired, noTreatment, coverage, summary, takeSummary, takeComparison, coveredBy: covered };
+  AM.derive = { geometry, target, measured, headlineMeasured, averageRT60, noiseChange, treatmentItems, treatmentSelection, treatmentPlan, planProblem, prediction, predictionStarted, assessment, absorptionGap, treatmentForTarget, treatmentRequired, noTreatment, coverage, summary, takeSummary, takeComparison, coveredBy: covered, laterTakes, diagnostics };
 })(window.AM);

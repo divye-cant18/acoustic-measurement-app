@@ -8,9 +8,13 @@
    fields         the form, in order. key = what the browser sends; type: text, email, select, country, textarea,
                   consent (required checkbox), checkbox (optional, unchecked by default).
    project        the project summary sent with the form (from AM.derive, never typed), and its allowed values.
+                  measuredRt60 is the RT60 at 1000 Hz (the band the target is compared at); measuredRt60Avg the average
+                  of 500, 1000 and 2000 Hz shown as the headline, or null when one of them has no value.
+                  "optional": true marks a value added later: a request without it is accepted (as null).
    columns        the table's columns, in order: column = its name in the database (schema.sql), header = how it is
                   described, source = where the value comes from. Nothing that is not listed here is ever sent or
-                  written. "server.*" values are set by the server, not the browser.
+                  written. "server.*" values are set by the server, not the browser. "optional": true marks a column
+                  added after the table was first made: until schema.sql is run again the row is stored without it.
    appVersion     written to the app_version column by the server. Change it with each release.
 
    {brand} in a text is replaced with the brand name (AM.brand.name). */
@@ -18,7 +22,7 @@
   'use strict';
   const spec = /* FORM-SPEC-BEGIN */ {
     "specVersion": 1,
-    "appVersion": "2026.10.09",
+    "appVersion": "2026.10.14",
     "fields": [
       { "key": "fullName", "label": "Full name", "type": "text", "required": true, "minLength": 2, "maxLength": 100, "autocomplete": "name" },
       { "key": "email", "label": "Email address", "type": "email", "required": true, "maxLength": 254, "autocomplete": "email" },
@@ -41,6 +45,7 @@
       { "key": "roomVolumeM3", "type": "number", "min": 0.1, "max": 1000000, "decimals": 1, "nullable": true },
       { "key": "targetRt60", "type": "number", "min": 0.05, "max": 20, "decimals": 2, "nullable": true },
       { "key": "measuredRt60", "type": "number", "min": 0.05, "max": 20, "decimals": 2, "nullable": true },
+      { "key": "measuredRt60Avg", "type": "number", "min": 0.05, "max": 20, "decimals": 2, "nullable": true, "optional": true },
       { "key": "measurementMethod", "type": "string", "maxLength": 40, "allowEmpty": true, "pattern": "^[A-Za-z0-9 ()./-]{0,40}$" },
       { "key": "predictedRt60", "type": "number", "min": 0.05, "max": 20, "decimals": 2, "nullable": true },
       { "key": "treatmentStatus", "type": "string", "enum": ["No treatment", "Not selected", "Planned", "Predicted", "Measured after treatment"] }
@@ -63,7 +68,8 @@
       { "column": "room_type", "header": "Room type", "source": "project.roomType" },
       { "column": "room_volume_m3", "header": "Room volume (m³)", "source": "project.roomVolumeM3" },
       { "column": "target_rt60_s", "header": "Target RT60 (s)", "source": "project.targetRt60" },
-      { "column": "measured_rt60_s", "header": "Measured RT60 (s)", "source": "project.measuredRt60" },
+      { "column": "measured_rt60_s", "header": "Measured RT60 at 1000 Hz (s)", "source": "project.measuredRt60" },
+      { "column": "measured_rt60_avg_s", "header": "Average RT60 500–2000 Hz (s)", "source": "project.measuredRt60Avg", "optional": true },
       { "column": "measurement_method", "header": "Measurement method", "source": "project.measurementMethod" },
       { "column": "predicted_rt60_s", "header": "Predicted RT60 (s)", "source": "project.predictedRt60" },
       { "column": "treatment_status", "header": "Treatment status", "source": "project.treatmentStatus" },

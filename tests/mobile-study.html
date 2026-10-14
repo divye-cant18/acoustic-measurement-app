@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobile measurement study</title>
+<style>
+  body{font:13px/1.45 system-ui,sans-serif;margin:16px;color:#14191b;max-width:1200px}
+  h1{font-size:18px} h2{font-size:15px;margin:22px 0 6px} table{border-collapse:collapse;margin:6px 0 10px}
+  td,th{border:1px solid #d9dee0;padding:3px 7px;text-align:right;white-space:nowrap} th{background:#f2f4f4} td:first-child,th:first-child{text-align:left}
+  .ok{color:#16884a;font-weight:600} .bad{color:#c42e42;font-weight:600} .muted{color:#566065} code{font-size:12px}
+</style>
+</head>
+<body>
+<!-- STUDY PAGE (development only): synthetic recordings of one known room under laptop-like and phone-like conditions,
+     through the production analysis (AM.analysis.analyseTake), processing (AM.services.processing.evaluate) and the
+     average (AM.services.rt60Average). One factor at a time, five repeats each (new background noise and arrival
+     delay per take). Synthetic: it shows what the software does with each condition; it cannot show what a real phone's
+     microphone and speaker do. See docs/MOBILE-MEASUREMENT-AUDIT.md. -->
+<h1>Mobile measurement study</h1>
+<p id="status">Running…</p>
+<div id="out"></div>
+<script>window.AM = { services: {} };</script>
+<script src="../js/core/util.js"></script>
+<script src="../js/data/demo.js"></script>
+<script src="../js/measurement/dsp.js"></script>
+<script src="../js/measurement/analysis.js"></script>
+<script src="../js/services/processing.js"></script>
+<script src="../js/services/rt60-average.js"></script>
+<script src="fixtures.js"></script>
+<script src="mobile-study.test.js"></script>
+</body>
+</html>

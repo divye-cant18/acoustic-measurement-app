@@ -21,7 +21,9 @@
    the two add consistently. Each item adds ΔA = area × (α − α_covered): its own absorption less that of the finish it
    covers, which is already part of A0 (where the surfaces do not say what that is, ΔA = area × α and the row says the
    covered finish is not known, which overstates the effect by area × α_covered). RT after = 0.161·V / (A0 + ΣΔA).
-   A band without a measured value, or where any item has no tested α, gets no prediction; nothing is assumed.
+   A band without a measured value, or where any item has no tested α, gets no prediction; nothing is assumed. Nor does
+   a band where the covered finishes' absorption (library α × area) exceeds the measured A0: the subtraction would leave
+   a negative or near-zero absorption, so the library values do not fit the room there (a check says so).
 
    Assumptions, and when they are in doubt (checks):
      - a diffuse sound field: Sabine's relation holds for a modest average absorption. Above an average coefficient of
@@ -53,7 +55,13 @@
       const addedA = parts.reduce((s, x) => s + x.addedA, 0);
       const totalA = existingA + addedA;
       const meanBefore = S > 0 ? existingA / S : null, meanAfter = S > 0 ? totalA / S : null;
-      return { f: b.f, measured: b.rt60, alpha, items: parts, existingA, addedA, totalA, predicted: A.rtFromAbsorption(V, totalA), missingAlpha: false, meanAlphaBefore: meanBefore, meanAlphaAfter: meanAfter };
+      // The absorption the covered finishes take away (their library α × the area covered) is part of the measured A0,
+      // so it cannot be more than A0. If it is, their library values do not fit this room at this band, and the
+      // subtraction would leave a negative or near-zero absorption (an RT60 of minutes, or below zero): no prediction.
+      const removedA = parts.reduce((s, x) => s + (x.coveredKnown ? x.areaM2 * x.coveredAlpha : 0), 0);
+      const contradicts = removedA > existingA || !(totalA > 0);
+      return { f: b.f, measured: b.rt60, alpha, items: parts, existingA, addedA, totalA, removedA, coveredExceedsMeasured: contradicts,
+        predicted: contradicts ? null : A.rtFromAbsorption(V, totalA), missingAlpha: false, meanAlphaBefore: meanBefore, meanAlphaAfter: meanAfter };
     });
     const headline = rows.find(r => r.f === referenceBand) || null;
     return { model: 'Simplified Sabine', areaM2: area, bands: rows, headline, checks: checks(rows, headline) };
@@ -63,6 +71,9 @@
      change it. */
   function checks(rows, headline) {
     const out = [], fmtA = x => x.toFixed(2);
+    const exceeds = rows.filter(r => r.coveredExceedsMeasured);
+    if (exceeds.length) out.push({ id: 'covered-exceeds-measured', bands: exceeds.map(r => r.f),
+      text: `At ${exceeds.map(r => `${r.f} Hz`).join(', ')} the finishes the products cover would, by their library values, absorb more (${exceeds.map(r => `${r.removedA.toFixed(1)} m²`).join(', ')}) than the whole room measured (${exceeds.map(r => `${r.existingA.toFixed(1)} m²`).join(', ')}). Those values do not fit this room there, so no prediction is made at ${exceeds.length > 1 ? 'those bands' : 'that band'}. Check the room's surfaces.` });
     const impossible = rows.filter(r => r.meanAlphaBefore != null && r.meanAlphaBefore > 1);
     if (impossible.length) out.push({ id: 'absorption-exceeds-surface', bands: impossible.map(r => r.f),
       text: `The measured RT60 implies more absorption than the room has surface at ${impossible.map(r => `${r.f} Hz`).join(', ')} (equivalent absorption area larger than the total surface). Check the room's dimensions; the prediction there cannot be relied on.` });

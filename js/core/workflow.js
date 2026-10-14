@@ -81,8 +81,10 @@
   function define(id, impl) { Object.assign(byId[id], impl); }
 
   /* Data that only some of its owner's dependents use. The room's surfaces feed the predictions only: changing a wall
-     material never puts the target, the assessment or any measurement step up for review. */
-  const NARROW = { 'room.surfaces': ['treatment', 'prediction', 'final'] };
+     material never puts the target, the assessment or any measurement step up for review. The room's name is a label
+     and the furnishing a note (it does not change the target: services/target.js): correcting either puts nothing up
+     for review. */
+  const NARROW = { 'room.surfaces': ['treatment', 'prediction', 'final'], 'room.name': [], 'room.furnishing': [] };
   function affects(path) {
     const k = Object.keys(NARROW).find(x => path === x || path.startsWith(x + '.'));
     return k ? NARROW[k] : null;

@@ -24,6 +24,10 @@
     if (mic.status === 'suspended') return 'Audio is paused by the browser. Click Start microphone.';
     if (mic.status !== 'live') return mic.message || 'The microphone is not connected.';
     if (!LIVE.receiving()) return 'No audio is arriving from the microphone.';
+    // The configuration selected in Measurement Setup has to be the one in force (output applied where it can be chosen).
+    if (mic.output && mic.output.error) return `The selected sound output could not be used (${mic.output.error}). Choose another in Measurement Setup.`;
+    const problem = LIVE.configProblem(p);
+    if (problem) return problem;
     if (!p.setup.noise) return 'Measure the background noise first.';
     return null;
   }
@@ -204,7 +208,7 @@
     const cur = AM.derive.measured(p), hist = p.processing.history || [], avg = AM.derive.averageRT60(p);
     const h = cur && cur.headline;
     const body = cur
-      ? `<div class="vol"><span class="stat-v">${avg.available ? `${avg.value.toFixed(2)}<small>s</small>` : '—'}</span><span class="muted">${avg.available ? `Average RT60 across measured bands (${avg.n} of ${avg.total})` : `Average RT60 unavailable: ${esc(avg.reason || '')}`} · at ${fmt.hz(h.f)}: ${fmt.s(h.rt60)}, ${h.method}, ${h.confidence.toLowerCase()} confidence · sweep level ${ui.levelDb(cur.meta && cur.meta.plan && cur.meta.plan.levelDb)} · taken ${fmt.when(cur.takenAt)}</span></div>${hist.length ? `<p class="small muted">${hist.length} earlier measurement${hist.length > 1 ? 's' : ''} replaced (superseded).</p>` : ''}`
+      ? `<div class="vol"><span class="stat-v">${avg.available ? `${avg.value.toFixed(2)}<small>s</small>` : '—'}</span><span class="muted">${avg.available ? AM.services.rt60Average.LABEL : `No average RT60 (500–2000 Hz): ${esc(avg.reason || '')}`} · at ${fmt.hz(h.f)}: ${fmt.s(h.rt60)}, ${h.method}, ${h.confidence.toLowerCase()} confidence · sweep level ${ui.levelDb(cur.meta && cur.meta.plan && cur.meta.plan.levelDb)} · taken ${fmt.when(cur.takenAt)}</span></div>${hist.length ? `<p class="small muted">${hist.length} earlier measurement${hist.length > 1 ? 's' : ''} replaced (superseded).</p>` : ''}`
       : '<div class="vol"><span class="stat-v">—</span><span class="muted">RT60 not measured</span></div>';
     return ui.card({ title: 'Current measurement', right: cur ? ui.pill('good', 'Current', 'seal') : ui.pill('neutral', 'Not measured'), body });
   }

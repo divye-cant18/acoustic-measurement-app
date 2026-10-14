@@ -232,6 +232,7 @@ svg.i{display:inline-block;flex:none;vertical-align:middle}
 .fact-k{color:var(--muted)}
 .fact-v{font-weight:650;font-variant-numeric:tabular-nums}
 .fact.is-empty .fact-v{color:var(--faint);font-weight:500}
+.fact.is-stale .fact-v{color:var(--warn);text-decoration:underline dotted;text-underline-offset:3px}
 .fact.measured:not(.is-empty){border:1.5px solid var(--measured)}
 .fact.predicted:not(.is-empty){border:1.5px dashed var(--predicted)}
 .fact.predicted:not(.is-empty) .i{color:var(--predicted)}
@@ -409,6 +410,11 @@ svg.i{display:inline-block;flex:none;vertical-align:middle}
 
 /* ---------- tables ---------- */
 .tbl-wrap{overflow-x:auto;margin:0 -4px}
+/* A table wider than its card (app.js markScrollableTables): its right edge fades while more columns lie beyond it,
+   and a line under it says so. */
+.tbl-wrap.is-scrollable:not(.at-end){-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent)}
+.tbl-hint{font-size:12px;color:var(--muted);margin:-6px 0 0}
+.row-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .tbl{width:100%;font-size:13.5px}
 .tbl th{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:650;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
 .tbl td{padding:8px 10px;border-bottom:1px solid var(--line-soft);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -990,8 +996,10 @@ svg.i{display:inline-block;flex:none;vertical-align:middle}
   .scrim{position:fixed;inset:0;background:rgba(0,0,0,.32);z-index:55}
   .only-mobile,.iconbtn.only-mobile{display:inline-grid}
   .topbar{padding:10px 16px}
-  .facts{flex-wrap:nowrap;overflow-x:auto;width:calc(100% + 32px);scrollbar-width:none;margin:0 -16px;padding:0 16px}
-  .facts::-webkit-scrollbar{display:none}
+  /* The project values wrap onto a second line rather than scrolling out of sight: on a phone the measured and
+     predicted values were cut off with nothing to show they were there. */
+  .facts{flex-wrap:wrap;width:100%;gap:4px}
+  .fact{padding:3px 8px;font-size:12px}
   .content-inner{padding:20px 16px 32px}
   .actionbar{padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}
   .compare{grid-template-columns:minmax(0,1fr)}

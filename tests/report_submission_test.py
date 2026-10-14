@@ -30,8 +30,8 @@ import fake_supabase as fs  # noqa: E402
 TMP = tempfile.mkdtemp(prefix='report-form-test-')
 APPROVED = ['submission_id', 'submitted_at', 'full_name', 'email', 'profession_role', 'organization', 'country', 'purpose',
             'feedback', 'consent_given', 'consent_recorded_at', 'marketing_consent', 'project_id', 'project_name', 'room_type',
-            'room_volume_m3', 'target_rt60_s', 'measured_rt60_s', 'measurement_method', 'predicted_rt60_s', 'treatment_status',
-            'app_version']
+            'room_volume_m3', 'target_rt60_s', 'measured_rt60_s', 'measured_rt60_avg_s', 'measurement_method', 'predicted_rt60_s',
+            'treatment_status', 'app_version']
 
 
 def form(**kw):
@@ -43,7 +43,7 @@ def form(**kw):
 
 def project(**kw):
     p = {'projectId': 'pmv0m3mq5680y', 'projectName': 'Polish Test Room', 'roomType': 'Classroom', 'roomVolumeM3': 189.0, 'targetRt60': 0.56,
-         'measuredRt60': 0.7, 'measurementMethod': 'T30', 'predictedRt60': 0.57, 'treatmentStatus': 'Predicted'}
+         'measuredRt60': 0.7, 'measuredRt60Avg': 0.66, 'measurementMethod': 'T30', 'predictedRt60': 0.57, 'treatmentStatus': 'Predicted'}
     p.update(kw)
     return p
 
@@ -55,9 +55,10 @@ def jwt(role):
 
 class ServerCase(unittest.TestCase):
     table = True
+    without = ()
 
     def setUp(self):
-        self.fake = fs.FakeSupabase(table=self.table)
+        self.fake = fs.FakeSupabase(table=self.table, without=self.without)
         port = self.fake.start()
         self.data = tempfile.mkdtemp(dir=TMP)
         env = {
@@ -138,7 +139,7 @@ class Submissions(ServerCase):
         self.assertIs(row['consent_given'], True)
         self.assertEqual(row['consent_recorded_at'], row['submitted_at'])
         self.assertIs(row['marketing_consent'], False)
-        self.assertEqual((row['room_volume_m3'], row['target_rt60_s'], row['measured_rt60_s'], row['predicted_rt60_s']), (189.0, 0.56, 0.7, 0.57))
+        self.assertEqual((row['room_volume_m3'], row['target_rt60_s'], row['measured_rt60_s'], row['measured_rt60_avg_s'], row['predicted_rt60_s']), (189.0, 0.56, 0.7, 0.66, 0.57))
         self.assertEqual((row['measurement_method'], row['treatment_status'], row['project_id']), ('T30', 'Predicted', 'pmv0m3mq5680y'))
         self.assertEqual(row['app_version'], self.app.spec['appVersion'])
 
@@ -155,6 +156,30 @@ class Submissions(ServerCase):
         self.assertEqual(self.submit(f=f)[1][0], 200, 'marketing may be left out entirely')
         self.submit(f=form(marketing=True))
         self.assertIs(self.rows()[-1]['marketing_consent'], True)
+
+    def test_a_request_from_before_the_average_existed_is_accepted_and_hashes_as_before(self):
+        import hashlib
+        import submissions
+        p = project()
+        del p['measuredRt60Avg']
+        sid, (status, out) = self.submit(p=p)
+        self.assertEqual(status, 200, out)
+        self.assertIsNone(self.rows()[0]['measured_rt60_avg_s'])
+        # The hash of a request without the new value is the hash the previous server version computed for it, so a
+        # retry of a submission first sent before this release is recognised, not refused as different content.
+        _, f, pv = submissions.validate(self.app.spec, {'submissionId': sid, 'form': form(), 'project': p})
+        old = {k: v for k, v in pv.items() if k != 'measuredRt60Avg'}
+        legacy = hashlib.sha256(json.dumps({'id': sid, 'form': f, 'project': old}, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
+        self.assertEqual(submissions.content_hash(sid, f, pv, self.app.spec), legacy)
+        self.assertEqual(self.submit(sid=sid, p=p)[1][0], 200, 'a repeat is the same submission')
+
+    def test_half_a_character_in_text_is_removed_not_a_crash(self):
+        # An emoji cut in two (an unpaired surrogate) in the room name: stored without the broken half.
+        body = json.dumps({'submissionId': str(uuid.uuid4()), 'form': form(), 'project': project(projectName='Room A ')})
+        body = body.replace('Room A ', 'Room A \\ud83d').encode()
+        status, out = self.call('POST', '/api/report-submissions', raw=body)
+        self.assertEqual(status, 200, out)
+        self.assertEqual(self.rows()[0]['project_name'], 'Room A')
 
     def test_formula_like_text_is_stored_exactly_as_typed(self):
         evil = '=HYPERLINK("http://evil.example","x")'
@@ -259,6 +284,16 @@ class Faults(ServerCase):
         self.assertEqual(status, 200)
         self.assertEqual(len(self.rows()), 1)
 
+    def test_an_answer_that_breaks_off_or_is_not_json_is_uncertain_and_retry_finds_the_row(self):
+        for mode in ('not_json_after_write', 'incomplete_after_write'):
+            n = len(self.rows())
+            self.fake.fault('insert', mode)
+            sid, (status, out) = self.submit()
+            self.assertEqual((status, out['status']), (504, 'uncertain'), (mode, out))
+            _, (status, out) = self.submit(sid=sid)
+            self.assertEqual(status, 200, (mode, out))
+            self.assertEqual(len(self.rows()), n + 1, f'{mode}: one row, not two')
+
     def test_refused_key_fails_and_stores_nothing(self):
         self.fake.fault('any', 'http_401')
         sid, (status, out) = self.submit()
@@ -334,7 +369,8 @@ class Check(ServerCase):
             code = self.app_server.check(self.app)
         text = buf.getvalue()
         self.assertEqual(code, 0, text)
-        self.assertIn('all 22 columns found', text)
+        self.assertIn('all 22 required columns found', text)
+        self.assertIn('Optional column measured_rt60_avg_s: OK', text)
         self.assertIn('Public key shut out: OK', text)
         self.assertEqual(self.rows(), [])
         self.assertFalse(os.path.exists(os.path.join(self.data, 'receipt-secret.key')), '--check writes nothing')
@@ -363,8 +399,29 @@ class Serving(ServerCase):
         self.submit()  # creates the ledger and the receipt key
         for path in ('/server/app_server.py', '/server/.env.example', '/server/supabase/schema.sql', '/server/data/submissions-ledger.json',
                      '/server/data/receipt-secret.key', '/README.md', '/js/../server/app_server.py', '/%2e%2e/server/app_server.py',
-                     '/js/%2e%2e/server/.env.example', '/.env'):
+                     '/js/%2e%2e/server/.env.example', '/.env',
+                     # Windows separators and drive or stream syntax, encoded and raw
+                     '/js/x%5c..%5c..%5cserver%5capp_server.py', '/js/x%5c..%5c..%5cserver%5c.env.example', '/js/x\\..\\..\\server\\supabase\\schema.sql',
+                     '/js/x%5c..%5c..%5c.git%5cconfig', '/js/app.js%3a%3a$DATA', '/js/app.js%00.png', '/css/..%5c..%5cREADME.md'):
             self.assertEqual(self.call('GET', path)[0], 404, path)
+
+    def test_other_host_names_are_refused(self):
+        # A web page re-pointed at this computer (DNS rebinding) sends its own name in Host: refused, for files and API.
+        self.app_server.Handler.allowed_hosts = self.app_server.allowed_hosts('127.0.0.1')
+        try:
+            self.assertEqual(self.call('GET', '/', headers={'Host': 'evil.example'})[0], 421)
+            body = {'submissionId': str(uuid.uuid4()), 'form': form(), 'project': project()}
+            status, _ = self.call('POST', '/api/report-submissions', body, headers={'Host': 'evil.example:8780', 'Origin': 'http://evil.example:8780'})
+            self.assertEqual(status, 421)
+            self.assertEqual(self.rows(), [])
+            for host in (f'127.0.0.1:{self.port}', f'localhost:{self.port}', f'[::1]:{self.port}'):
+                self.assertEqual(self.call('GET', '/', headers={'Host': host})[0], 200, host)
+            os.environ['REPORT_ALLOWED_HOSTS'] = '192.168.1.20'
+            self.app_server.Handler.allowed_hosts = self.app_server.allowed_hosts('0.0.0.0')
+            self.assertEqual(self.call('GET', '/', headers={'Host': '192.168.1.20:8780'})[0], 200)
+        finally:
+            self.app_server.Handler.allowed_hosts = None
+            os.environ.pop('REPORT_ALLOWED_HOSTS', None)
 
     def test_no_secret_reaches_the_browser(self):
         for path in ('/', '/js/services/report-gate.js', '/js/data/report-form.js'):
@@ -390,6 +447,28 @@ class Serving(ServerCase):
             text = f.read()
         for personal in ('Asha', 'asha@example.com', 'Studio North', 'India', 'Clear report'):
             self.assertNotIn(personal, text)
+
+
+class OlderTable(ServerCase):
+    without = ('measured_rt60_avg_s',)  # a table made before the average column existed
+
+    def test_rows_are_stored_without_the_new_column_until_schema_sql_is_run_again(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            _, (status, res) = self.submit()
+            self.assertEqual(status, 200, res)
+            _, (status, res) = self.submit()
+            self.assertEqual(status, 200, res)
+        self.assertEqual(len(self.rows()), 2)
+        self.assertEqual(self.rows()[0]['measured_rt60_s'], 0.7, 'everything else is stored')
+        self.assertIn('Run server/supabase/schema.sql again', out.getvalue())
+        inserts = [r for r in self.fake.requests if r[0] == 'POST' and r[1].startswith('/rest/v1/')]
+        self.assertEqual(len(inserts), 3, 'one refused attempt with the column, then without it; the second row goes straight through')
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = self.app_server.check(self.app)
+        self.assertEqual(code, 0)
+        self.assertIn('measured_rt60_avg_s: MISSING', out.getvalue())
 
 
 class RateLimit(ServerCase):
