@@ -2,8 +2,8 @@
    tours, chosen by where you are: Home (how to start) and a step (how every step works). The words come from the
    workflow and from the screen itself (the step you are on, why Continue is not ready yet), so the tour can never
    disagree with the interface. It only points: while it runs the page behind it cannot be used (inert, as behind a
-   panel), and it never changes the project. It is offered once on this device (Take the tour / Not now); "Take the
-   tour" on Home and Help on every step replay it. */
+   panel), and it never changes the project. It is offered on every visit (Take the tour / Not now); once answered it
+   stays away until the next visit. "Take the tour" on Home and Help on every step replay it. */
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { am, cx, S, W } from '../lib';
 import { Btn, Icon } from '../ui/kit';
@@ -21,16 +21,14 @@ interface Stop {
 }
 interface Resolved { stop: Stop; el: HTMLElement; text: string; now: Now | null }
 
-/* ---------- remembered on this device: whether the tour was offered and answered ---------- */
-const PREF_KEY = 'acoustic-measurement-prototype:tour';
+/* ---------- this visit only: whether the tour was offered and answered (nothing is stored, so every visit offers it) ---------- */
 interface Prefs { declined?: boolean; home?: boolean; step?: boolean }
-let prefs: Prefs = (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}') || {}; } catch { return {}; } })();
-function remember(patch: Prefs) {
-  prefs = { ...prefs, ...patch };
-  try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch { /* storage unavailable: offered again next visit */ }
-}
-// This visit only: the offer was passed over (the person moved on without answering, or chose the video).
+let prefs: Prefs = {};
+function remember(patch: Prefs) { prefs = { ...prefs, ...patch }; }
+// The offer was passed over (the person moved on without answering, or chose the video).
 const visit = { offerAt: null as string | null, offerHidden: false };
+// An earlier version kept the answer in this browser; it is no longer read, so it is cleared.
+try { localStorage.removeItem('acoustic-measurement-prototype:tour'); } catch { /* storage unavailable */ }
 
 const kindOf = (stageId: string): Kind => (stageId === 'home' ? 'home' : 'step');
 const video = () => am.guides.tour.lengthLabel;
@@ -58,7 +56,7 @@ function homeStops(): Stop[] {
     { title: 'Help, any time', side: 'bottom', align: 'end',
       targets: [{ sel: '.topbar .topbar-helpers' }],
       text: `Quick help plays a ${video()} video of the whole workflow. Take the tour replays this tour, and on every step Help has a tour of the step screen.`,
-      now: () => (!prefs.declined && !prefs.step ? { tone: 'info', text: 'The first time you open a step, a short tour of it is offered.' } : null) },
+      now: () => (!prefs.declined && !prefs.step ? { tone: 'info', text: 'When you open a step, a short tour of it is offered too.' } : null) },
   ];
 }
 
@@ -141,7 +139,7 @@ export const tourActions = {
   offerVideo: () => { visit.offerHidden = true; S.ui({ sheet: { kind: 'guide', id: 'tour' }, navOpen: false }); },
 };
 
-/* ---------- the offer: once on this device, on the first screen it fits ---------- */
+/* ---------- the offer: on every visit, on the first screen it fits ---------- */
 function offerFor(): Kind | null {
   const st = S.state;
   if (prefs.declined || visit.offerHidden || st.ui.tour || st.ui.sheet || st.ui.navOpen) return null;

@@ -120,16 +120,17 @@ the main button either "Ready: Continue to Target" or the step's own reason it c
 room name."). A stop with nothing on screen is left out (no projects yet, the step list folded away on a phone, where
 its menu button is shown instead). On a phone the card is a sheet at the bottom, or at the top when the control is low.
 
-**The option to take it.** The first time, a small card offers it (Take the tour / Not now / or watch the 2-minute
-video): on Home for the Home tour, and on the first step for the step tour (also after the Home tour). "Not now"
-remembers the answer on this device and says where the tour lives; moving on without answering just passes it over for
-that visit. It is never offered, and cannot start, while a measurement is running.
+**The option to take it.** On every visit (each time the site is opened or reloaded), a small card offers it (Take the
+tour / Not now / or watch the 2-minute video): on Home for the Home tour, and on the first step for the step tour (also
+after the Home tour). Once answered it stays away for the rest of that visit; "Not now" says where the tour lives.
+Moving on without answering passes it over for that visit. It is never offered, and cannot start, while a measurement is
+running.
 
 **Where it lives afterwards.** Home: "Take the tour" beside the Quick help video in the top bar. Every step: a Help menu
 in the top bar with the tour of this screen, the How the app works video and Explain this step.
 
-While the tour runs the page behind it is inert (as behind a panel), so it only points and never changes anything. The
-only thing stored is whether the tour was offered and answered (`acoustic-measurement-prototype:tour`, this browser).
+While the tour runs the page behind it is inert (as behind a panel), so it only points and never changes anything.
+Nothing about the tour is stored (an earlier version's `acoustic-measurement-prototype:tour` entry is cleared).
 
 ## Verified (2026-10-16)
 
