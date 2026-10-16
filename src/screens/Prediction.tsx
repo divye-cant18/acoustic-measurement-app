@@ -91,8 +91,8 @@ export function PredictionScreen({ ctx }: { ctx: Ctx }) {
         </Card>
       </div>
       <Card icon="bars" title="Band by band">
-        <Chart type="bands" spec={{ series: [{ label: 'Measured', kind: 'measured', values: pred.bands.map((b: any) => b.measured) }, { label: 'Predicted', kind: 'predicted', values: pred.bands.map((b: any) => b.predicted) }], target: t, unit: 's', height: 250, yTitle: 'RT60 (s)', aria: 'Measured and predicted RT60 by band' }} height={250} />
-        <Legend items={[['measured', 'Measured'], ['predicted', 'Predicted (modelled)'], ['zone', `Target range ${t.min.toFixed(2)}–${t.max.toFixed(2)} s`], ['pref', 'Preferred']]} />
+        <Chart type="bands" cls="chart-compact" spec={{ line: true, series: [{ label: 'Measured', kind: 'measured', values: pred.bands.map((b: any) => b.measured) }, { label: 'Predicted', kind: 'predicted', values: pred.bands.map((b: any) => b.predicted) }], target: t, unit: 's', height: 200, yTitle: 'RT60 (s)', aria: 'Measured and predicted RT60 by band' }} height={200} />
+        <Legend items={[['ln-measured', 'Measured'], ['ln-predicted', 'Predicted (modelled)'], ['zone', `Target range ${t.min.toFixed(2)}–${t.max.toFixed(2)} s`], ['pref', 'Preferred']]} />
         <TableWrap>
           <table className="tbl">
             <thead><tr><th>Band</th><th className="r">Measured</th><th className="r">Predicted</th><th className="r">Change</th><th>Predicted vs target</th></tr></thead>

@@ -317,7 +317,7 @@ export function ResultsScreen({ ctx }: { ctx: Ctx }) {
             <SoundTiles groups={groups} />
             <Details id="results-bands">
               <TechH title={`RT60 by octave band, average over ${where}`} />
-              <Chart type="bands" spec={{ series: [{ label: 'Measured RT60', kind: 'measured', values: room.bands.map((b: any) => b.rt60) }], unit: 's', label: room.referenceBand, height: 240, yTitle: 'RT60 (s)', aria: 'Measured RT60 by octave band, averaged over the positions', missingText: 'not reliable' }} height={240} />
+              <Chart type="bands" cls="chart-compact" spec={{ line: true, series: [{ label: 'Measured RT60', kind: 'measured', values: room.bands.map((b: any) => b.rt60) }], unit: 's', label: room.referenceBand, height: 190, yTitle: 'RT60 (s)', aria: 'Measured RT60 by octave band, averaged over the positions', missingText: 'not reliable' }} height={190} />
               <AverageSummary avg={avg} />
               {unreliable.length ? <><p className="small muted">Bands without a value could not be measured reliably at any position:</p><ul className="bullets small">{unreliable.map((b: any) => <li key={b.f}><b>{`${fmt.hz(b.f)}:`}</b>{` ${b.reason || 'Not reliable'}`}</li>)}</ul></> : null}
             </Details>

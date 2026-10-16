@@ -24,6 +24,7 @@
              yMax?, step?, digits?, label?: band whose caps get value labels, emphasis?: bands drawn solid (others soft),
              ticks?: bands that get an axis label, missingText?, height?, yTitle?, aria? } */
   BUILDERS.bands = (spec, width) => {
+    if (spec.line) return bandLine(spec, width);
     const H = spec.height || 240, M = { l: 40, r: 10, t: 24, b: 28 };
     const w = Math.max(260, width), pw = w - M.l - M.r, ph = H - M.t - M.b;
     const bands = spec.freqs || AM.demo.BANDS;
@@ -65,6 +66,58 @@
     g += `<line class="baseline" x1="${M.l}" x2="${w - M.r}" y1="${f1(y(0))}" y2="${f1(y(0))}"/>`;
     return `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(spec.aria || '')}">${g}</svg>`;
   };
+
+  /* The same bands drawn as a line (spec.line): one round marker per band, joined. A band without a value leaves a gap
+     in the line and a dash on the axis, never a point at zero. With two series (measured, predicted) the measured line
+     is drawn wider underneath, so where the two are the same both still show. Same values, tooltips and target as the
+     columns; only the marks differ. */
+  function bandLine(spec, width) {
+    const H = spec.height || 190, M = { l: 40, r: 18, t: 22, b: 28 };
+    const w = Math.max(260, width), pw = w - M.l - M.r, ph = H - M.t - M.b;
+    const bands = spec.freqs || AM.demo.BANDS;
+    const vals = spec.series.flatMap(s => s.values).filter(isNum).concat(spec.target ? [spec.target.max] : []);
+    const top = Math.max(0.1, ...vals) * 1.15;
+    const step = spec.step || niceStep(top, 4);
+    const yMax = spec.yMax || Math.ceil(top / step) * step;
+    const y = v => M.t + ph - (v / yMax) * ph;
+    const slot = pw / bands.length, x = i => M.l + slot * (i + 0.5);
+    const d = spec.digits ?? 2, unit = spec.unit === 's' ? ' s' : '', two = spec.series.length > 1;
+    let g = `<text x="0" y="11" class="tick">${esc(spec.yTitle || '')}</text>`;
+
+    for (let v = 0; v <= yMax + 1e-9; v += step) {
+      g += `<line class="gl" x1="${M.l}" x2="${w - M.r}" y1="${f1(y(v))}" y2="${f1(y(v))}"/>`;
+      g += `<text class="tick" x="${M.l - 8}" y="${f1(y(v) + 4)}" text-anchor="end">${+v.toFixed(2)}</text>`;
+    }
+    bands.forEach((f, i) => { g += `<line class="gl gl-v" x1="${f1(x(i))}" x2="${f1(x(i))}" y1="${M.t}" y2="${f1(y(0))}"/>`; });
+    if (spec.target) {
+      const t = spec.target;
+      g += `<rect class="zone" x="${M.l}" width="${pw}" y="${f1(y(t.max))}" height="${f1(y(t.min) - y(t.max))}"/>`;
+      g += `<line class="zone-line" x1="${M.l}" x2="${w - M.r}" y1="${f1(y(t.preferred))}" y2="${f1(y(t.preferred))}"/>`;
+    }
+    // Hover targets first (under the marks), one per band.
+    bands.forEach((f, i) => {
+      const tip = [fmt.hz(f), ...spec.series.map(s => `${s.label}: ${isNum(s.values[i]) ? s.values[i].toFixed(d) + unit : (spec.missingText || 'not calculated')}`)];
+      if (spec.target) tip.push(`Target range: ${spec.target.min.toFixed(2)}–${spec.target.max.toFixed(2)} s`);
+      g += `<g class="col" tabindex="0" data-tip="${esc(tip.join('\n'))}"><rect class="hit" x="${f1(x(i) - slot / 2 + 1)}" y="${M.t - 14}" width="${f1(Math.max(2, slot - 2))}" height="${ph + 14}" rx="${slot > 20 ? 6 : 3}"/></g>`;
+    });
+    // Lines, then markers on top.
+    spec.series.forEach((s, j) => {
+      let path = '', pen = false;
+      s.values.forEach((v, i) => { if (isNum(v)) { path += `${pen ? 'L' : 'M'}${f1(x(i))},${f1(y(v))}`; pen = true; } else pen = false; });
+      if (path) g += `<path class="ln ln-${s.kind}${two && j === 0 ? ' ln-under' : ''}" d="${path}"/>`;
+    });
+    spec.series.forEach((s, j) => {
+      s.values.forEach((v, i) => { if (isNum(v)) g += `<circle class="dot dot-${s.kind}" cx="${f1(x(i))}" cy="${f1(y(v))}" r="${two && j === 0 ? 5.5 : 4.5}"/>`; });
+    });
+    bands.forEach((f, i) => {
+      const first = spec.series[0].values[i];
+      if (spec.series.every(s => !isNum(s.values[i]))) g += `<text class="tick" x="${f1(x(i))}" y="${f1(y(0) - 6)}" text-anchor="middle">–</text>`;
+      else if (spec.label === f && isNum(first)) g += `<text class="val" x="${f1(x(i))}" y="${f1(y(first) - 11)}" text-anchor="middle">${first.toFixed(d)}</text>`;
+      if (!spec.ticks || spec.ticks.includes(f)) g += `<text class="tick${spec.label === f ? ' tick-strong' : ''}" x="${f1(x(i))}" y="${H - 8}" text-anchor="middle">${fmt.hzShort(f)}</text>`;
+    });
+    g += `<line class="baseline" x1="${M.l}" x2="${w - M.r}" y1="${f1(y(0))}" y2="${f1(y(0))}"/>`;
+    return `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="${esc(spec.aria || '')}">${g}</svg>`;
+  }
 
   /* Measured decay in one octave band (from AM.analysis): band energy relative to its 10 ms peak, the backward-integrated
      decay curve up to the point where the decay meets the noise, the noise floor, and, when the band has a valid

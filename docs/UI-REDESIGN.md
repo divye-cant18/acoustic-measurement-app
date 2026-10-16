@@ -139,6 +139,14 @@ Nothing about the tour is stored (an earlier version's `acoustic-measurement-pro
 - The logo and name at the top of the rail lead to Home (the same as the rail's Home step).
 - The sound field behind the Home title is drawn a little darker (higher line opacity), still in the measured teal.
 
+## Band charts as small line charts (2026-10-16, on request)
+
+The RT60-by-band chart on Results and the Band by band chart on Predicted Result are drawn as small line charts: one
+round open marker per band, joined by a line, at most 760 px wide and about 190-200 px high. Same values, hover
+tooltips, target range and preferred line as before (charts.js `bands` with `line: true`). A band without a value
+leaves a gap in the line and a dash, never a point at zero. With measured and predicted together, the measured line is
+drawn wider underneath, so where they are the same both still show. The other band charts are unchanged.
+
 ## Verified (2026-10-16)
 
 - `npm run build` (`tsc --noEmit` strict + Vite): no errors; bundle 412 kB (121 kB gzipped).

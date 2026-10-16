@@ -115,8 +115,8 @@ export function Legend({ items }: { items: [string, ReactNode][] }) {
 }
 
 /** A chart placeholder: js/ui/charts.js draws it (AM.charts.hydrate) once it has a width. React never renders inside it. */
-export function Chart({ type, spec, height }: { type: 'bands' | 'decay'; spec: unknown; height: number }) {
-  return <div className="chart" data-chart={type} data-spec={JSON.stringify(spec)} style={{ minHeight: height }} />;
+export function Chart({ type, spec, height, cls }: { type: 'bands' | 'decay'; spec: unknown; height: number; cls?: string }) {
+  return <div className={cx('chart', cls)} data-chart={type} data-spec={JSON.stringify(spec)} style={{ minHeight: height }} />;
 }
 
 /** Technical details, folded away; stays open across re-renders (state.ui.open, kept by the shell). */
