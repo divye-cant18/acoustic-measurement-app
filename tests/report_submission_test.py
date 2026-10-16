@@ -31,7 +31,7 @@ TMP = tempfile.mkdtemp(prefix='report-form-test-')
 APPROVED = ['submission_id', 'submitted_at', 'full_name', 'email', 'profession_role', 'organization', 'country', 'purpose',
             'feedback', 'consent_given', 'consent_recorded_at', 'marketing_consent', 'project_id', 'project_name', 'room_type',
             'room_volume_m3', 'target_rt60_s', 'measured_rt60_s', 'measured_rt60_avg_s', 'measurement_method', 'predicted_rt60_s',
-            'treatment_status', 'app_version']
+            'predicted_rt60_avg_s', 'treatment_status', 'app_version']
 
 
 def form(**kw):
@@ -168,10 +168,31 @@ class Submissions(ServerCase):
         # The hash of a request without the new value is the hash the previous server version computed for it, so a
         # retry of a submission first sent before this release is recognised, not refused as different content.
         _, f, pv = submissions.validate(self.app.spec, {'submissionId': sid, 'form': form(), 'project': p})
-        old = {k: v for k, v in pv.items() if k != 'measuredRt60Avg'}
+        old = {k: v for k, v in pv.items() if k not in ('measuredRt60Avg', 'predictedRt60Avg')}
         legacy = hashlib.sha256(json.dumps({'id': sid, 'form': f, 'project': old}, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
         self.assertEqual(submissions.content_hash(sid, f, pv, self.app.spec), legacy)
         self.assertEqual(self.submit(sid=sid, p=p)[1][0], 200, 'a repeat is the same submission')
+
+    def test_a_request_from_before_the_predicted_average_existed_is_accepted_and_hashes_as_before(self):
+        import hashlib
+        import submissions
+        p = project()  # as app version 2026.10.14 sent it: the measured average, no predicted average
+        sid, (status, out) = self.submit(p=p)
+        self.assertEqual(status, 200, out)
+        row = self.rows()[0]
+        self.assertIsNone(row['predicted_rt60_avg_s'])
+        self.assertEqual((row['measured_rt60_avg_s'], row['predicted_rt60_s']), (0.66, 0.57), 'the other values are stored as sent')
+        _, f, pv = submissions.validate(self.app.spec, {'submissionId': sid, 'form': form(), 'project': p})
+        old = {k: v for k, v in pv.items() if k != 'predictedRt60Avg'}
+        legacy = hashlib.sha256(json.dumps({'id': sid, 'form': f, 'project': old}, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
+        self.assertEqual(submissions.content_hash(sid, f, pv, self.app.spec), legacy)
+        self.assertEqual(self.submit(sid=sid, p=p)[1][0], 200, 'a repeat is the same submission')
+
+    def test_the_predicted_average_is_stored_in_its_own_column(self):
+        sid, (status, out) = self.submit(p=project(predictedRt60Avg=0.49))
+        self.assertEqual(status, 200, out)
+        row = self.rows()[0]
+        self.assertEqual((row['predicted_rt60_s'], row['predicted_rt60_avg_s'], row['measured_rt60_s'], row['measured_rt60_avg_s']), (0.57, 0.49, 0.7, 0.66))
 
     def test_half_a_character_in_text_is_removed_not_a_crash(self):
         # An emoji cut in two (an unpaired surrogate) in the room name: stored without the broken half.
@@ -469,6 +490,26 @@ class OlderTable(ServerCase):
             code = self.app_server.check(self.app)
         self.assertEqual(code, 0)
         self.assertIn('measured_rt60_avg_s: MISSING', out.getvalue())
+
+
+class TableBeforeThePredictedAverage(ServerCase):
+    without = ('predicted_rt60_avg_s',)  # a table made with the schema.sql of app version 2026.10.14
+
+    def test_rows_are_stored_without_the_predicted_average_until_schema_sql_is_run_again(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            _, (status, res) = self.submit(p=project(predictedRt60Avg=0.49))
+            self.assertEqual(status, 200, res)
+        row = self.rows()[0]
+        self.assertNotIn('predicted_rt60_avg_s', row)
+        self.assertEqual((row['measured_rt60_avg_s'], row['predicted_rt60_s'], row['measured_rt60_s']), (0.66, 0.57, 0.7), 'everything else is stored')
+        self.assertIn('Run server/supabase/schema.sql again', out.getvalue())
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = self.app_server.check(self.app)
+        self.assertEqual(code, 0)
+        self.assertIn('predicted_rt60_avg_s: MISSING', out.getvalue())
+        self.assertIn('measured_rt60_avg_s: OK', out.getvalue())
 
 
 class RateLimit(ServerCase):

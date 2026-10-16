@@ -13,9 +13,12 @@
                               Locked until the project's report form has been received and the server confirms it
                               (AM.reportGate.check). build() makes the bytes without saving them, for tests.
 
-   Measured, target and predicted values keep their own labels and colours, as in the app. The measured key figure is
-   the average RT60 at 500, 1000 and 2000 Hz (AM.services.rt60Average, the same value as on screen); the target, the
-   assessment and the prediction stay at the reference band, where the target is set, and say so. */
+   Measured, target, predicted (model estimate) and recommended content keep their own labels and colours, as in the app.
+   The room's values are the average over the valid measuring positions, band by band (AM.derive.room), with each
+   position's own values in the report. The room is judged as the app judges it (AM.derive.assessment): every band its
+   criterion sets has to lie within the target range (the verdict); the average over those bands is its summary figure,
+   and bands with their own wider limits are band warnings, listed apart from the verdict. 1000 Hz stays marked as the
+   reference band that decides whether a take is valid. */
 (function (AM) {
   'use strict';
   const { fmt, isNum } = AM.util;
@@ -42,7 +45,7 @@
   /* ---------- the report's content ---------- */
   function model(p, now = new Date()) {
     const D = AM.derive, W = AM.workflow, A = AM.acoustics;
-    const g = D.geometry(p), m = D.measured(p), t = D.target(p), a = D.assessment(p);
+    const g = D.geometry(p), m = D.measured(p), t = D.target(p), a = D.assessment(p), room = D.room(p), pos = D.positions(p), pol = D.policy(p);
     const plan = D.treatmentPlan(p), pred = D.prediction(p), none = D.noTreatment(p);
     // The report uses the CURRENT valid measurement. Later takes that were not used are named, not substituted.
     const later = D.laterTakes(p).map(k => (k.kind === 'invalid' ? `A later take (${when(k.takenAt)}) was not valid and is not used: ${k.reason || 'see Processing'}`
@@ -54,19 +57,24 @@
             : 'No measurement has been taken in this project.';
 
     const notes = [];
-    if (m) {
-      (m.warnings || []).forEach(w => notes.push({ kind: 'warn', text: w }));
-      m.bands.forEach(b => (b.notes || []).forEach(x => notes.push({ kind: 'warn', text: `${b.f} Hz: ${x}` })));
-      m.bands.filter(b => b.rt60 == null).forEach(b => notes.push({ kind: 'warn', text: `${b.f} Hz not reliable: ${b.reason || 'not enough usable decay'}` }));
+    if (m && room) {
+      if (!pos.complete) notes.push({ kind: 'warn', text: `Measured at ${pos.count} of the ${pos.required} positions a complete measurement needs: the result is provisional.` });
+      pos.rows.filter(r => r.issue).forEach(r => notes.push({ kind: 'warn', text: `${r.id}: the latest take ${r.issue.kind === 'failed' ? 'could not be used' : 'was not valid'} (${r.issue.reason || 'see Processing'})${r.result ? '; the earlier valid take there is used' : '; this position is not part of the room\'s values'}.` }));
+      (room.warnings || []).forEach(w => notes.push({ kind: 'warn', text: w }));
+      positionResultsOf(p).forEach(e => e.result.bands.forEach(b => (b.notes || []).forEach(x => notes.push({ kind: 'warn', text: `${room.count > 1 ? `${e.id}, ` : ''}${b.f} Hz: ${x}` }))));
+      room.bands.forEach(b => (b.notes || []).forEach(x => notes.push({ kind: 'info', text: `${b.f} Hz: ${x}` })));
+      room.bands.filter(b => b.rt60 == null).forEach(b => notes.push({ kind: 'warn', text: `${b.f} Hz not reliable at any position: ${b.reason || 'not enough usable decay'}` }));
       const nc = D.noiseChange(p);
       if (nc != null) notes.push({ kind: 'warn', text: `The latest background-noise measurement is ${Math.abs(nc)} dB ${nc > 0 ? 'louder' : 'quieter'} than when this RT60 was measured. Measure again to confirm it.` });
-      later.forEach(x => notes.push({ kind: 'warn', text: x }));
+      // A later take already named with its position (above) is not listed again.
+      const named = new Set(pos.rows.filter(r => r.issue).map(r => r.issue.takenAt));
+      D.laterTakes(p).forEach((k, i) => { if (!named.has(k.takenAt)) notes.push({ kind: 'warn', text: later[i] }); });
       const allow = AM.analysis.CRITERIA.decay.directAllowanceDb;
       const direct = m.bands.filter(b => isNum(b.headDb) && b.headDb > allow).sort((x, y) => y.headDb - x.headDb)[0];
       if (direct) notes.push({ kind: 'info', text: `The measuring device's direct sound was separated from the room's decay (up to ${direct.headDb.toFixed(1)} dB above it, at ${direct.f} Hz); the evaluation starts below it.` });
     }
 
-    const pos = m && m.meta && D_POS(m.meta.position || p.setup.position);
+    const at = m && m.meta && D_POS(m.meta.position || p.setup.position);
     const kindKey = m && m.meta && m.meta.deviceKind;
     const original = p.followUpOf ? (AM.store.state.projects || []).find(x => x.id === p.followUpOf) : null;
     const review = p.review.filter(id => id !== 'final').map(id => W.get(id).title);
@@ -81,11 +89,13 @@
       room: Object.assign({}, p.room, { name: p.room.name || 'Untitled room' }), geometry: g,
       // What the surfaces are made of, as described in Room Setup (no RT60 is estimated from them).
       surfaces: AM.services.surfaces.describe(p.room),
-      measurement: m ? {
-        id: m.recordingId, takenAt: m.takenAt, f: m.referenceBand, headline: m.headline, status: m.status,
-        // the summary across bands, from the same measurement and the same service as every screen
-        average: D.averageRT60(p),
-        bands: m.bands, ref: m.bands.find(b => b.f === m.referenceBand), meta: m.meta || {}, position: pos,
+      measurement: m && room ? {
+        // the latest take (its device, signal and checks) and the room over every valid position
+        id: m.recordingId, takenAt: m.takenAt, f: room.referenceBand, headline: room.headline, status: room.status,
+        // the summaries over the room's bands, from the same service as every screen: the policy's bands and all bands
+        summary: D.summaryRT60(p), average: D.averageRT60(p), policy: pol,
+        bands: room.bands, ref: m.bands.find(b => b.f === m.referenceBand), meta: m.meta || {}, position: at,
+        positions: pos, room,
         deviceKind: kindKey && AM.demo.DEVICE_KINDS[kindKey] ? AM.demo.DEVICE_KINDS[kindKey].name : null,
         superseded: (p.processing.history || []).length, notes,
       } : null,
@@ -94,17 +104,18 @@
       assessment: a,
       plan, prediction: pred, none,
       planProblem: plan.items.length ? D.planProblem(p) : null,
-      predictedStatus: pred && t ? A.classify(pred.headline.predicted, t) : null,
+      predictedStatus: pred && t ? (pred.predictedStatus || A.classify(pred.predicted, t)) : null,
       coverage: D.coverage(p),
     };
   }
   const D_POS = id => AM.demo.POSITIONS.find(x => x.id === id) || null;
+  const positionResultsOf = p => AM.derive.positionResults(p);
 
   /* Plain-language reading of the result, from the statuses the app computed. */
   function explanation(status) {
     return {
       above: 'The room rings longer than recommended for this use: sound lingers and overlaps, so speech is less clear and the room sounds louder. Sound-absorbing treatment shortens the reverberation.',
-      within: 'The reverberation is within the range recommended for this use at the reference band. No treatment is needed for reverberation.',
+      within: 'The reverberation is within the range recommended for this use in every band it is judged in. No treatment is needed for reverberation.',
       below: 'The room is less reverberant than recommended for this use. More absorption would make it drier still, so treatment for reverberation is not recommended.',
     }[status] || '';
   }
@@ -117,23 +128,30 @@
       out.push('Next: measure the room in the app, then generate the report again.');
       return out;
     }
-    // The summary narrates the assessment, at the reference band where the target is set. The average across bands is
-    // the report's measured key figure and a row of section 2; it is not repeated here, so a one-page report stays one page.
-    const avg = M.measurement.average;
+    // The summary narrates the verdict (every band the room's criterion sets, judged on its own) and its summary figure.
+    const avg = M.measurement.summary, SHORT = M.measurement.policy.short, P = M.measurement.positions;
+    const over = `${P.count} position${P.count > 1 ? 's' : ''}${P.complete ? '' : ` (provisional: ${P.required} needed)`}`;
     if (!a) {
-      out.push(`At ${M.measurement.f} Hz the room measures ${fmt.s(M.measurement.headline.rt60)}${avg.available ? `; averaged over 500, 1000 and 2000 Hz, RT60 is ${fmt.s(avg.value)}` : ''}. No target is set, so it is not assessed.`);
+      out.push(`${avg.available ? `Averaged over ${AM.services.rt60Average.describe(avg)} (${SHORT}) and ${over}, the room's RT60 is ${fmt.s(avg.value)}` : `There is no average RT60 (${SHORT}): ${avg.reason}`}. No target is set, so it is not assessed.`);
       out.push('Next: set the target RT60 in the app, then generate the report again.');
       return out;
     }
-    const where = a.status === 'within' ? `inside the ${range(t)} target range` : a.status === 'above' ? `above the ${range(t)} target range` : `below the ${range(t)} target range`;
-    out.push(`At ${a.f} Hz the room measures ${fmt.s(a.rt)}, ${where} for this use.`);
+    if (!a.available) {
+      out.push(`There is no average RT60 (${SHORT}): ${a.reason} The room is judged in those bands, so it is not assessed and no treatment is worked out.`);
+      out.push('Next: measure the room again in the app, then generate the report again.');
+      return out;
+    }
+    const fails = a.verdict.failing.map(r => `${r.f} Hz (${fmt.s(r.rt)})`).join(', ');
+    out.push(`Measured at ${over}. ${a.explanation.headline}${fails ? `: ${fails} outside the ${range(t)} range` : a.verdict.complete ? `: every band ${SHORT} inside the ${range(t)} range` : `; ${a.verdict.missing.map(f => `${f} Hz`).join(', ')} could not be measured`}. The average over ${SHORT} is ${fmt.s(a.rt)}${a.verdict.masked ? ', inside the range, but every band has to be' : ''}.`);
+    if (a.warnings.length) out.push(`Band warning${a.warnings.length > 1 ? 's' : ''}, not part of the verdict: ${a.warnings.map(r => `${r.f} Hz ${fmt.s(r.rt)} (its own limit ${r.min.toFixed(2)}–${fmt.s(r.max)})`).join(', ')}.`);
     const pr = M.prediction, ps = M.predictedStatus;
     if (pr) {
       const n = pr.items.length, what = n > 1 ? `The selected treatment plan (${n} products, ${fmt.m2(pr.plan.areaM2)} in total)` : `The selected treatment (${fmt.m2(pr.plan.areaM2)} of ${pr.items[0].product.name})`;
-      const h = pr.headline;
-      if (ps === 'within') out.push(`${what} is predicted to bring it to ${fmt.s(h.predicted)}, inside the target range. This is a model estimate, not a measurement.`);
-      else if (ps === 'above') out.push(`${what} is predicted to bring it to ${fmt.s(h.predicted)}, still ${fmt.s(h.predicted - t.max)} above the target range. This is a model estimate, not a measurement.`);
-      else out.push(`${what} is predicted to bring it to ${fmt.s(h.predicted)}, below the target range: it would over-treat the room. This is a model estimate, not a measurement.`);
+      const v = pr.predicted, pv = pr.verdict;
+      if (ps === 'within') out.push(`${what} is predicted to bring it to ${fmt.s(v)}, with every band ${SHORT} inside the target range. This is a model estimate, not a measurement.`);
+      else if (ps === 'above' && pv && pv.masked) out.push(`${what} is predicted to bring the average to ${fmt.s(v)}, inside the range, but ${pv.above.map(r => `${r.f} Hz (${fmt.s(r.rt)})`).join(', ')} would still ring longer than ${fmt.s(t.max)}. This is a model estimate, not a measurement.`);
+      else if (ps === 'above') out.push(`${what} is predicted to bring it to ${fmt.s(v)}, still ${fmt.s(v - t.max)} above the target range. This is a model estimate, not a measurement.`);
+      else out.push(`${what} is predicted to bring it to ${fmt.s(v)}, below the target range: it would over-treat the room. This is a model estimate, not a measurement.`);
       out.push(ps === 'within'
         ? 'Next: install the treatment as specified, then measure the room again to confirm the result.'
         : ps === 'above'
@@ -372,18 +390,18 @@
     }
     y += 6;
 
-    // key figures: the measured average across bands; the target, the assessment and the prediction at the reference
-    // band, where the target is set (each label says which)
-    const boxes = [], avg = meas && meas.average;
+    // key figures: the room's measured average over the bands it is judged in (and over how many positions), the target,
+    // the verdict, and the predicted average (each label says so)
+    const boxes = [], avg = meas && meas.summary, SHORT = meas ? meas.policy.short : AM.services.rt60Average.SHORT;
     boxes.push(meas
-      ? { label: 'AVERAGE RT60 · 500–2000 Hz', value: avg.available ? fmt.s(avg.value) : 'Not available', sub: `${avg.available ? 'Mean of 500, 1000, 2000 Hz' : `${avg.missing.map(x => `${x.f} Hz`).join(', ')} not reliable`} · ${meas.status === 'warning' ? 'valid, with warnings' : 'valid'}`, color: C.ink }
+      ? { label: `MEASURED RT60 · ${SHORT}`, value: avg.available ? fmt.s(avg.value) : 'Not available', sub: `${avg.available ? `Average of ${meas.positions.count} position${meas.positions.count > 1 ? 's' : ''}${avg.partial ? `, ${avg.n} of ${avg.total} bands` : ''}` : `${avg.missing.map(x => `${x.f} Hz`).join(', ')} not reliable`} · ${meas.positions.complete ? (meas.status === 'warning' ? 'valid, with warnings' : 'valid') : 'provisional'}`, color: C.ink }
       : { label: 'MEASURED RT60', value: 'Not measured', sub: 'No valid measurement in this project', color: C.ink });
-    boxes.push(t ? { label: 'TARGET RT60 · PREFERRED', value: fmt.s(t.preferred), sub: `At ${AM.demo.REFERENCE_BAND} Hz · acceptable range ${range(t)}`, color: C.muted, dash: true }
+    boxes.push(t ? { label: 'TARGET RT60 · PREFERRED', value: fmt.s(t.preferred), sub: `Range ${range(t)} · every band ${SHORT} checked`, color: C.muted, dash: true }
       : { label: 'TARGET RT60', value: 'Not set', sub: 'No target in this project', color: C.muted, dash: true });
-    const st = a && STATUS[a.status];
-    boxes.push(st ? { label: `MEASURED VS TARGET · ${a.f} Hz`, value: st.word, sub: `${fmt.s(a.rt)} at ${a.f} Hz · ${fmt.signedS(a.diff)} vs preferred`, color: st.color }
-      : { label: 'ASSESSMENT', value: 'Not available', sub: meas ? 'Needs a target RT60' : 'Needs a valid measurement', color: C.muted });
-    if (pr) boxes.push({ label: 'PREDICTED RT60 · MODEL ESTIMATE', value: fmt.s(pr.headline.predicted), sub: `At ${pr.headline.f} Hz · ${STATUS[M.predictedStatus] ? STATUS[M.predictedStatus].word : ''} · with the treatment plan`, color: C.predicted });
+    const st = a && a.available && STATUS[a.status];
+    boxes.push(st ? { label: 'VERDICT · BAND BY BAND', value: st.word, sub: a.verdict.failing.length ? `${a.verdict.failing.map(r => `${r.f} Hz`).join(', ')} outside the range` : `Every band ${SHORT} in range${a.verdict.complete ? '' : ' (where measured)'}`, color: st.color }
+      : { label: 'VERDICT', value: 'Not available', sub: !meas ? 'Needs a valid measurement' : a ? `No result for ${SHORT}` : 'Needs a target RT60', color: C.muted });
+    if (pr) boxes.push({ label: 'PREDICTED RT60 · MODEL ESTIMATE', value: fmt.s(pr.predicted), sub: `Average ${SHORT} · ${STATUS[M.predictedStatus] ? STATUS[M.predictedStatus].word : ''} · with the treatment plan`, color: C.predicted });
     else boxes.push({ label: 'TREATMENT', value: M.none ? 'None' : M.plan.items.length ? 'No prediction' : 'Not selected', sub: M.none ? (a && a.status === 'within' ? 'Not needed: within the target range' : 'Not recommended: below the target range') : M.plan.items.length ? 'The treatment plan is not complete' : 'No product chosen yet', color: C.acoustic });
     {
       const gap = 8, w = (WD - gap * (boxes.length - 1)) / boxes.length, h = 54;
@@ -420,30 +438,31 @@
     } else {
       const mm = meas.meta, lv = mm.levels || {}, nc = mm.noiseCheck, ref = meas.ref || {}, plan = mm.plan || {};
       const noiseWord = nc ? (nc.status === 'valid' ? 'suitable' : nc.status === 'warning' ? 'suitable, measured with care' : nc.status === 'unassessed' ? 'not assessed (no signal)' : nc.status) : null;
-      // The average across the bands (AM.services.rt60Average) heads the right column; the 1000 Hz result and its quality
-      // share one row, so the section keeps its height and a one-page report stays one page.
-      const av = meas.average;
+      // The average over the bands measured (AM.services.rt60Average) heads the right column; the reference band's result (1000 Hz,
+      // which decides validity) and its quality share one row, so the section keeps its height.
+      const av = meas.average, sv = meas.summary, P = meas.positions;
       kv([
-        [['Measured', `${when(meas.takenAt)}${meas.superseded ? ` (replaces ${meas.superseded} earlier)` : ''}`],
+        [['Positions', `${meas.room.positions.map(x => x.id).join(', ')}${P.complete ? '' : ` · ${P.count} of ${P.required}: provisional`}`, { bold: true, color: P.complete ? C.ink : C.warn }],
+          ['Latest take', `${when(meas.takenAt)} at ${meas.position ? meas.position.id : '—'}`],
           ['Measuring device', `${meas.deviceKind || 'This device'}: built-in speaker and microphone`],
           ['Microphone', mm.deviceLabel || 'Not reported'],
-          ['Position', meas.position ? `${meas.position.id} · ${meas.position.name}` : 'Not recorded'],
           ['Test signal', plan.f1 ? `Sine sweep ${plan.f1} Hz–${(plan.f2 / 1000).toFixed(plan.f2 % 1000 ? 1 : 0)} kHz, ${plan.seconds} s, level ${AM.ui.levelDb(plan.levelDb)}` : 'Not recorded']],
-        [['Average RT60', av.available ? `${fmt.s(av.value)} (500–2000 Hz)` : `Not available: ${av.missing.map(x => `${x.f} Hz`).join(', ')} not reliable`, { bold: true }],
-          ['Background noise', nc && isNum(nc.bandLeqDbfs) ? `${fmt.dbfs(nc.bandLeqDbfs)} (RT60 bands), ${noiseWord}` : nc && isNum(nc.leqDbfs) ? `${fmt.dbfs(nc.leqDbfs)} (relative), ${noiseWord}` : 'Not measured'],
-          ['Signal above background', isNum(lv.snrDb) ? `${lv.snrDb.toFixed(1)} dB` : 'Not available'],
+        [[`Average ${meas.policy.short}`, sv.available ? `${fmt.s(sv.value)}${sv.partial ? ` (${sv.n} of ${sv.total} bands, ${sv.missing.map(x => `${x.f} Hz`).join(', ')} not measured)` : ''}` : `Not available: ${sv.missing.map(x => `${x.f} Hz`).join(', ')} not reliable`, { bold: true }],
+          ['Average RT60, all bands', av.available ? `${fmt.s(av.value)} (${av.partial ? `${av.n} of ${av.total} bands, ${av.missing.map(x => `${x.f} Hz`).join(', ')} not measured` : AM.services.rt60Average.SHORT})` : `Not available: ${av.missing.map(x => `${x.f} Hz`).join(', ')} not reliable`],
+          ['Background noise', `${nc && isNum(nc.bandLeqDbfs) ? `${fmt.dbfs(nc.bandLeqDbfs)} (RT60 bands), ${noiseWord}` : nc && isNum(nc.leqDbfs) ? `${fmt.dbfs(nc.leqDbfs)} (all frequencies), ${noiseWord}` : 'Not measured'}${isNum(lv.snrDb) ? ` · signal +${lv.snrDb.toFixed(0)} dB` : ''}`],
           // As the take recorded it: each feature reported off, on, or not reported (unknown, never shown as off).
           ['Browser processing', mm.config && mm.config.processing ? AM.services.measurement.processingShort(mm.config.processing) : mm.settings ? AM.services.measurement.processingShort(AM.services.measurement.processingState(mm.settings, null)) : 'Not recorded'],
-          [`Result at ${meas.f} Hz`, `${ref.fit ? `${meas.headline.method}, fitted ${fmt.db(ref.fit.from, 1)} to ${fmt.db(ref.fit.to, 1)}` : meas.headline.method} · ${meas.headline.quality}, ${meas.headline.confidence.toLowerCase()} confidence · ${meas.status === 'warning' ? 'valid, with warnings' : 'valid'}`, { color: meas.status === 'warning' ? C.warn : C.ink }]],
+          [`Result at ${meas.f} Hz`, `${meas.headline.method || '—'} · ${meas.headline.quality}, ${meas.headline.confidence.toLowerCase()} confidence${meas.status === 'warning' ? ' · with warnings' : ''}`, { color: meas.status === 'warning' ? C.warn : C.ink }]],
       ], { labelW: 90 });
-      // band table and chart side by side
-      const cols = [{ title: 'Band', w: 46 }, { title: 'RT60', w: 50, align: 'right' }, { title: 'Method', w: 40 }, { title: 'T20', w: 40, align: 'right' }, { title: 'T30', w: 40, align: 'right' }, { title: 'Usable decay', w: 56, align: 'right' }, { title: 'vs target', w: 48 }];
+      // band table (the room per band, each position's value, the spread, the band against its own limits) and chart
+      const used = meas.room.positions.map(x => x.id), pw = used.length > 2 ? 34 : 40;
+      const cols = [{ title: 'Band', w: 42 }, { title: 'Room RT60', w: 46, align: 'right' }, ...used.map(id => ({ title: id, w: pw, align: 'right' })), { title: 'Spread', w: 36, align: 'right' }, { title: 'vs target', w: 78 }];
       const ab = a ? new Map(a.bands.map(b => [b.f, b])) : new Map();
       const rows = meas.bands.map(b => {
         const s = ab.get(b.f);
-        return [{ t: fmt.hz(b.f), bold: b.f === meas.f }, b.rt60 != null ? { t: fmt.s(b.rt60), bold: true } : { t: 'Not reliable', color: C.warn }, b.path || '—',
-          b.t20 != null ? fmt.s(b.t20) : '—', b.t30 != null ? fmt.s(b.t30) : '—', isNum(b.decayRangeDb) ? `${Math.round(b.decayRangeDb)} dB` : '—',
-          s && BAND_STATUS[s.status] ? { t: BAND_STATUS[s.status], color: STATUS[s.status].color } : '—'];
+        return [{ t: fmt.hz(b.f), bold: b.f === meas.f }, b.rt60 != null ? { t: fmt.s(b.rt60), bold: true } : { t: 'Not reliable', color: C.warn },
+          ...b.values.map(v => (v.rt60 != null ? fmt.s(v.rt60) : { t: '—', color: C.faint })), b.spread != null ? fmt.s(b.spread) : '—',
+          s && BAND_STATUS[s.status] ? { t: `${BAND_STATUS[s.status]}${s.role === 'secondary' ? ' · own limit' : ''}`, color: STATUS[s.status].color } : s && s.role === 'info' && b.rt60 != null ? { t: 'No limit', color: C.muted } : '—'];
       });
       const sz = tableSize(cols, rows), tw = cols.reduce((s, c) => s + c.w, 0), ch = Math.max(sz.total, 96);
       need(ch + 8);
@@ -451,7 +470,7 @@
       table(L.l, y, cols, rows, sz, { highlight: i => meas.bands[i].f === meas.f });
       bandChart(L.l + tw + 16, y, WD - tw - 16, ch, { series: [{ label: 'Measured RT60 (s)', color: C.ink, values: meas.bands.map(b => b.rt60) }], target: t, bands: meas.bands.map(b => b.f) });
       y += ch + 4;
-      block(L.l, WD, `RT60 per octave band; reference band ${meas.f} Hz highlighted. "Not reliable": the recording held too little of the room's decay in that band, so no value is given.`, { size: Z.small, color: C.muted });
+      block(L.l, WD, `Room RT60: the mean over the positions; spread: longest − shortest. Judged: ${meas.policy.short}; "own limit": a band warning. ${meas.f} Hz highlighted.`, { size: Z.small, color: C.muted });
       notesList(meas.notes);
     }
 
@@ -462,23 +481,24 @@
       block(L.l, WD, 'No target is set in this project, so the measurement is not assessed.', { size: Z.small, color: C.muted });
     } else {
       const basis = t.basis || (t.source === 'custom' ? 'Set by the user' : 'Recommended from the room type and use');
-      const left = [['Target RT60 (preferred)', fmt.s(t.preferred), { bold: true }], ['Acceptable range', range(t)], ['Basis', basis]];
-      const right = a ? [
-        [`Measured at ${a.f} Hz`, `${fmt.s(a.rt)} (${a.method})`, { bold: true }],
-        ['Difference from preferred', fmt.signedS(a.diff)],
-        ['Against the range', a.status === 'above' ? `${fmt.s(a.rt - t.max)} above the upper limit (${fmt.s(t.max)})` : a.status === 'below' ? `${fmt.s(t.min - a.rt)} below the lower limit (${fmt.s(t.min)})` : 'Inside the range'],
-        [`Assessment at ${a.f} Hz`, STATUS[a.status].long, { bold: true, color: STATUS[a.status].color }],
-        ['Other bands', (() => { const c = k => a.bands.filter(b => b.status === k).length, nr = a.bands.filter(b => b.status === 'insufficient').length; return `${c('above')} above, ${c('within')} within, ${c('below')} below the range${nr ? `; ${nr} not reliable` : ''} (of ${a.bands.length})`; })()],
-      ] : [['Assessment', 'Not available: needs a valid measurement', { bold: true }]];
+      const left = [['Target RT60', `${fmt.s(t.preferred)} preferred · range ${range(t)}`, { bold: true }], ['Basis', basis],
+        ...(a ? [['Verdict rule', a.policy.brief]] : [])];
+      const right = a && !a.available ? [
+        ['Verdict', `Not assessed: ${a.reason}`, { bold: true }],
+      ] : a ? [
+        ['Verdict', `${a.explanation.headline}${a.verdict.complete ? '' : ' (not every band measured)'}`, { bold: true, color: STATUS[a.status].color }],
+        [`Average ${a.policy.short}`, `${fmt.s(a.rt)} (${fmt.signedS(a.diff)}), a summary`],
+        ['Outside the range', `${a.verdict.failing.length ? a.verdict.failing.map(r => `${r.f} Hz ${fmt.s(r.rt)}`).join(', ') : 'No judged band'}${a.warnings.length ? ` · band warning${a.warnings.length > 1 ? 's' : ''}: ${a.warnings.map(r => `${r.f} Hz ${fmt.s(r.rt)} (own limit ${r.min.toFixed(2)}–${fmt.s(r.max)})`).join(', ')}` : ' · no band warning'}`],
+      ] : [['Verdict', 'Not available: needs a valid measurement', { bold: true }]];
       kv([left, right]);
-      if (a) { y += 2; block(L.l, WD, explanation(a.status), { size: Z.body, color: C.ink2 }); }
+      if (a && a.available) { y += 2; block(L.l, WD, `${explanation(a.status)}${a.verdict.masked ? ' The average alone is inside the range, but every judged band has to be.' : ''}`, { size: Z.body, color: C.ink2 }); }
     }
 
     const hasPage2 = !!(pr || M.plan.items.length);
-    const limitsMeasurement = `Measurement: one device's built-in speaker and microphone in a web browser, at one position${meas && meas.position ? ` (${meas.position.id})` : ''}. Neither is calibrated and no correction is applied; levels are relative (dBFS), not sound pressure levels. Not a laboratory-grade measurement; more positions, averaged, would be more representative. The room is treated as a rectangular box (V = L × W × H).`;
+    const limitsMeasurement = `One device's uncalibrated built-in speaker and microphone in a web browser, at ${meas ? meas.positions.count : 0} position${meas && meas.positions.count === 1 ? '' : 's'}. Evaluated as ISO 3382-2 sets out (T20/T30, noise compensation, straightness checks), but not validated against a reference instrument: no conformity with ISO 3382-2 and no measurement uncertainty are claimed. Room treated as a box (V = L × W × H).`;
 
     if (!hasPage2) {
-      heading(4, 'Summary and next steps', null, 40);
+      heading(4, 'Summary and next steps', { text: 'RECOMMENDATION', color: C.acoustic }, 40);
       summary(M).forEach(s => { block(L.l, WD, s, { size: Z.body, color: C.ink }); y += 2; });
       need(lineH(Z.small) + 30);
       y += 4;
@@ -528,20 +548,20 @@
       } else {
         const h = pr.headline, ps = M.predictedStatus;
         kv([[
-          [`At ${h.f} Hz`, `Measured ${fmt.s(h.measured)}  →  predicted ${fmt.s(h.predicted)} (${fmt.signedS(h.predicted - h.measured)})`, { bold: true, color: C.predicted }],
-          ...(t ? [['Against the target', `${STATUS[ps] ? STATUS[ps].long : '—'}: ${fmt.signedS(h.predicted - t.preferred)} from the preferred ${fmt.s(t.preferred)} (range ${range(t)})`, { bold: true, color: STATUS[ps] ? STATUS[ps].color : C.ink }]] : []),
+          [`Average RT60, ${pr.policy.short}`, `Measured ${fmt.s(pr.measured)}  →  predicted ${fmt.s(pr.predicted)} (${fmt.signedS(pr.predicted - pr.measured)})`, { bold: true, color: C.predicted }],
+          ...(t ? [['Predicted verdict', `${STATUS[ps] ? STATUS[ps].long : '—'}${pr.verdict && pr.verdict.failing.length ? `: ${pr.verdict.failing.map(r => `${r.f} Hz ${fmt.s(r.rt)}`).join(', ')} outside` : ' in every band judged'}; average ${fmt.signedS(pr.predicted - t.preferred)} from the preferred ${fmt.s(t.preferred)} (range ${range(t)})`, { bold: true, color: STATUS[ps] ? STATUS[ps].color : C.ink }]] : []),
         ]], { labelW: 96 });
         const cols = [{ title: 'Band', w: 46 }, { title: 'Measured', w: 52, align: 'right' }, { title: 'Predicted', w: 52, align: 'right' }, { title: 'Change', w: 50, align: 'right' }, { title: 'Predicted vs target', w: 96 }];
         const rows = pr.bands.map(b => {
-          const s = t && isNum(b.predicted) ? AM.acoustics.classify(b.predicted, t) : null;
-          return [{ t: fmt.hz(b.f), bold: b.f === h.f }, isNum(b.measured) ? fmt.s(b.measured) : { t: 'Not reliable', color: C.warn },
+          const vr = (pr.verdictRows || []).find(r => r.f === b.f), s = t && isNum(b.predicted) ? (vr ? vr.status : AM.acoustics.classify(b.predicted, t)) : null;
+          return [fmt.hz(b.f), isNum(b.measured) ? fmt.s(b.measured) : { t: 'Not reliable', color: C.warn },
             isNum(b.predicted) ? { t: fmt.s(b.predicted), bold: true, color: C.predicted } : '—', isNum(b.predicted) ? fmt.signedS(b.predicted - b.measured) : '—',
             !isNum(b.measured) ? { t: 'Not measured reliably', color: C.muted } : b.missingAlpha ? { t: 'No tested α at this band', color: C.muted } : b.coveredExceedsMeasured ? { t: 'Finish values do not fit the room', color: C.warn } : s ? { t: BAND_STATUS[s], color: STATUS[s].color } : '—'];
         });
         const sz = tableSize(cols, rows), tw = cols.reduce((s, c) => s + c.w, 0), ch = Math.max(sz.total, 96);
         need(ch + 8);
         y += 5;
-        table(L.l, y, cols, rows, sz, { highlight: i => pr.bands[i].f === h.f });
+        table(L.l, y, cols, rows, sz);
         bandChart(L.l + tw + 16, y, WD - tw - 16, ch, { series: [{ label: 'Measured (s)', color: C.ink, values: pr.bands.map(b => b.measured) }, { label: 'Predicted (s)', color: C.predicted, values: pr.bands.map(b => b.predicted) }], target: t, bands: pr.bands.map(b => b.f) });
         y += ch + 6;
 
@@ -572,7 +592,7 @@
         need(csz.total + 16);
         y += table(L.l, y, ccols, crow, csz);
         y += 3;
-        block(L.l, WD, 'Inputs as stored; results rounded to 0.01 m² Sabine and the total is the sum of the values shown. RT60 as the app calculated it, unrounded.', { size: Z.small, color: C.muted });
+        block(L.l, WD, `Inputs as stored; results rounded to 0.01 m² Sabine and the total is the sum of the values shown. RT60 as the app calculated it, unrounded. Every band is calculated the same way; the predicted average over ${pr.policy.short} is their mean: (${pr.average.included.map(b => b.rt60.toFixed(3)).join(' + ')}) ÷ ${pr.average.n} = ${fmt.s(pr.predicted)}. The predicted verdict judges each band on its own.`, { size: Z.small, color: C.muted });
       }
 
       heading(6, 'Assumptions and limitations', null, 40);
@@ -584,7 +604,7 @@
         ] : []),
         limitsMeasurement,
       ]);
-      heading(7, 'Summary and next steps', null, 40);
+      heading(7, 'Summary and next steps', { text: 'RECOMMENDATION', color: C.acoustic }, 40);
       summary(M).forEach(s => { block(L.l, WD, s, { size: Z.body, color: C.ink }); y += 2; });
     }
 

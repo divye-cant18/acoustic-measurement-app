@@ -291,7 +291,10 @@
     const textOf = h => { const d = document.createElement('div'); d.innerHTML = h; return d.textContent.replace(/\s+/g, ' '); };
     // What the Results step shows for the project as it is now (its own view), and the app's top bar.
     const resultsHtml = p => W.get('results').view({ project: p, state: S.state }).body;
-    const hero = p => { const m = resultsHtml(p).match(/class="hero-v"[^>]*>([\d.]+)</); return m ? parseFloat(m[1]) : null; };
+    // The Results headline: the average over the bands the room is judged in (summary-headline); beside it the all-band
+    // average (avg-headline). Every take here is made at one position, so the room's values are that take's.
+    const heroOf = (p, w) => { const m = resultsHtml(p).match(new RegExp(`data-watch="${w}">([\\d.]+)<`)); return m ? parseFloat(m[1]) : null; };
+    const hero = p => heroOf(p, 'summary-headline');
     const fact = () => { AM.app.render(); const f = document.querySelector('#app [data-watch="fact-measured"] .fact-v'); return f ? f.textContent.trim() : null; };
     // One take through the Measure step; returns the new recording, or the failure when the take could not be used.
     async function recordTake(p, label) {
@@ -314,10 +317,13 @@
       const res = p.processing.result && p.processing.result.recordingId === rec.id ? p.processing.result : null;
       return { res, attempt: res ? null : p.processing.attempt };
     }
-    // The Results headline and the top bar show the take's average RT60 across its measured bands (AM.services.rt60Average).
+    // Results, the top bar and the report show the take's values (AM.services.rt60Average): the average over the judged
+    // bands as the headline and in the top bar, the all-band average beside it; without one, "—", never another band's value.
     const shows = (p, res) => {
-      const av = AM.services.rt60Average.of(res).value, M = AM.report.model(p);
-      return Math.abs(hero(p) - av) < 0.006 && fact() === fmt.s(av) && M.measurement.id === res.recordingId && M.measurement.average.value === av;
+      const RA = AM.services.rt60Average, a = RA.of(res), sm = RA.ofBands(res, AM.derive.policy(p).primary), M = AM.report.model(p);
+      const same = M.measurement.id === res.recordingId && M.measurement.average.value === a.value && M.measurement.summary.value === sm.value;
+      const all = heroOf(p, 'avg-headline'), head = hero(p);
+      return (a.available ? Math.abs(all - a.value) < 0.006 : all === null) && (sm.available ? Math.abs(head - sm.value) < 0.006 && fact() === fmt.s(sm.value) : head === null && fact() === '—') && same;
     };
 
     S.startProject('new');

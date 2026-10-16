@@ -120,7 +120,7 @@
         t20: m('t20'), t30: m('t30'), xi: m('xi'), curvature: m('curvature'), cutoff: ok.filter(t => (t.res.bands.find(b => b.f === f) || {}).reason && /cut off/.test(t.res.bands.find(b => b.f === f).reason)).length,
         notes: [...new Set(ok.flatMap(t => (t.res.bands.find(b => b.f === f) || {}).notes || []).map(n => n.split(' (')[0].split(':')[0]))] };
     });
-    // The headline (500–2000 Hz) where the take has one; how many takes had one is reported separately.
+    // The headline (the average of all six bands, RA.SHORT) where the take has one; how many takes had one is reported separately.
     const avgs = ok.filter(t => t.avg.available).map(t => t.avg.value), nb = ok.map(t => (t.avg.available ? t.avg.n : 0));
     // The same bands every take (500–4000 Hz), to separate the room's values from which bands entered the average.
     const fixed = ok.map(t => { const v = t.res.bands.filter(b => b.f >= 500).map(b => b.rt60); return v.every(x => x != null) ? mean(v) : null; }).filter(v => v != null);
@@ -133,7 +133,7 @@
   /* ---------- page ---------- */
   const f2 = x => (x == null ? '—' : x.toFixed(2)), f3 = x => (x == null ? '—' : x.toFixed(3)), pct = (x, r) => (x == null || r == null ? '—' : `${x >= r ? '+' : '−'}${Math.abs(100 * (x / r - 1)).toFixed(1)} %`);
   function table(rows, ref) {
-    const head = `<tr><th>Condition</th><th>Valid</th>${B.map(f => `<th>${f} Hz</th>`).join('')}<th>Headline 500–2000 Hz (sd)</th><th>Range</th><th>Headline given</th><th>Avg vs ref</th><th>1 kHz vs ref</th><th>500–4k mean (sd)</th><th>Not valid: reason</th></tr>`;
+    const head = `<tr><th>Condition</th><th>Valid</th>${B.map(f => `<th>${f} Hz</th>`).join('')}<th>Headline ${RA.SHORT} (sd)</th><th>Range</th><th>Headline given</th><th>Avg vs ref</th><th>1 kHz vs ref</th><th>500–4k mean (sd)</th><th>Not valid: reason</th></tr>`;
     const body = rows.map(([name, s]) => {
       const cells = s.band.map(b => (b.n ? `${f2(b.mean)}${b.sd > 0.004 ? ` ±${f3(b.sd)}` : ''}<br><span class="muted">${Object.entries(b.paths).map(([p, k]) => `${p}×${k}`).join(' ')}${b.n < s.valid ? ` · ${s.valid - b.n} none` : ''}</span>` : `<span class="muted">none</span>`));
       const r1k = ref && ref.band[3].mean, s1k = s.band[3].mean;

@@ -46,12 +46,15 @@
 <script src="js/services/processing.js"></script>
 <!-- Average RT60 across the measured bands: the one calculation every summary and the report read -->
 <script src="js/services/rt60-average.js"></script>
+<!-- The room over its measuring positions, and how it is judged against its target -->
+<script src="js/services/spatial.js"></script>
+<script src="js/services/evaluation.js"></script>
 <script src="js/services/prediction.js"></script>
 <script src="js/services/explain.js"></script>
 <script src="js/core/derive.js"></script>
 <script src="js/measurement/live.js"></script>
 
-<!-- UI building blocks -->
+<!-- Interface helpers: wording, live level meter, charts and the guide videos (the screens are in the interface) -->
 <script src="js/ui/components.js"></script>
 <script src="js/ui/live-ui.js"></script>
 <script src="js/ui/charts.js"></script>
@@ -63,8 +66,7 @@
 <!-- Report gate: the report form, sent to the app server (server/app_server.py → Supabase), unlocks the PDF -->
 <script src="js/services/report-gate.js"></script>
 
-<!-- Workflow stages, one file per step -->
-<script src="js/stages/home.js"></script>
+<!-- Workflow stages, one file per step: data, checks and actions (Home has none; its screen is in the interface) -->
 <script src="js/stages/room.js"></script>
 <script src="js/stages/target.js"></script>
 <script src="js/stages/setup.js"></script>
@@ -76,5 +78,5 @@
 <script src="js/stages/prediction.js"></script>
 <script src="js/stages/final.js"></script>
 
-<!-- Application shell: rail, context bar, action bar, events -->
-<script src="js/app.js"></script>
+<!-- The interface: shell and screens, React + TypeScript (src/), built by `npm run build` into this one script -->
+<script src="js/app/univicoustic-ui.js"></script>

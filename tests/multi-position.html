@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<base href="../">
+<title>Multi-position measurement tests</title>
+<link rel="stylesheet" href="css/app.css">
+<style>
+  #mp-test{position:fixed;inset:12px 12px auto auto;z-index:300;width:min(680px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;background:#fff;color:#14191b;border:1px solid #d9dee0;border-radius:10px;padding:12px 14px;font:13px/1.45 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.15)}
+  #mp-test h1{font-size:15px;margin:0 0 6px} #mp-test li{margin:4px 0;list-style:none} #mp-test ol{padding:0;margin:6px 0}
+  #mp-test .ok b{color:#16884a} #mp-test .bad b{color:#c42e42} #mp-test small{color:#566065}
+</style>
+</head>
+<body>
+<!-- TEST PAGE (development only): the measuring positions, the room averaged over them band by band, the verdict policy
+     per room category, the PDF and the report lock. Part A runs on load with fixed band values and synthetic takes through
+     the production analysis and the Processing step. Part B (one click: audio) runs the guided workflow end to end with
+     the virtual device (tests/virtual-room.js): two positions, an invalid take and its retry, an optional third position.
+     The whole application is loaded as index.html loads it; its storage is kept under its own prefix. Results on the page
+     and in window.MULTI_POSITION_TEST (window.MULTI_POSITION_A_DONE / _B_DONE resolve). -->
+<div id="mp-test"><h1>Multi-position measurement</h1>
+  <p>Part A runs now. Part B (the whole workflow with a virtual device, about 2 minutes) needs a click.</p>
+  <button id="mp-run" type="button">Run part B</button> <span id="mp-status">Running…</span><ol id="mp-out"></ol></div>
+<div id="app" class="app"></div>
+<div id="sheet-root"></div>
+<div id="toast-root" aria-live="polite"></div>
+<div id="tip" class="tip" role="tooltip" hidden></div>
+<script src="tests/virtual-room.js"></script>
+<script>
+  // virtual-room.js keeps storage under its own prefix; a project from before positions were kept is written there
+  // first, so the application migrates it when it loads (checked in part A).
+  (function () {
+    const P = 'acoustic-measurement-prototype';
+    try {
+      Object.keys(localStorage).filter(k => k.startsWith('vr-harness:')).forEach(k => localStorage.removeItem(k.slice('vr-harness:'.length)));
+    } catch (e) { /* storage unavailable */ }
+    window.LEGACY_ID = 'legacy-single-position';
+  })();
+  window.HARNESS_READY = (async () => {
+    const html = await (await fetch('index.html', { cache: 'no-store' })).text();
+    const srcs = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]).flatMap(s => (s === 'js/measurement/dsp.js' ? [s, 'tests/fixtures.js'] : [s]));
+    for (const src of srcs) await new Promise((resolve, reject) => { const s = document.createElement('script'); s.src = src; s.onload = resolve; s.onerror = () => reject(new Error(src)); document.body.appendChild(s); });
+    return srcs;
+  })();
+</script>
+<script src="tests/multi-position.test.js"></script>
+</body>
+</html>

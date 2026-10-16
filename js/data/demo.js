@@ -69,7 +69,7 @@
       support: 'On a stand, or propped upright. Laid flat, its speaker or microphone may be blocked. Turn on Do Not Disturb so no call or alert sounds during the take.',
       checks: [
         'A phone browser cannot choose or confirm the loudspeaker. While the microphone is on, some phones play sound through the earpiece instead: the test sweep must be clearly audible from the loudspeaker. If it is faint, measure on a laptop.',
-        'Small phone speakers give little sound below about 500 Hz, so 125 and 250 Hz may show "Not reliable". The average RT60 (500–2000 Hz) usually remains available.',
+        'Small phone speakers give little sound below about 500 Hz, so 125 and 250 Hz may show "Not reliable". A band that cannot be measured is left out of the room\'s average and named. To include it, measure again in a quiet room with a higher sweep level, or on a laptop.',
         'Keep the screen on and this page in front during the take: locking the phone, a call or switching apps stops the take.',
       ],
     },
@@ -161,7 +161,7 @@
         prep: { doors: false, hvac: false, quiet: false, placed: false, uncovered: false, output: false },
       },
       measurement: { recording: null, failed: null, retry: null },
-      processing: { result: null, attempt: null, history: [] },
+      processing: { result: null, attempt: null, history: [], positions: {} },
       treatment: newTreatment(),
       completed: ['home'],
       review: [],

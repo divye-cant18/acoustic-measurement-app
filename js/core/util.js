@@ -30,7 +30,9 @@ window.AM = window.AM || { services: {} };
     m2: (x, d = 1) => isNum(x) ? x.toFixed(d) + ' m²' : '—',
     m3: (x, d = 0) => isNum(x) ? x.toFixed(d) + ' m³' : '—',
     db: (x, d = 0) => isNum(x) ? neg(x.toFixed(d)) + ' dB' : '—',
-    dbfs: (x, d = 1) => isNum(x) ? neg(x.toFixed(d)) + ' dBFS' : '—',
+    // A level relative to the input's digital full scale (dBFS), in plain words: how far below the loudest level the
+    // microphone can record ("max"). Never the room's loudness: the microphone is not calibrated.
+    dbfs: (x, d = 1) => { if (!isNum(x)) return '—'; const v = +x.toFixed(d); return `${Math.abs(v).toFixed(d)} dB ${v > 0 ? 'above' : 'below'} max`; },
     hz: f => f + ' Hz',
     hzShort: f => f >= 1000 ? (f / 1000) + 'k' : String(f),
     pct: (x, d = 0) => isNum(x) ? (x * 100).toFixed(d) + '%' : '—',
@@ -104,6 +106,8 @@ window.AM = window.AM || { services: {} };
     search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
     pushpin: '<path class="pin-head" d="M9 3.5h6l-.9 5.6 3.4 3.4v1.8h-11v-1.8l3.4-3.4L9 3.5z"/><path d="M12 14.3V21"/>',
     history: '<path d="M4.5 12a7.5 7.5 0 102.2-5.3"/><path d="M4.5 4.5v3.5H8"/><path d="M12 8v4.2l2.8 1.8"/>',
+    help: '<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 014.9.7c0 1.7-2.5 2.1-2.5 3.7"/><path d="M12 17h.01"/>',
+    tour: '<circle cx="12" cy="12" r="8.5"/><path d="M15.4 8.6l-1.9 4.9-4.9 1.9 1.9-4.9z"/>',
     doc: '<path d="M7 3.5h7l4.5 4.5v12a.5.5 0 01-.5.5H7a.5.5 0 01-.5-.5V4a.5.5 0 01.5-.5z"/><path d="M14 3.5V8h4.5M9.5 12.5h5M9.5 16h5"/>',
     trash: '<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.8 12.5a1 1 0 001 .9h7.4a1 1 0 001-.9L17.5 7"/><path d="M10 11v5.5M14 11v5.5"/>',
     printer: '<path d="M7 9V3.5h10V9"/><rect x="3.5" y="9" width="17" height="8" rx="1.5"/><path d="M7 14h10v6.5H7z"/>',
@@ -115,5 +119,6 @@ window.AM = window.AM || { services: {} };
     return `<svg class="i" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${attrs}>${ICONS[name] || ''}</svg>`;
   }
 
-  AM.util = { esc, isNum, num, int, clamp, round, trimNum, fmt, getPath, setPath, icon };
+  // ICONS: the same drawings for the React interface (src/ui/Icon.tsx).
+  AM.util = { esc, isNum, num, int, clamp, round, trimNum, fmt, getPath, setPath, icon, ICONS };
 })(window.AM);

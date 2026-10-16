@@ -8,8 +8,16 @@
    fields         the form, in order. key = what the browser sends; type: text, email, select, country, textarea,
                   consent (required checkbox), checkbox (optional, unchecked by default).
    project        the project summary sent with the form (from AM.derive, never typed), and its allowed values.
-                  measuredRt60 is the RT60 at 1000 Hz (the band the target is compared at); measuredRt60Avg the average
-                  of 500, 1000 and 2000 Hz shown as the headline, or null when one of them has no value.
+                  measuredRt60 is the RT60 at 1000 Hz (the reference band, where a take's validity is decided);
+                  measuredRt60Avg the room's average RT60, the mean of the bands 125–4000 Hz that were measured, the value the app shows
+                  and compares with the target, or null when one band has no value (app versions before 2026.10.15
+                  stored the mean of 500, 1000 and 2000 Hz there: the app_version column tells them apart).
+                  predictedRt60 is the predicted RT60 at 1000 Hz; predictedRt60Avg the predicted average over the bands
+                  of the measured all-band average (null without a prediction, or when a product has no tested α there).
+                  From app version 2026.10.16 every measured and predicted value is taken from the room averaged over its
+                  measuring positions (at least two), and the app's verdict is decided band by band over the bands the
+                  room's criterion sets: the verdict and that summary are not stored here (no column was added or
+                  changed; the app_version column tells the versions apart).
                   "optional": true marks a value added later: a request without it is accepted (as null).
    columns        the table's columns, in order: column = its name in the database (schema.sql), header = how it is
                   described, source = where the value comes from. Nothing that is not listed here is ever sent or
@@ -22,7 +30,7 @@
   'use strict';
   const spec = /* FORM-SPEC-BEGIN */ {
     "specVersion": 1,
-    "appVersion": "2026.10.14",
+    "appVersion": "2026.10.16",
     "fields": [
       { "key": "fullName", "label": "Full name", "type": "text", "required": true, "minLength": 2, "maxLength": 100, "autocomplete": "name" },
       { "key": "email", "label": "Email address", "type": "email", "required": true, "maxLength": 254, "autocomplete": "email" },
@@ -48,6 +56,7 @@
       { "key": "measuredRt60Avg", "type": "number", "min": 0.05, "max": 20, "decimals": 2, "nullable": true, "optional": true },
       { "key": "measurementMethod", "type": "string", "maxLength": 40, "allowEmpty": true, "pattern": "^[A-Za-z0-9 ()./-]{0,40}$" },
       { "key": "predictedRt60", "type": "number", "min": 0.05, "max": 20, "decimals": 2, "nullable": true },
+      { "key": "predictedRt60Avg", "type": "number", "min": 0.05, "max": 20, "decimals": 2, "nullable": true, "optional": true },
       { "key": "treatmentStatus", "type": "string", "enum": ["No treatment", "Not selected", "Planned", "Predicted", "Measured after treatment"] }
     ],
     "columns": [
@@ -69,9 +78,10 @@
       { "column": "room_volume_m3", "header": "Room volume (m³)", "source": "project.roomVolumeM3" },
       { "column": "target_rt60_s", "header": "Target RT60 (s)", "source": "project.targetRt60" },
       { "column": "measured_rt60_s", "header": "Measured RT60 at 1000 Hz (s)", "source": "project.measuredRt60" },
-      { "column": "measured_rt60_avg_s", "header": "Average RT60 500–2000 Hz (s)", "source": "project.measuredRt60Avg", "optional": true },
+      { "column": "measured_rt60_avg_s", "header": "Average RT60 125–4000 Hz (s)", "source": "project.measuredRt60Avg", "optional": true },
       { "column": "measurement_method", "header": "Measurement method", "source": "project.measurementMethod" },
-      { "column": "predicted_rt60_s", "header": "Predicted RT60 (s)", "source": "project.predictedRt60" },
+      { "column": "predicted_rt60_s", "header": "Predicted RT60 at 1000 Hz (s)", "source": "project.predictedRt60" },
+      { "column": "predicted_rt60_avg_s", "header": "Predicted average RT60 125–4000 Hz (s)", "source": "project.predictedRt60Avg", "optional": true },
       { "column": "treatment_status", "header": "Treatment status", "source": "project.treatmentStatus" },
       { "column": "app_version", "header": "Application version", "source": "server.appVersion" }
     ],

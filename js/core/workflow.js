@@ -20,7 +20,7 @@
     { id: 'target', title: 'Target / Ideal RT60', nav: 'Target / Ideal RT60', phase: 'Define', owns: ['target'], deps: ['room'],
       purpose: 'Decide how reverberant this room should be. This is what we want, set before anything is measured.' },
     { id: 'setup', title: 'Measurement Setup', nav: 'Measurement Setup', phase: 'Measure', owns: ['setup'], deps: [],
-      purpose: 'Prepare the microphone, the measuring position, the room and the test signal.' },
+      purpose: 'Prepare the microphone, the measuring position and the room.' },
     { id: 'measure', title: 'Acoustic Measurement', nav: 'Acoustic Measurement', phase: 'Measure', owns: ['measurement'], deps: ['setup'],
       purpose: 'Play the test signal and record how the room responds. This is where the room is actually measured.' },
     { id: 'processing', title: 'Measurement Processing', nav: 'Processing', phase: 'Measure', owns: ['processing'], deps: ['measure'],
@@ -84,7 +84,8 @@
      material never puts the target, the assessment or any measurement step up for review. The room's name is a label
      and the furnishing a note (it does not change the target: services/target.js): correcting either puts nothing up
      for review. */
-  const NARROW = { 'room.surfaces': ['treatment', 'prediction', 'final'], 'room.name': [], 'room.furnishing': [] };
+  // Where the NEXT take is made: each take records its own position, so choosing another one changes no finished step.
+  const NARROW = { 'room.surfaces': ['treatment', 'prediction', 'final'], 'room.name': [], 'room.furnishing': [], 'setup.position': [] };
   function affects(path) {
     const k = Object.keys(NARROW).find(x => path === x || path.startsWith(x + '.'));
     return k ? NARROW[k] : null;

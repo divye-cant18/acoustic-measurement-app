@@ -400,6 +400,17 @@
       const loud = Float32Array.from(steady).map(v => Math.max(-1, Math.min(1, v * 900)));
       const r5 = AN.analyseNoise(loud, fs);
       check('Overloaded input: noise measurement invalid', r5.status === 'invalid' && /overloaded/.test(r5.reasons.join(' ')), r5.reasons.join(' '));
+
+      // The cautions say their levels in plain words ("N dB below max", "recording background noise"); the levels (dBFS),
+      // the limits and the statuses behind them are unchanged.
+      const high = AN.analyseNoise(Float32Array.from(FIX.background(n, -16, 84)), fs);
+      const hw = high.warnings.find(w => /Recording background noise is high/.test(w)) || '';
+      check('Loud steady background: a caution, not a rejection, at the same limit (−30 dBFS), said as dB below max with no dBFS or noise floor',
+        AN.CRITERIA.noise.highDbfs === -30 && AN.CRITERIA.noise.silenceDbfs === -110 && high.status === 'warning' && high.unit === 'dBFS' && high.inBand.l50 > -30
+          && hw.includes(`usually ${AM.util.fmt.dbfs(high.inBand.l50)} in the RT60 bands`) && !/dBFS|noise floor/i.test(hw), `${high.status}, in band ${high.inBand.l50} dBFS: ${hw}`);
+      const faint = AN.analyseNoise(Float32Array.from(steady, v => v * Math.pow(10, -70 / 20)), fs);
+      check('Faint input below the silence limit: not assessed, and its level said as dB below max', faint.status === 'unassessed' && faint.inBand.leqDbfs < -110
+        && faint.warnings[0].includes(`(${AM.util.fmt.dbfs(faint.inBand.leqDbfs)}, quieter than 110 dB below max)`) && !/dBFS/.test(faint.warnings[0]), `${faint.inBand.leqDbfs} dBFS: ${faint.warnings[0]}`);
     }
     return results;
   }

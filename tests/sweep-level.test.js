@@ -63,7 +63,8 @@
     S.autofillTo('measure');
     const m0 = text(html('measure', p));
     check('Measure shows the control at the default: 0 dB, "Default", − and + available',
-      /Sweep level/.test(m0) && /Default/.test(m0) && !/Reset to default/.test(m0) && /peak −3\.1 dBFS/.test(m0), m0.slice(m0.indexOf('Sweep level'), m0.indexOf('Sweep level') + 240));
+      /Sweep level/.test(m0) && /Default/.test(m0) && !/Reset to default/.test(m0) && /peak 3\.1 dB below max/.test(m0), m0.slice(m0.indexOf('Sweep level'), m0.indexOf('Sweep level') + 240));
+    check('Measure says every level in plain words: no dBFS and no noise floor on the screen', !/dBFS|noise floor/i.test(m0) && /dB below max/.test(m0), (m0.match(/.{0,60}(dBFS|noise floor).{0,60}/i) || ['none'])[0]);
 
     // 2. A take at the default level.
     const rec0 = await take(p, '0 dB');

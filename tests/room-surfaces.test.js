@@ -357,7 +357,7 @@
         // Through the app: 9 × 7 × 3 m, all surfaces α 0.10; 5 panels on the walls. ΔA = area × (α − 0.10).
         const rts = { 125: 0.9, 250: 0.8, 500: 0.75, 1000: 0.7, 2000: 0.65, 4000: 0.6 };
         const proj = (room, placement = 'Walls') => ({ id: 'calc', room, completed: [], review: [],
-          processing: { result: { valid: true, referenceBand: 1000, headline: { f: 1000, rt60: 0.7 }, bands: B.map(f => ({ f, rt60: rts[f] })) } },
+          processing: { result: { valid: true, referenceBand: 1000, headline: { f: 1000, rt60: 0.7 }, bands: B.map(f => ({ f, rt60: rts[f], path: 'T30', quality: 'Good' })) } }, // as a processed band (path, quality)
           treatment: { items: [item(placement)], active: 'i1' } });
         const alpha = CAT.getOctaveAbsorption(cfg.id, [1000]).values[1000], area = 5 * size.areaM2;
         const known = D.prediction(proj(box(9, 7, 3, surfacesAll('test-hard')))), unknown = D.prediction(proj(box(9, 7, 3)));

@@ -119,13 +119,27 @@
     if (s.sweepLevelDb === undefined) s.sweepLevelDb = 0;
     p.measurement = Object.assign({ recording: null, failed: null, retry: null }, p.measurement);
     p.processing = Object.assign({ result: null, attempt: null, history: [] }, p.processing);
+    /* Projects measured before positions were kept (app 2026.10.16): the current take is the only valid result, at its
+       own position. The room now needs at least two positions (AM.services.spatial) and is judged band by band over the
+       bands its target's criterion sets (AM.services.evaluation), so finished steps that show the result are marked for
+       review and the Measure step says why. Nothing measured is removed. */
+    if (!p.processing.positions) {
+      const cur = p.processing.result;
+      p.processing.positions = {};
+      if (cur && cur.valid && cur.engine !== 'simulated') {
+        p.processing.positions[(cur.meta && cur.meta.position) || 'P1'] = cur;
+        const flag = ['results', 'assessment'].filter(id => p.completed.includes(id) && !p.review.includes(id));
+        p.review.push(...flag);
+        p.legacyNote = 'This project was measured at one position. Rooms are now measured at two or more positions and judged band by band over the bands their target standard sets. Measure a second position to complete it; the steps that show the result are marked for review.';
+      }
+    }
     const rec = p.measurement.recording, res = p.processing.result;
     const simulated = (rec && (rec.simulated || rec.sim)) || (res && res.engine === 'simulated') || (s.noise && s.noise.dBA !== undefined) || p.proto;
     if (!simulated) return;
     const hadMeasurement = !!(rec || res);
     s.noise = null; s.noiseAttempt = null; s.permission = 'not-requested'; s.input = null;
     p.measurement = { recording: null, failed: null, retry: null };
-    p.processing = { result: null, attempt: null, history: [] };
+    p.processing = { result: null, attempt: null, history: [], positions: {} };
     delete p.proto;
     const keep = ['home', 'room', 'target'];
     p.completed = p.completed.filter(id => keep.includes(id));

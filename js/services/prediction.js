@@ -13,7 +13,13 @@
          carries `checks`: the model's assumptions that this room and plan put in doubt.
      absorptionNeeded(V, measuredRT, targetRT)                     -> m² Sabine
      areaFor({ V, bands, alpha, referenceBand, targetRT, addedA, coveredAlpha }) -> m² of one product | null
-         addedA: absorption already added at the reference band by the other items of the plan (default 0)
+         at one band only: addedA is the absorption already added at that band by the other items of the plan
+         (default 0). The app's treatment amount uses areaForAverage.
+     areaForAverage({ V, S, bands, item, others, targetRT, over }) -> m² of one product | null
+         the amount at which the predicted AVERAGE RT60 (AM.services.rt60Average.ofPrediction) over the bands `over`
+         (the bands the measured average used; default all six) reaches targetRT; item and others as in treatment.items
+     The prediction's headline row is the reference band's (1000 Hz); the room-wide predicted value is the average of
+     the predicted bands, AM.services.rt60Average.ofPrediction(prediction.bands) (AM.derive.prediction).
 
    Model. The measured RT60 gives the room's equivalent absorption area, A0 = 0.161·V / RT (the relation ISO 354 uses to
    define it from a measured reverberation time): everything in the room as measured, furniture, people and air
@@ -96,5 +102,41 @@
     return Math.max(0, absorptionNeeded(V, b.rt60, targetRT) - addedA) / a;
   }
 
-  AM.services.prediction = { kind: 'simplified-sabine', SABINE_LIMIT, predict, absorptionNeeded, areaFor };
+  /* Area of one product (m²) at which the predicted average RT60 (AM.services.rt60Average.ofPrediction, over the bands
+     the measured average used)
+     reaches targetRT, with the other items of the plan as they are. The same model as predict(), so the amount and the
+     prediction always agree.
+     Each band's RT60 is 0.161·V ÷ (A + d·x) in the area x, with d = α − α of the covered finish: it falls with x where
+     the product absorbs more than the finish it covers and rises where it absorbs less. Each is convex, so their mean is
+     convex: it falls to one lowest point and may rise after it. The amounts that keep every band defined are one
+     interval from 0 (a band stops being defined once the covered finish would absorb more than the room measured, and
+     stays so). So: the end of that interval (doubling), its lowest point (ternary search; an amount outside the interval
+     counts as infinitely long), then the smallest amount at or below the target (bisection), to 0.0001 m².
+     0 when the average is already at or below the target; null when there is no predicted average (a band not
+     measured, a product without tested α there, finishes that do not fit the room) or when even the lowest point stays
+     above the target (no amount of this product reaches it). */
+  function areaForAverage({ V, S = null, bands, item, others = [], targetRT, over }) {
+    const avgAt = x => AM.services.rt60Average.ofPrediction(predict({ V, S, bands, treatment: { items: [...others, Object.assign({}, item, { areaM2: x })] } }).bands, over);
+    const val = x => { const a = avgAt(x); return a.available ? a.value : Infinity; };
+    const start = val(0);
+    if (start === Infinity || !(targetRT > 0)) return null;
+    if (start <= targetRT) return 0;
+    let end = 1;
+    while (end < 1e6 && val(end) !== Infinity) end *= 2;
+    let lo = 0, hi = end;
+    while (hi - lo > 1e-4) {
+      const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+      if (val(m1) <= val(m2)) hi = m2; else lo = m1;
+    }
+    const lowest = (lo + hi) / 2;
+    if (!(val(lowest) <= targetRT)) return null;
+    let a = 0, b = lowest;
+    while (b - a > 1e-4) {
+      const mid = (a + b) / 2;
+      if (val(mid) <= targetRT) b = mid; else a = mid;
+    }
+    return b;
+  }
+
+  AM.services.prediction = { kind: 'simplified-sabine', SABINE_LIMIT, predict, absorptionNeeded, areaFor, areaForAverage };
 })(window.AM);

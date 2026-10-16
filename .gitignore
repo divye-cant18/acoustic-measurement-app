@@ -8,6 +8,9 @@
 # Created by the app server at run time: the submissions ledger and the receipt signing key (a secret)
 server/data/
 
+# Node: the interface's build tools (package.json; npm ci restores them)
+node_modules/
+
 # Python
 __pycache__/
 *.py[cod]

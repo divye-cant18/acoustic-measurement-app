@@ -52,7 +52,7 @@
     { id: 'bands', label: 'Frequency bands analysed' },
     { id: 'decay', label: 'Decay analysed' },
     { id: 'direct', label: 'Direct sound separated' },
-    { id: 'noise', label: 'Noise floor checked' },
+    { id: 'noise', label: 'Recording background noise checked' },
     { id: 'path', label: 'Calculation path selected' },
     { id: 'rt60', label: 'RT60 calculated' },
     { id: 'validate', label: 'Result validated' },
@@ -96,10 +96,10 @@
     out.path = usable('T30') ? 'T30' : usable('T20') ? 'T20' : null;
     if (!out.path) {
       out.reason = dist && b.decayRangeDb >= REQUIRED.T20
-        ? `Sounds during the take, such as voices, knocks or movement, rose ${Math.round(dist.db)} dB above the background in this band (${dist.events} times). Counted as the noise floor, they leave ${short(R, REQUIRED.T20)} dB of the room's own decay; T20 needs ${REQUIRED.T20} dB. Measure again while the room is quiet.`
+        ? `Sounds during the take, such as voices, knocks or movement, rose ${Math.round(dist.db)} dB above the background in this band (${dist.events} times). Counted as recording background noise, they leave ${short(R, REQUIRED.T20)} dB of the room's own decay; T20 needs ${REQUIRED.T20} dB. Measure again while the room is quiet.`
         : b.decayRangeDb < REQUIRED.T20
-          ? `Only ${short(b.decayRangeDb, REQUIRED.T20)} dB of the room's own decay above the noise floor${b.headDb >= 3 ? ` (after the direct sound, which lies ${Math.round(b.headDb)} dB above it)` : ''}. T20 needs ${REQUIRED.T20} dB.`
-          : 'The room\'s decay did not reach −25 dB before the noise floor.';
+          ? `Only ${short(b.decayRangeDb, REQUIRED.T20)} dB of the room's own decay above the recording background noise${b.headDb >= 3 ? ` (after the direct sound, which lies ${Math.round(b.headDb)} dB above it)` : ''}. T20 needs ${REQUIRED.T20} dB.`
+          : 'The room\'s decay did not reach −25 dB before the recording background noise.';
       return out;
     }
     const fit = out.fit = fits[out.path];
@@ -232,7 +232,7 @@
     const head = ref.headDb;
     return [
       `${(plan.total || 0).toFixed(1)} s at ${(take.sampleRate || 0) / 1000} kHz from ${take.deviceLabel || 'the microphone'} · sweep level ${levelText(plan.levelDb)}`,
-      `Peak ${fmtDb(lv.peakDbfs)}FS, no clipping · signal ${fmtDb(lv.snrDb)} above the background before it`
+      `Peak ${AM.util.fmt.dbfs(lv.peakDbfs)}, no clipping · signal ${fmtDb(lv.snrDb)} above the background before it`
         + (an.distortion ? ` · distortion: 2nd harmonic ${an.distortion.h2Db == null ? 'not found' : fmtDb(an.distortion.h2Db)}, 3rd ${an.distortion.h3Db == null ? 'not found' : fmtDb(an.distortion.h3Db)} against the main response` : ''),
       an.latencySec != null ? `Arrived ${(an.latencySec * 1000).toFixed(0)} ms after playback started (playback-to-recording delay of this device, read from the recording), ${Math.round(an.arrivalClarityDb)} dB clear of the response before it` : 'Arrival not found',
       `${res.bands.filter(b => b.decayRangeDb != null).length} of ${res.bands.length} octave bands analysed (125 Hz to 4000 Hz), 6th-order Butterworth band filters, time-reversed`,
@@ -240,8 +240,8 @@
       head == null ? `${ref.f || res.referenceBand} Hz: too little decay to separate the room from the direct sound`
         : head >= 3 ? `${ref.f} Hz: direct sound and early reflections ${head.toFixed(1)} dB above the room's reverberant decay; evaluated from the decay's start, below them`
         : `${ref.f} Hz: no dominant direct sound (${head.toFixed(1)} dB); evaluated from the start of the decay`,
-      (ref.decayRangeDb != null ? `Noise floor ${Math.abs(ref.noiseFloorDb).toFixed(1)} dB below the peak at ${ref.f} Hz (Lundeby): ${Math.round(ref.decayRangeDb)} dB of the room's own decay usable` : `No usable decay at ${res.referenceBand} Hz`)
-        + (ref.disturbanceDb ? `; sounds during the take ${Math.round(ref.disturbanceDb)} dB above the background, counted as the noise floor` : '; no sounds above the background during the take')
+      (ref.decayRangeDb != null ? `Recording background noise ${Math.abs(ref.noiseFloorDb).toFixed(1)} dB below the peak at ${ref.f} Hz (Lundeby): ${Math.round(ref.decayRangeDb)} dB of the room's own decay usable` : `No usable decay at ${res.referenceBand} Hz`)
+        + (ref.disturbanceDb ? `; sounds during the take ${Math.round(ref.disturbanceDb)} dB above the background, counted as recording background noise` : '; no sounds above the background during the take')
         + (res.meta && res.meta.backgroundChangeDb != null && Math.abs(res.meta.backgroundChangeDb) >= 3 ? `; background ${Math.abs(res.meta.backgroundChangeDb).toFixed(0)} dB ${res.meta.backgroundChangeDb > 0 ? 'louder' : 'quieter'} than in the noise check (information)` : ''),
       ref.path ? `${ref.f} Hz uses ${ref.path} (${pathNote[ref.path]})` : `${res.referenceBand} Hz: no valid path`,
       res.valid ? `RT60 ${ref.rt60.toFixed(2)} s at ${ref.f} Hz (r² ${ref.r2.toFixed(4)})` : 'Unable to obtain a reliable RT60 measurement: not calculated',

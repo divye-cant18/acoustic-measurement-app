@@ -156,7 +156,8 @@
       S().toast(p.setup.noise ? 'Background noise measurement not usable. The previous measurement is kept.' : 'Background noise measurement not usable. See the reason and measure again.');
       return;
     }
-    S().update(pp => { pp.setup.noise = r; pp.setup.noiseAttempt = null; });
+    // Each measuring position has its own background check: the reading keeps the position it was taken at.
+    S().update(pp => { pp.setup.noise = Object.assign({}, r, { position: pp.setup.position || null }); pp.setup.noiseAttempt = null; });
     const d = AM.derive.noiseChange(p);
     if (d != null) S().flagFrom('setup', `The background is now ${Math.abs(d)} dB ${d > 0 ? 'louder' : 'quieter'} than during the current measurement. Measure again to confirm the RT60.`);
   }
@@ -195,7 +196,7 @@
   function applyTake(p, take) {
     if (!isOpen(p)) return;
     if (take.status !== 'captured') {
-      S().update(pp => { pp.measurement.failed = { reason: take.reason, takenAt: take.takenAt, levels: take.levels, levelDb: take.plan ? take.plan.levelDb : 0 }; });
+      S().update(pp => { pp.measurement.failed = { reason: take.reason, takenAt: take.takenAt, levels: take.levels, levelDb: take.plan ? take.plan.levelDb : 0, position: take.position || pp.setup.position || null }; });
       S().toast(p.measurement.recording || p.processing.result ? 'This take could not be used. The previous measurement is kept.' : 'This take could not be used. See the reason and measure again.');
       return;
     }
@@ -210,7 +211,7 @@
     if (e && e.code === 'cancelled') return;
     notePermission(p, e);
     if (e && e.code === 'stopped') Object.assign(state.mic, { status: 'stopped', code: 'stopped', message: e.message });
-    if (isOpen(p)) S().update(pp => { pp.measurement.failed = { reason: (e && e.message) || 'The measurement failed.', code: e && e.code, takenAt: new Date().toISOString() }; });
+    if (isOpen(p)) S().update(pp => { pp.measurement.failed = { reason: (e && e.message) || 'The measurement failed.', code: e && e.code, takenAt: new Date().toISOString(), position: pp.setup.position || null }; });
   }
   function cancelTake(silent) { if (state.take) { state.take.ctl.cancel(); if (!silent) later('Measurement cancelled. No recording was stored.'); } }
 

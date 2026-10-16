@@ -1,4 +1,4 @@
-/* Charts. Stages place a placeholder with AM.ui.chart(type, spec, height); the shell calls hydrate()
+/* Charts. Screens place a placeholder (src/ui/kit.tsx Chart: data-chart, data-spec); the shell calls hydrate()
    after every render and on resize, so each SVG is drawn at its real width and text stays legible.
    Marks: columns ≤ 24px with 4px rounded tops, 2px lines, hairline solid grid. Hover a band for its values. */
 (function (AM) {
@@ -98,7 +98,12 @@
       g += `<text class="ann" x="${w - M.r - 8}" y="${f1(Y(fit.from) + 15)}" text-anchor="end">${spec.path} evaluation range, −${+Math.abs(fit.from).toFixed(1)} to −${+Math.abs(fit.to).toFixed(1)} dB</text>`;
     }
     g += `<line class="noise" x1="${M.l}" x2="${w - M.r}" y1="${f1(Y(noise))}" y2="${f1(Y(noise))}"/>`;
-    g += `<text class="ann" x="${w - M.r - 8}" y="${f1(Y(noise) - 6)}" text-anchor="end">Noise floor ${fmt.db(noise)}</text>`;
+    // Named at the left of its line, where the decay is still far above it; on a narrow chart on two lines, so the label
+    // ends well before the decay comes down to the line.
+    const nx = M.l + 8, ny = Y(noise) - 6, nLabel = `Recording background noise ${fmt.db(noise)}`;
+    g += nLabel.length * 6 > pw * 0.55
+      ? `<text class="ann" x="${nx}" y="${f1(ny - 14)}"><tspan x="${nx}">Recording background</tspan><tspan x="${nx}" dy="14">noise ${fmt.db(noise)}</tspan></text>`
+      : `<text class="ann" x="${nx}" y="${f1(ny)}">${nLabel}</text>`;
 
     // The decay curve is 0 dB at the arrival by definition; starting the line there shows the drop through a strong
     // direct sound, which the averaged points after it cannot.
@@ -116,7 +121,7 @@
       // A strong direct sound from the measuring device sits above the start of the room's decay.
       if (fit.intercept < -3) g += `<text class="ann" x="${f1(X(0) + 10)}" y="${f1(Y(fit.intercept) - 7)}">Direct sound above · room's decay starts ${fmt.db(fit.intercept)}</text>`;
     } else {
-      g += `<text class="ann" x="${f1(M.l + pw / 2)}" y="${f1(M.t + ph / 2)}" text-anchor="middle">Not enough reliable decay above the noise floor to calculate RT60</text>`;
+      g += `<text class="ann" x="${f1(M.l + pw / 2)}" y="${f1(M.t + ph / 2 - 7)}" text-anchor="middle"><tspan x="${f1(M.l + pw / 2)}">Not enough reliable decay above the recording</tspan><tspan x="${f1(M.l + pw / 2)}" dy="15">background noise to calculate RT60</tspan></text>`;
     }
 
     // Hover: the measured values under the pointer.

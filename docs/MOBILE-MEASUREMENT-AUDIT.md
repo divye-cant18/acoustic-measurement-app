@@ -336,8 +336,8 @@ As they stood at the end of phase 2. Section 12 says what was done about each on
 
 ### 11.7 Manual validation checklist (real laptop and phone)
 
-1. Laptop (Chrome or Edge), Measurement Setup: the profile shows "Laptop or computer (detected)". Allow the microphone;
-   the processing table lists each feature (expected: all reported off). Choose the built-in speakers under Sound output
+1. Laptop (Chrome or Edge), Measurement Setup: the profile shows "Laptop or computer (detected)". Allow the microphone
+   (browser processing is no longer shown here: read it on Results, step 3). Choose the built-in speakers under Sound output
    and check "In use, as confirmed by the browser". Measure the background in a quiet room: expect "Suitable" and a level
    in the RT60 bands; under Details, note the DC offset.
 2. Switch the profile to "Phone or tablet": the phone checks and the "changes the instructions only" note appear and the
@@ -345,8 +345,8 @@ As they stood at the end of phase 2. Section 12 says what was done about each on
 3. Three takes at one spot: the headline (500–2000 Hz) within ±5 % or 0.02 s; Results shows "Recording continuity:
    Continuous" and the processing as reported.
 4. During a fourth take, lock the screen or switch apps: the take stops as interrupted and the previous result stays.
-5. Phone (Safari on iPhone, Chrome on Android), same spot: allow the microphone; read the processing table (expect "not
-   reported" for some features on iPhone); is the sweep loud from the loudspeaker or faint (earpiece)? Measure the
+5. Phone (Safari on iPhone, Chrome on Android), same spot: allow the microphone; after a take, read Browser processing
+   in the Results measurement record (expect "not reported" for some features on iPhone); is the sweep loud from the loudspeaker or faint (earpiece)? Measure the
    background (note level, DC offset, verdict) and three takes; compare the headline with the laptop's (within 10 % if
    500, 1000 and 2000 Hz are all valid; otherwise "not available" with the band named).
 6. On each device, download the PDF: "Measuring device", "Browser processing" and the headline must match Results.

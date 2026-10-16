@@ -23,7 +23,7 @@
      deviceKind()                       'computer' | 'mobile', as the browser reports it
      outputLabel()                      the system sound output's name, or null when the browser does not say
      calibration(deviceId)              -> null: no calibration exists, so levels are relative input levels (dBFS)
-     levelText(dbfs, deviceId)          how a level is shown: dBFS today, dB SPL once a calibration exists
+     levelText(dbfs, deviceId)          how a level is shown: "N dB below max" (dBFS) today, dB SPL once a calibration exists
 
    NoiseResult: AM.analysis.analyseNoise(...) + { id, takenAt, deviceLabel, settings, calibrated }
    Take: { id, takenAt, status: 'captured' | 'failed', reason, deviceLabel, outputLabel, deviceKind, position, sampleRate,
@@ -148,7 +148,7 @@
   function levelText(dbfs, deviceId) {
     if (dbfs == null || !isFinite(dbfs)) return 'Not measured';
     const cal = calibration(deviceId);
-    return cal ? `${(dbfs + cal.offsetDb).toFixed(1)} dB SPL` : `${dbfs.toFixed(1)} dBFS`;
+    return cal ? `${(dbfs + cal.offsetDb).toFixed(1)} dB SPL` : AM.util.fmt.dbfs(dbfs);
   }
 
   // Opens the microphone (and the selected output) once, reads back the whole configuration, releases them.

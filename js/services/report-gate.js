@@ -1,7 +1,7 @@
 /* Report gate — the form a user submits before a project's report (PDF) unlocks.
 
-     card(project, opts)   -> the "Project report" card on Final Result: the form until it has been received, then the
-                              Download PDF Report button. opts.about: the sentence describing the report.
+     view(project)         -> what the "Project report" card on Final Result shows (the interface draws it): the form
+                              until it has been received, then the Download PDF Report button.
      submit(project)       -> validates, sends the form to the app server (server/app_server.py), which stores one row
                               in the Supabase table report_submissions and answers with a signed receipt.
      check(project)        -> async { ok, message }: asks the server to confirm this project's receipt. AM.report.download
@@ -20,7 +20,7 @@
    someone who edits its code on their own computer can still build a report; the database is the record. */
 (function (AM) {
   'use strict';
-  const { esc, icon, fmt, isNum } = AM.util;
+  const { isNum } = AM.util;
   const S = AM.store, ui = AM.ui, SPEC = AM.reportForm;
   const KEY = 'acoustic-measurement-prototype:report-submissions';
   const api = path => new URL(`api/${path}`, document.baseURI).href;
@@ -78,7 +78,9 @@
 
   /* ---------- what is sent ---------- */
   function projectSummary(p) {
-    const D = AM.derive, g = D.geometry(p), t = D.target(p), m = D.measured(p), pred = D.prediction(p), avg = D.averageRT60(p);
+    // The room's values over its measuring positions (AM.derive.room): 1000 Hz and the all-band average as the columns
+    // have always held them, now averaged over the positions; no column changes meaning or is added.
+    const D = AM.derive, g = D.geometry(p), t = D.target(p), m = D.room(p), pred = D.prediction(p), avg = D.averageRT60(p);
     // A number as the app shows it, or null when the project has none, or one outside the range the database accepts
     // (every one of them may be null): a value the server would refuse must not keep the whole form from being sent.
     const PF = Object.fromEntries(SPEC.project.map(f => [f.key, f]));
@@ -93,10 +95,11 @@
       roomType: cut(p.room.type, PF.roomType.maxLength),
       roomVolumeM3: g ? r('roomVolumeM3', g.V) : null,
       targetRt60: t ? r('targetRt60', t.preferred) : null,
-      measuredRt60: m ? r('measuredRt60', m.headline.rt60) : null,               // at 1000 Hz
-      measuredRt60Avg: avg && avg.available ? r('measuredRt60Avg', avg.value) : null, // 500–2000 Hz, the headline
+      measuredRt60: m ? r('measuredRt60', m.headline.rt60) : null,               // at 1000 Hz, the reference band, over the positions
+      measuredRt60Avg: avg && avg.available ? r('measuredRt60Avg', avg.value) : null, // average of the bands measured: the room's RT60
       measurementMethod: m && m.headline.method ? cut(m.headline.method, PF.measurementMethod.maxLength) : '',
-      predictedRt60: pred ? r('predictedRt60', pred.headline.predicted) : null,
+      predictedRt60: pred ? r('predictedRt60', pred.headline.predicted) : null,  // at 1000 Hz
+      predictedRt60Avg: pred && pred.allBands ? r('predictedRt60Avg', pred.allBands.value) : null, // predicted average over the bands of the measured all-band average
       treatmentStatus,
     };
   }
@@ -297,118 +300,20 @@
     submitting: ['acoustic', 'Submitting…', null], success: ['good', 'Submitted · report unlocked', 'seal'], failed: ['critical', 'Submission failed', 'alert'],
     uncertain: ['warn', 'Not confirmed yet', 'alert'], checking: ['neutral', 'Checking submission…', null], unconfirmed: ['warn', 'Submission not confirmed', 'alert'],
   };
-  const pill = st => { const [tone, text, ic] = PILL[st]; return `<span id="rf-state" class="rf-pill">${ui.pill(tone, text, ic)}</span>`; };
-
-  /* ---------- the form ---------- */
-  function fieldHTML(f, dr) {
-    const id = `rf-${f.key}`, v = dr.values[f.key], err = dr.errors[f.key] || '';
-    const tag = f.required ? '<span class="req">Required</span>' : '<span class="opt">Optional</span>';
-    const inv = err ? ` aria-invalid="true" aria-describedby="${id}-err"` : ` aria-describedby="${id}-err"`;
-    const errHTML = `<div class="field-err" id="${id}-err"${err ? '' : ' hidden'}>${icon('alert', 13, 2.2)}<span>${esc(err)}</span></div>`;
-    const label = esc(f.label || '');
-    if (f.type === 'consent' || f.type === 'checkbox') {
-      return `<div class="rf-check${f.type === 'consent' ? ' is-consent' : ''}"><label class="check" for="${id}"><input type="checkbox" id="${id}" data-rf="${f.key}" ${v ? 'checked' : ''}${err ? ' class="is-invalid"' : ''}${inv}>
-        <span class="check-t"><span>${esc(f.label.replace('{brand}', brand()))}</span>${f.required ? '<span class="check-h">Required</span>' : ''}</span></label>${errHTML}</div>`;
-    }
-    let control;
-    if (f.type === 'select' || f.type === 'country') {
-      const opts = f.type === 'country' ? SPEC.countries : f.options;
-      control = `<select class="select${err ? ' is-invalid' : ''}" id="${id}" data-rf="${f.key}"${inv}${f.type === 'country' ? ' autocomplete="country-name"' : ''}>
-        <option value="" ${v ? '' : 'selected'} disabled>${esc(f.placeholder || 'Choose')}</option>${opts.map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
-    } else if (f.type === 'textarea') {
-      control = `<textarea class="input rf-textarea${err ? ' is-invalid' : ''}" id="${id}" data-rf="${f.key}" rows="3" maxlength="${f.maxLength}"${inv}>${esc(v)}</textarea>
-        <div class="rf-count" id="${id}-count" aria-live="off">${String(v || '').length} / ${f.maxLength}</div>`;
-    } else {
-      control = `<input class="input${err ? ' is-invalid' : ''}" id="${id}" data-rf="${f.key}" type="${f.type === 'email' ? 'email' : 'text'}"${f.type === 'email' ? ' inputmode="email" spellcheck="false"' : ''} value="${esc(v)}" maxlength="${f.maxLength || 200}" autocomplete="${f.autocomplete || 'off'}"${inv}>`;
-    }
-    return `<div class="field${f.type === 'textarea' ? ' rf-wide' : ''}"><label class="field-l" for="${id}">${label}${tag}</label>${control}${errHTML}</div>`;
-  }
-
-  function sentList() {
+  /* ---------- what the "Project report" card shows (drawn by the interface, src/screens/ReportCard.tsx) ---------- */
+  // Everything the card needs, read from this service's state. It changes nothing.
+  function view(p) {
+    if (!SPEC) return { missing: true };
+    const st = stateOf(p), rec = record(p), dr = draft(p);
     const project = SPEC.columns.filter(c => c.source.startsWith('project.')).map(c => c.header.replace(/ \(.*\)$/, '').replace(/^[A-Z](?=[a-z])/, x => x.toLowerCase()));
-    return `<details class="more rf-sent"><summary>Exactly what is sent, and where</summary>
-      <p class="small">One record is saved in ${esc(brand())}’s private database (hosted by Supabase), which only the report server can write to and only people ${esc(brand())} authorises can read. It holds:</p>
-      <ul class="bullets small">
-        <li>your answers above (name, email, role, organisation if given, country, purpose, comments if given) and your two consent choices, with the time;</li>
-        <li>a short summary of this project: ${esc(project.join(', '))};</li>
-        <li>a submission reference and the app version.</li>
-      </ul>
-      <p class="small muted">Nothing else is sent: no recordings or audio, no measurement data or history, no room surfaces or products, no files and not the report itself. The project stays on this device either way. Until your answers are received they are kept in this browser, so that sending again cannot record them twice.</p>
-    </details>`;
-  }
-
-  function healthNote() {
-    if (health === 'file') return ui.note('This page is opened from a file, so the form cannot be sent. Start the app with <b>server/app_server.py</b> and open the address it shows (see README, Report form).', 'warn', 'info');
-    if (health === 'not_configured') return ui.note('The report form is not connected to its database yet, so it cannot be sent and the report stays locked. Setup: README, Report form.', 'warn', 'info');
-    if (health === 'unreachable') return ui.note(`The report server cannot be reached, so the form cannot be sent right now. The app has to be opened from the address <b>server/app_server.py</b> shows (README, Report form). <span class="note-actions"><button class="btn btn-secondary btn-sm" data-action="reportHealth">${icon('refresh', 15, 2)} Check again</button></span>`, 'warn', 'info');
-    return '';
-  }
-
-  function problemNote(p, st) {
-    const pr = problems.get(p.id);
-    if (st === 'uncertain') {
-      return ui.note(`<b>Not confirmed yet.</b> ${esc(pr ? pr.message : 'The report server did not confirm the submission.')} Your answers may already have been recorded. Checking again sends the same submission, so it cannot be recorded twice.
-        <span class="note-actions"><button class="btn btn-primary btn-sm" data-action="reportRetry" ${busy ? 'disabled aria-busy="true"' : ''}>${busy ? '<span class="spin"></span> Checking…' : `${icon('refresh', 15, 2)} Check again`}</button></span>`, 'warn');
-    }
-    if (st === 'failed') return ui.note(`<b>Not sent.</b> ${esc(pr.message)} Your answers are still here: correct them if needed and send again.`, 'critical');
-    if (st === 'unconfirmed' && pr) {
-      return ui.note(`${esc(pr.message)}${pr.kind === 'unreachable' ? ` <span class="note-actions"><button class="btn btn-secondary btn-sm" data-action="reportRetry">${icon('refresh', 15, 2)} Check again</button></span>` : ''}`, 'warn');
-    }
-    if (pr && pr.kind === 'unconfirmed') return ui.note(esc(pr.message), 'warn');
-    return '';
-  }
-
-  function card(p, opts = {}) {
-    if (!SPEC) return ui.card({ title: 'Project report', cls: 'no-print', body: ui.note('The report form is missing (js/data/report-form.js), so the report cannot be unlocked.', 'critical') });
-    const st = stateOf(p), rec = record(p), about = opts.about || '';
-    if (st === 'success') {
-      return ui.card({
-        title: 'Project report', cls: 'no-print rf-card', id: 'report-card', right: pill(st),
-        body: `${ui.note(`<b>Form received${rec.submittedAt ? ` on ${esc(fmt.when(rec.submittedAt))}` : ''}.</b> Thank you. The PDF report for this project is unlocked.`, 'good')}
-          <p class="small muted">${about}</p>
-          <div class="hstack"><button class="btn btn-secondary btn-sm" id="rf-download" data-action="downloadReport" ${opts.reportBusy ? 'disabled aria-busy="true"' : ''}>${opts.reportBusy ? '<span class="spin"></span> Preparing the PDF…' : `${icon('doc', 15, 1.9)} Download PDF Report`}</button>
-          <span class="rf-ref">Submission reference ${esc(String(rec.submissionId).slice(0, 8).toUpperCase())}</span></div>`,
-      });
-    }
-    const lockedDownload = `<div class="rf-locked"><button class="btn btn-secondary btn-sm" data-action="downloadReport" aria-disabled="true" data-reason="The PDF report unlocks after the report form is received.">${icon('lock', 14, 2.2)} Download PDF Report</button>
-      <span class="small muted">Locked until the form is received. ${about}</span></div>`;
-    if (st === 'checking' || st === 'unconfirmed') {
-      // Sent earlier: the server has to confirm the receipt before the report unlocks. No form to fill in.
-      return ui.card({
-        title: 'Project report', cls: 'no-print rf-card', id: 'report-card', right: pill(st),
-        body: `${st === 'checking' ? `<p class="rf-status small muted" id="rf-status" role="status"><span class="spin"></span> Confirming this project’s submission with the report server…</p>` : problemNote(p, st)}${lockedDownload}`,
-      });
-    }
-    const dr = draft(p);
-    const locked = st === 'submitting' || st === 'uncertain';
-    const blocked = health === 'file' || health === 'not_configured';
-    const label = st === 'failed' ? 'Send again' : 'Submit and unlock the report';
-    const submitBtn = st === 'uncertain' ? ''
-      : `<button class="btn btn-primary" id="rf-submit" data-action="reportSubmit" ${st === 'submitting' ? 'disabled aria-busy="true"' : ''}${blocked && st !== 'submitting' ? ` aria-disabled="true" data-reason="${esc(blocked && health === 'file' ? 'Open the app from its server to send the form.' : 'The report form is not connected to its database yet.')}"` : ''}>${st === 'submitting' ? '<span class="spin"></span> Submitting…' : `${icon('arrowR', 16, 2.2)} ${label}`}</button>`;
-    const fields = FIELDS.filter(f => f.type !== 'consent' && f.type !== 'checkbox').map(f => fieldHTML(f, dr)).join('');
-    const checks = FIELDS.filter(f => f.type === 'consent' || f.type === 'checkbox').map(f => fieldHTML(f, dr)).join('');
-    return ui.card({
-      title: 'Project report', sub: 'One short form, then the PDF report is yours.', cls: 'no-print rf-card', id: 'report-card', right: pill(st),
-      body: `<p class="rf-intro">Before the report is created, ${esc(brand())} asks who it is for. Fill in the form and submit it: your answers and a short summary of this project are saved in ${esc(brand())}’s secure database, and the <b>Download PDF Report</b> button unlocks as soon as they are received.</p>
-        ${healthNote()}${problemNote(p, st)}
-        <form id="report-form" class="rf" novalidate aria-label="Report form">
-          <fieldset class="rf-fields" ${locked ? 'disabled' : ''}>
-            <legend class="sr-only">Your details</legend>
-            <div class="rf-grid">${fields}</div>
-            <div class="rf-checks">${checks}</div>
-          </fieldset>
-        </form>
-        ${sentList()}
-        ${submitBtn ? `<div class="rf-actions">${submitBtn}<span class="rf-status small muted" id="rf-status" role="status" aria-live="polite">${st === 'submitting' ? 'Sending your answers to the report server…' : ''}</span></div>` : ''}
-        ${lockedDownload}`,
-    });
+    return { missing: false, st, pill: PILL[st], rec, dr, problem: problems.get(p.id) || null, health, busy: !!busy, fields: FIELDS, countries: SPEC.countries, brand: brand(), sent: project };
   }
 
   /* ---------- typing in the form: kept as it is typed, checked when a field is left or the form is sent ---------- */
   const currentProject = () => S.state.project;
   function refreshLive(p) {
     const el = document.getElementById('rf-state');
-    if (el) el.outerHTML = pill(stateOf(p));
+    if (el) { const [tone, text, ic] = PILL[stateOf(p)]; el.innerHTML = ui.pill(tone, text, ic); }
   }
   function showError(key, msg) {
     const input = document.getElementById(`rf-${key}`), err = document.getElementById(`rf-${key}-err`);
@@ -453,7 +358,7 @@
 
   let pruned = false;
   AM.reportGate = {
-    card, submit, retry, check, isUnlocked, verify, projectSummary, validateAll, stateOf,
+    view, submit, retry, check, isUnlocked, verify, projectSummary, validateAll, stateOf,
     mount(p) { if (!pruned) { prune(); pruned = true; } mount(p); },
     leave, recheckHealth: () => { health = null; checkHealth(); },
   };

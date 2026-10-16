@@ -1,0 +1,22 @@
+{
+  "name": "univicoustic-ui",
+  "private": true,
+  "version": "2026.10.16",
+  "description": "Univicoustic interface: React + TypeScript, built into one script the app loads after its measurement, calculation and report modules (js/). The Python server and the Vercel functions are unchanged.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "watch": "vite build --watch"
+  },
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.1"
+  }
+}

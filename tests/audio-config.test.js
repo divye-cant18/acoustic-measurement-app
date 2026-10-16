@@ -12,7 +12,7 @@
      A3 processing: a gain or background change during the take, the input turned down during the sweep, the browser's
         own counts of lost audio, reported / unreported / on browser processing, the wording never claiming "off" for an
         unreported feature, threshold text rounding
-     A4 the headline: fixed bands 500, 1000 and 2000 Hz, unavailable with the failing band named
+     A4 the headline: the bands from 125 to 4000 Hz that have a value, a band left out named; none below half of them
      A5 device profiles and configuration: switching Laptop → Phone → Laptop through the Setup step's actions, readiness
         of the selected output, the configuration record, and the report using the take's configuration; Results naming a
         newer take it does not include (not processed, or rejected); the diagnostics record (no names or labels)
@@ -79,7 +79,12 @@
       const proj = { setup: { noise: Object.assign({ takenAt: new Date().toISOString() }, dc), noiseAttempt: null, permission: 'granted' } };
       const card = textOf(ui.noiseBody(proj, { bands: false }));
       check('A1 The background card leads with the level in the RT60 bands, says it is relative and cannot tell the room from the microphone or its processing, and shows the DC offset',
-        card.includes(`Background ${ui.dbfs(dc.inBand.leqDbfs)} in the RT60 bands`) && /cannot tell the room's noise from the microphone's own noise/.test(card) && /DC offset of the input/.test(card), card.slice(0, 220));
+        card.includes(`Recording noise level ${ui.dbfs(dc.inBand.leqDbfs)} in the RT60 bands`) && /cannot tell the room's noise from the microphone's own noise/.test(card) && /DC offset of the input/.test(card), card.slice(0, 220));
+      // The same card in plain words: the levels as "dB below max", never as dBFS, sound pressure or a noise floor.
+      const full = textOf(ui.noiseBody(proj));
+      check('A1 The background card says its levels plainly (dB below max, not the room\'s real loudness), with no dBFS or noise floor, the band table included',
+        full.includes(`${ui.dbfs(dc.inBand.leqDbfs)} in the RT60 bands`) && ui.dbfs(dc.inBand.leqDbfs) === `${Math.abs(dc.inBand.leqDbfs).toFixed(1)} dB below max` && /not the room's real loudness/.test(full)
+          && /relative to max/.test(full) && !/dBFS|noise floor|SPL/i.test(full), full.slice(0, 220));
     }
     {
       const noisy = AN.analyseNoise(pink(-18, 4), fs);
@@ -179,8 +184,9 @@
       check('A2 A room without a dominant direct sound (a microphone far from the source): the continuity check is not made, and says so; the take is not rejected for it',
         far.status === 'captured' && far.timing && far.timing.checked === false && /direct sound/.test(far.timing.reason), far.timing && far.timing.reason);
       // One render block (128 samples, 2.7 ms) lost or repeated: too small a step for the timing check, but the waveform
-      // jumps, and the click shows above the sweep (aboveSweep). Where it is not caught it does real damage: the take
-      // at 2.7 s (repeated) read the 500–2000 Hz average 76 % long with the click check switched off.
+      // jumps, and the click shows above the sweep (aboveSweep). Where it is not caught it does real damage: with the click
+      // check switched off, the take at 2.7 s (repeated) read the 500–2000 Hz mean 76 % long and the six-band average (the
+      // room's RT60 now) 36 % long; the bands it hits most read more than 50 % long.
       const at = [0.9, 2.3, 2.7, 3.9, 4.5], block = [];
       at.forEach(t => [128, -128].forEach(k => block.push([`${t} s ${k > 0 ? 'lost' : 'repeated'}`, { splice: t, n: k, refl: DESK }])));
       block.push(['4.5 s lost, quiet room', { splice: 4.5, n: 128, refl: DESK, noise: -85 }], ['2.5 s lost, phone-like', { splice: 2.5, n: 128, hp: 700, direct: 30, level: -24, refl: DESK }]);
@@ -192,10 +198,11 @@
         const OFF = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
         const ref = PROC.evaluate(take({ refl: DESK }, OFF), {}), bad = PROC.evaluate(take({ splice: 2.7, n: -128, refl: DESK }, OFF), {});
         const av = r => RA.of(r).value;
-        harm = av(ref) && av(bad) ? 100 * (av(bad) / av(ref) - 1) : null;
+        const worst = Math.max(...ref.bands.map(b => { const x = bad.bands.find(y => y.f === b.f); return b.rt60 && x && x.rt60 ? 100 * (x.rt60 / b.rt60 - 1) : -Infinity; }));
+        harm = av(ref) && av(bad) ? { avg: 100 * (av(bad) / av(ref) - 1), worst } : null;
       } finally { AN.CRITERIA.take.clicks.db = saved; }
-      check('A2 One render block (128 samples) lost or repeated at 0.9–4.5 s into the sweep, in a typical room, a quiet room and a phone-like take: each take rejected for the click it leaves, with the reason; uncaught, one of them read the average 76 % long',
-        caught.every(g => g.ok) && harm != null && harm > 50, `${caught.map(g => `${g.k}: ${g.ok ? `click ${g.db} dB` : `NOT rejected (${(g.r || 'captured').slice(0, 40)})`}`).join(' · ')} · uncaught at 2.7 s: average ${harm == null ? 'n/a' : `${harm > 0 ? '+' : ''}${harm.toFixed(0)} %`}`);
+      check('A2 One render block (128 samples) lost or repeated at 0.9–4.5 s into the sweep, in a typical room, a quiet room and a phone-like take: each take rejected for the click it leaves, with the reason; uncaught, one of them read a band more than 50 % long and the six-band average more than 25 % long (about 36 %)',
+        caught.every(g => g.ok) && harm != null && harm.worst > 50 && harm.avg > 25, `${caught.map(g => `${g.k}: ${g.ok ? `click ${g.db} dB` : `NOT rejected (${(g.r || 'captured').slice(0, 40)})`}`).join(' · ')} · uncaught at 2.7 s: ${harm == null ? 'no average' : `average +${harm.avg.toFixed(0)} %, worst band +${harm.worst.toFixed(0)} %`}`);
     }
     {
       const zero = analyse({ post: (x, rate, plan) => { const y = Float32Array.from(x); const at = Math.round((plan.preRoll + 2.5) * rate); y.fill(0, at, at + 256); return y; } });
@@ -277,24 +284,29 @@
     /* ---------- A4 headline: fixed bands ---------- */
     status('A4 headline…');
     {
-      const band = (f, rt60, x) => Object.assign({ f, rt60, path: rt60 == null ? null : 'T30', quality: rt60 == null ? 'Insufficient' : 'Good', reason: rt60 == null ? 'Only 21 dB of the room\'s own decay above the noise floor. T20 needs 35 dB.' : null }, x);
+      const json1 = o => JSON.stringify(o);
+      const band = (f, rt60, x) => Object.assign({ f, rt60, path: rt60 == null ? null : 'T30', quality: rt60 == null ? 'Insufficient' : 'Good', reason: rt60 == null ? 'Only 21 dB of the room\'s own decay above the recording background noise. T20 needs 35 dB.' : null }, x);
       const R = (bands, x) => Object.assign({ valid: true, referenceBand: 1000, recordingId: 'r', bands }, x);
       const all = RA.of(R([band(125, 0.62), band(250, 0.55), band(500, 0.50), band(1000, 0.48), band(2000, 0.45), band(4000, 0.40)]));
-      // (0.50 + 0.48 + 0.45) ÷ 3 = 0.47667 s; 125, 250 and 4000 Hz do not enter it.
-      check('A4 The headline is the mean of 500, 1000 and 2000 Hz: (0.50 + 0.48 + 0.45) ÷ 3 = 0.4767 s; 125, 250 and 4000 Hz are not part of it',
-        all.available && near(all.value, 1.43 / 3, 1e-12) && all.n === 3 && JSON.stringify(RA.REQUIRED) === '[500,1000,2000]' && all.excluded.map(e => e.f).join() === '125,250,4000', `${all.value}`);
+      // (0.62 + 0.55 + 0.50 + 0.48 + 0.45 + 0.40) = 3.00; ÷ 6 = 0.5000 s (the earlier 500–2000 Hz mean was 0.4767 s).
+      check('A4 The headline is the mean of all six bands: (0.62 + 0.55 + 0.50 + 0.48 + 0.45 + 0.40) ÷ 6 = 0.5000 s',
+        all.available && near(all.value, 3.00 / 6, 1e-12) && all.n === 6 && JSON.stringify(RA.REQUIRED) === '[125,250,500,1000,2000,4000]' && !all.excluded.length, `${all.value}`);
+      // A phone-like take that loses 125, 250 and 4000 Hz: the mean of the three that are left (3 of 6, the least an
+      // average may have), (0.50 + 0.48 + 0.45) ÷ 3 = 0.4767 s, with the three named as left out.
       const lowGone = RA.of(R([band(125, null), band(250, null), band(500, 0.50), band(1000, 0.48), band(2000, 0.45), band(4000, null)]));
-      check('A4 Bands outside the set without a value change nothing: the same 0.4767 s (a phone that loses 125 and 250 Hz reads the same quantity)', lowGone.available && lowGone.value === all.value, `${lowGone.value}`);
+      check('A4 A take that loses 125, 250 and 4000 Hz: the average of the other three, 1.43 ÷ 3 = 0.4767 s, with the three named as left out', lowGone.available && lowGone.partial && near(lowGone.value, 1.43 / 3, 1e-12) && RA.describe(lowGone) === '3 of 6 bands (125 Hz, 250 Hz and 4000 Hz not measured)', RA.describe(lowGone));
       const no500 = RA.of(R([band(125, 0.62), band(250, 0.55), band(500, null), band(1000, 0.48), band(2000, 0.45), band(4000, 0.40)]));
       const nan2k = RA.of(R([band(500, 0.5), band(1000, 0.48), band(2000, NaN)]));
       const invalid = RA.of(R([band(500, 0.5), band(1000, 0.48), band(2000, 0.45)], { valid: false }));
-      check('A4 A required band without a value: no headline (never an average of the other two), and the reason names the band and why',
-        !no500.available && no500.value === null && /500 Hz has no reliable value/.test(no500.reason) && /Only 21 dB/.test(no500.reason) && !nan2k.available && /2000 Hz/.test(nan2k.reason) && !invalid.available,
-        `${no500.reason} | ${nan2k.reason.slice(0, 60)} | ${invalid.reason}`);
-      const html = textOf(ui.averageSummary(no500));
-      check('A4 The summary under the band table says "Unavailable" and which required band failed; never 0, 0.00 or NaN', /Unavailable/.test(html) && /500 Hz \(not reliable\)/.test(html) && !/NaN|0\.00/.test(html), html.slice(0, 200));
-      const ur = RA.of(R([band(500, 0.304), band(1000, 0.304), band(2000, 0.314)]));
-      check('A4 Unrounded: (0.304 + 0.304 + 0.314) ÷ 3 = 0.30733 s is kept, and shown 0.31 s', near(ur.value, 0.922 / 3, 1e-12) && AM.util.fmt.s(ur.value) === '0.31 s', `${ur.value}`);
+      // 500 Hz without a value: the other five, (0.62 + 0.55 + 0.48 + 0.45 + 0.40) = 2.50 ÷ 5 = 0.5 s, 500 Hz named with
+      // its reason. A take with only two bands that have a value (500 and 1000 Hz), and a take that is not valid: none.
+      check('A4 A band without a value is left out and named with its reason (500 Hz: 2.50 ÷ 5 = 0.50 s); with only two bands, or a take that is not valid, there is no headline',
+        no500.available && near(no500.value, 2.5 / 5, 1e-12) && json1(no500.missing.map(m => m.f)) === '[500]' && /Only 21 dB/.test(no500.missing[0].reason) && !nan2k.available && /2000 Hz/.test(nan2k.reason) && !invalid.available,
+        `${RA.describe(no500)} | ${nan2k.reason.slice(0, 80)} | ${invalid.reason}`);
+      const html = textOf(ui.averageSummary(nan2k)), part = textOf(ui.averageSummary(no500));
+      check('A4 The summary under the band table says "Unavailable" with the bands that failed, or names a band left out; never 0, 0.00 or NaN', /Unavailable/.test(html) && /2000 Hz \(not reliable\)/.test(html) && !/NaN|0\.00/.test(html) && /left out, not measured reliably: 500 Hz/.test(part), html.slice(0, 200));
+      const ur = RA.of(R([band(125, 0.304), band(250, 0.304), band(500, 0.304), band(1000, 0.304), band(2000, 0.314), band(4000, 0.304)]));
+      check('A4 Unrounded: (0.304 × 5 + 0.314) ÷ 6 = 1.834 ÷ 6 = 0.30567 s is kept, and shown 0.31 s', near(ur.value, 1.834 / 6, 1e-12) && AM.util.fmt.s(ur.value) === '0.31 s', `${ur.value}`);
     }
 
     /* ---------- A5 profiles, configuration, report ---------- */
@@ -361,8 +373,8 @@
         `report: ${M.measurement.deviceKind}; results: ${(results.match(/Browser processing[^·]{0,120}/) || [''])[0]}`);
       const avgTxt = textOf(W.get('results').view(ctx()).body);
       const avg = D.averageRT60(p);
-      check('A5 Results, the report and the summary agree on the 500–2000 Hz headline (or say it is unavailable and why)',
-        avg.available ? (avgTxt.includes(`${avg.value.toFixed(2)}s`) || avgTxt.includes(`${avg.value.toFixed(2)} s`)) && txt.includes(`${AM.util.fmt.s(avg.value)} (500`) && txt.includes('AVERAGE RT60') : /No average/.test(avgTxt),
+      check('A5 Results, the report and the summary agree on the 125–4000 Hz average (or say it is unavailable and why)',
+        avg.available ? (avgTxt.includes(`${avg.value.toFixed(2)}s`) || avgTxt.includes(`${avg.value.toFixed(2)} s`)) && txt.includes(`${AM.util.fmt.s(avg.value)} (125`) && txt.includes('Average RT60, all bands') : /No average/.test(avgTxt),
         avg.available ? `${avg.value.toFixed(3)} s` : avg.reason);
     }
     {
@@ -379,7 +391,7 @@
       S.emit();
       const clear = textOf(W.get('results').view(ctx()).body);
       check('A5 Results says when a newer take is not the one shown: "has not been processed yet" (with a Process it button), or "gave no value" with its reason; nothing when the shown take is the latest',
-        /A newer take, recorded .* has not been processed yet/.test(pend) && /Process it/.test(pend) && /Your latest take \(.*\) gave no value: it could not be analysed\. The test signal was only 4\.2 dB/.test(rej) && !/newer take|latest take/i.test(clear),
+        /A newer take, recorded .* has not been processed yet/.test(pend) && /Process it/.test(pend) && /Your latest take \(.*\) gave no value: it could not be analysed\. The test signal was only 4\.2 dB/.test(rej) && !/newer take|Your latest take/i.test(clear),
         `${(pend.match(/A newer take[^.]*\./) || [''])[0]} | ${(rej.match(/Your latest take[^.]*\./) || [''])[0]} | top bar marked: ${!!stale}`);
       p.room.name = 'Studio of Asha Rao';
       const dj = JSON.stringify(D.diagnostics(p));

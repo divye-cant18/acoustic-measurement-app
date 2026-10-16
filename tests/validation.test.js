@@ -237,15 +237,36 @@
       const pr = AM.services.prediction.predict({ V: V3, bands: r.result.bands, treatment: { items: [] }, referenceBand: REF });
       return {
         measured: m && m.headline.rt60 === r.result.headline.rt60 && AM.derive.headlineMeasured(p) === r.result.headline.rt60,
-        assessment: as && as.rt === r.result.headline.rt60 && as.method === r.result.headline.method && as.bands.every((b, k) => b.rt === r.result.bands[k].rt60),
+        // The room (here one position) is assessed in the bands its criterion sets: this room has no type, so 500, 1000 and
+        // 2000 Hz (AM.services.evaluation, default), averaged when at least 2 of the 3 have a value; the all-band mean
+        // (at least 3 of 6) stays the overall figure. Both summed here from the result's own bands. The 1000 Hz value and
+        // method stay with it as the reference band's data.
+        assessment: (() => {
+          const ok = r.result.bands.filter(b => typeof b.rt60 === 'number' && b.rt60 > 0 && !!b.path && !['Insufficient', 'Not measured'].includes(b.quality));
+          const has = ok.length >= 3, mean = has ? ok.reduce((s, b) => s + b.rt60, 0) / ok.length : null;
+          const mid = ok.filter(b => [500, 1000, 2000].includes(b.f)), hasMid = mid.length >= 2, midMean = hasMid ? mid.reduce((s, b) => s + b.rt60, 0) / mid.length : null;
+          return !!as && as.policy.id === 'default' && as.average.available === has && (has ? Math.abs(as.average.value - mean) < 1e-12 : as.average.value === null)
+            && as.available === hasMid && (hasMid ? Math.abs(as.rt - midMean) < 1e-12 : as.rt === null && as.status === null)
+            && as.ref.rt === r.result.headline.rt60 && as.ref.method === r.result.headline.method && as.bands.every((b, k) => b.rt === r.result.bands[k].rt60);
+        })(),
         prediction: pr.bands.every((b, k) => b.measured === r.result.bands[k].rt60),
         text: fmt.s(r.result.headline.rt60) === `${r.result.headline.rt60.toFixed(2)} s`,
       };
     });
     add('Results, Assessment and the report read the same RT60 as Processing calculated (AM.derive.measured / headlineMeasured)', det.every(d => d.measured), `${sample.length} results`);
-    add('Assessment uses the measured value and method at 1000 Hz and every band as calculated', det.every(d => d.assessment), '');
+    add('Assessment judges the bands the room\'s criterion sets (500–2000 Hz for a room without a type; none below 2 of 3), keeps the all-band average (none below 3 of 6), the 1000 Hz value and method as band data, and every band as calculated', det.every(d => d.assessment), `${det.filter(d => d.assessment).length} of ${det.length}`);
     add('Prediction starts from the calculated band values', det.every(d => d.prediction), '');
     add('Displayed value = calculated value rounded to 0.01 s (fmt.s)', det.every(d => d.text), sample.slice(0, 3).map(r => `${r.result.headline.rt60} → ${fmt.s(r.result.headline.rt60)}`).join(', '));
+    // The averages this page gives for a clap or a WAV file (from the decided bands alone) are the ones the app shows for
+    // the same bands (AM.derive on a project holding the result), in every case: all bands, partial and none.
+    const same = (a, b) => a.available === b.available && a.value === b.value && a.n === b.n;
+    const avgs = rows.map(r => {
+      const p = { id: 'v', room: { L: 6, W: 5, H: 3 }, completed: [], review: [], processing: { result: r.result }, target: { preferred: 0.5, min: 0.4, max: 0.6 }, treatment: { items: [] } };
+      const page = appAverages(r.result.bands), all = AM.derive.averageRT60(p), mid = AM.derive.midAverageRT60(p);
+      return { ok: same(page.all, all) && same(page.mid, mid), partial: all.partial, label: r.label };
+    });
+    add('The clap and WAV tools on this page give the app\'s own two averages (125–4000 Hz and 500–2000 Hz) for the same bands',
+      avgs.every(a => a.ok), `${avgs.length} results (${avgs.filter(a => a.partial).length} with a band left out)${avgs.some(a => !a.ok) ? `; differs: ${avgs.filter(a => !a.ok).map(a => a.label).join(', ')}` : ''}`);
     const inv = invalid[0];
     if (inv) {
       const p = { id: 'v', room: { L: 6, W: 5, H: 3 }, completed: [], review: [], processing: { result: inv.result }, target: { preferred: 0.5, min: 0.4, max: 0.6 }, treatment: { items: [] } };
@@ -254,13 +275,20 @@
   }
 
   /* ---------- the same data read in other ways ---------- */
-  // The method of the open-source Android app "RT" (github.com/soygabimoreno/RT, ReverbTimeCalculator.kt and the files
-  // it calls, read at commit 3904b7d): one causal (forward) band-pass per octave, the first 50 ms of the recording muted,
+  // The method of the open-source Android app "RT" (github.com/soygabimoreno/RT, Apache-2.0; ReverbTimeCalculator.kt and
+  // the files it calls under domain/calculator/processing, read again on 2026-10-15, last push 2026-08-06): one causal
+  // (forward) band-pass per octave; the start muted (MuteStart.kt zeroes seconds × rate × 2 samples: 0.1 s for its 0.05 s);
   // the squared signal summed forward over the WHOLE recording and read as 10·lg(1 − sum/total) (a Schroeder curve with no
-  // truncation and no noise compensation), then the first samples closest to −5 and −15 dB: RT = 6 × their time apart.
-  // Its 2 kHz and 4 kHz bands take points from the next band's curve; that quirk is not reproduced here.
-  function rtAppBand(x, fs, f) {
-    const b = DSP.octaveBand(f, fs), y = DSP.filter(x, b.sections), n = y.length, mute = Math.round(0.05 * fs), cum = new Float64Array(n);
+  // truncation and no noise compensation); then the first samples closest to −5 and −15 dB (ReverbTimeMethod.EDT):
+  // RT = 6 × their time apart. Its band filter is iirj's Butterworth band-pass of order 2 (125 Hz), 4 (250–1000 Hz) or
+  // 8 (2000, 4000 Hz); here the app's own octave filter, run forward, stands in for it.
+  // As it displays: the "2000 Hz" entry takes its −5 dB point from the 2 kHz curve and its −15 dB point from the 4 kHz
+  // curve; the "4000 Hz" entry takes both from the 8 kHz curve; its "Average" is the mean of those two entries
+  // (MeasureViewModel.kt: (measures[4].time + measures[5].time) / 2). own: each band from its own curve.
+  function rtAppPoints(x, fs, f) {
+    const b = DSP.octaveBand(f, fs);
+    if (b.hi >= 0.49 * fs) return null;
+    const y = DSP.filter(x, b.sections), n = y.length, mute = Math.round(0.05 * fs * 2), cum = new Float64Array(n);
     let total = 0;
     for (let i = 0; i < n; i++) { if (i >= mute) total += y[i] * y[i]; cum[i] = total; }
     let p5 = 0, p15 = 0, d5 = Infinity, d15 = Infinity;
@@ -269,7 +297,24 @@
       if (a < d5) { d5 = a; p5 = i; }
       if (c < d15) { d15 = c; p15 = i; }
     }
-    return 6 * (p15 - p5) / fs;
+    return { p5, p15 };
+  }
+  function rtApp(x, fs) {
+    const pts = {}, rt = (a, b) => (pts[a] && pts[b] ? 6 * (pts[b].p15 - pts[a].p5) / fs : null);
+    [...BANDS, 8000].forEach(f => { pts[f] = rtAppPoints(x, fs, f); });
+    const own = {}, shown = {};
+    BANDS.forEach(f => { own[f] = rt(f, f); shown[f] = own[f]; });
+    shown[2000] = rt(2000, 4000);
+    shown[4000] = rt(8000, 8000);
+    return { own, shown, average: shown[2000] != null && shown[4000] != null ? (shown[2000] + shown[4000]) / 2 : null };
+  }
+  // This app's two averages for a list of decided bands, by the app's own rules (AM.services.rt60Average): the bands from
+  // 125 to 4000 Hz that have a value (at least 3 of 6), and 500–2000 Hz (at least 2 of 3). A take counts as valid when
+  // its 1000 Hz band has a value, as in services/processing.js.
+  const RA = AM.services.rt60Average;
+  function appAverages(bands) {
+    const r = { valid: bands.some(b => b.f === REF && typeof b.rt60 === 'number'), bands };
+    return { all: RA.of(r), mid: RA.mid(r) };
   }
   // Schroeder integration from the arrival to the end of the file, time-reversed band filter, no truncation: here only
   // for EDT (0…−10 dB × 6), which the noise barely touches.
@@ -297,8 +342,9 @@
     const start = Math.max(0, onset - Math.round(T.preOnset * fs)), seg = Float64Array.from(x.subarray(start)), o = onset - start;
     const plan = { fs, f1: 1, f2: fs / 2 };
     const bands = BANDS.map(f => (DSP.octaveBand(f, fs).hi < 0.49 * fs ? PROC.decideBand(AN.analyseBand(seg, o, f, plan)) : { f, rt60: null, reason: 'Above this sample rate.' }));
-    const plain = BANDS.map(f => (DSP.octaveBand(f, fs).hi < 0.49 * fs ? { f, rtApp: rtAppBand(x, fs, f), edt: plainBand(seg, o, f, fs, 0, 10) } : { f }));
-    return { onsetSec: onset / fs, seconds: (x.length - onset) / fs, bands, plain };
+    const app = rtApp(x, fs);
+    const plain = BANDS.map(f => (DSP.octaveBand(f, fs).hi < 0.49 * fs ? { f, rtApp: app.own[f], rtAppShown: app.shown[f], edt: plainBand(seg, o, f, fs, 0, 10) } : { f }));
+    return { onsetSec: onset / fs, seconds: (x.length - onset) / fs, bands, plain, rtAppAverage: app.average, averages: appAverages(bands) };
   }
   const mean = xs => (xs.length && xs.every(x => x != null) ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
   const pick = (list, fs, key) => fs.map(f => { const b = list.find(x => x.f === f); return b ? b[key] : null; });
@@ -310,9 +356,12 @@
     const own = BANDS.map(f => ownDecay(room, fs, f, 'T30')), ownEdt = plainBand(room, 0, 1000, fs, 0, 10);
     const sweep = measure(deviceTake(s, dev, { seed: 272 }), s).r;
     const rows = [];
-    const MID = [500, 1000], ALL = BANDS;
-    rows.push({ what: 'Room\'s own decay (T30, noise-free)', f1k: own[3], mid: mean([own[2], own[3]]), all: mean(own), edt: ownEdt });
-    rows.push({ what: 'This app: sweep, one device (ISO 3382-2)', f1k: sweep.headline && sweep.headline.rt60, mid: mean(pick(sweep.bands, MID, 'rt60')), all: mean(pick(sweep.bands, ALL, 'rt60')), edt: null });
+    // Columns: 1000 Hz; ISO 3382-1 T_mid (500 and 1000 Hz, both needed); this app's 500–2000 Hz and 125–4000 Hz averages by
+    // its own rules (for the room's own decay and the RT app: the plain mean of those bands); the RT app's "Average".
+    const TMID = [500, 1000], MID3 = [500, 1000, 2000], ALL = BANDS;
+    const app = (what, bands, extra) => { const a = appAverages(bands); return Object.assign({ what, f1k: pick(bands, [REF], 'rt60')[0], tmid: mean(pick(bands, TMID, 'rt60')), mid3: a.mid.value, all: a.all.value, allN: a.all.available ? a.all.n : null, rtAvg: null, edt: null }, extra || {}); };
+    rows.push({ what: 'Room\'s own decay (T30, noise-free)', f1k: own[3], tmid: mean([own[2], own[3]]), mid3: mean([own[2], own[3], own[4]]), all: mean(own), allN: 6, rtAvg: null, edt: ownEdt });
+    rows.push(app('This app: sweep, one device (ISO 3382-2 evaluation)', sweep.bands));
     // A clap 1.5 m from the phone: direct sound about as strong as the reverberation. Its loudest 10 ms carry 40–60 dB
     // more energy than 10 ms of the (pink) background. The recording starts 1 s before the clap and runs 3 s after it.
     const clapRoom = roomIR(fs, rts, 271, { directDb: 0, directGap: 0.004 }), w = Math.round(0.01 * fs);
@@ -322,8 +371,10 @@
       const g = Math.sqrt(Math.pow(10, (pnr - 70) / 10) / top);
       for (let i = 0; i < clapRoom.length && at + i < n; i++) x[at + i] += clapRoom[i] * g;
       const res = analyseImpulse(Float32Array.from(x), fs);
-      rows.push({ what: `Clap, ${pnr} dB above the background (10 ms energy): this app's analysis`, f1k: pick(res.bands, [1000], 'rt60')[0], mid: mean(pick(res.bands, MID, 'rt60')), all: mean(pick(res.bands, ALL, 'rt60')), edt: pick(res.plain, [1000], 'edt')[0] });
-      rows.push({ what: `Clap, ${pnr} dB: method of the open-source "RT" app (causal filter, whole recording, −5…−15 dB × 6)`, f1k: pick(res.plain, [1000], 'rtApp')[0], mid: mean(pick(res.plain, MID, 'rtApp')), all: mean(pick(res.plain, ALL, 'rtApp')), edt: null });
+      rows.push(app(`Clap, ${pnr} dB above the background (10 ms energy): this app's analysis`, res.bands, { edt: pick(res.plain, [1000], 'edt')[0] }));
+      const rtRow = (what, key, avg) => ({ what, f1k: pick(res.plain, [1000], key)[0], tmid: mean(pick(res.plain, TMID, key)), mid3: mean(pick(res.plain, MID3, key)), all: mean(pick(res.plain, ALL, key)), allN: 6, rtAvg: avg, edt: null });
+      rows.push(rtRow(`Clap, ${pnr} dB: method of the open-source "RT" app as it displays (its 2 and 4 kHz entries read the 4 and 8 kHz curves)`, 'rtAppShown', res.rtAppAverage));
+      rows.push(rtRow(`Clap, ${pnr} dB: the same method, each band from its own curve (causal filter, whole recording, −5…−15 dB × 6)`, 'rtApp', null));
     }
     V.compare = { rts, rows };
   }
@@ -348,9 +399,9 @@
       <thead><tr><th>Case</th><th class="r">Band (Hz)</th><th class="r">Nominal (s)</th><th class="r">Expected (s)</th><th class="r">Measured (s)</th><th>Path · usable decay</th><th class="r">Abs. error (s)</th><th class="r">Error</th><th class="r">vs nominal</th><th>Reliability</th><th class="r">Other bands</th><th>Before</th><th>Result</th></tr></thead>
       <tbody>${s.rows.map(rowHtml).join('')}</tbody></table></div>`).join('');
     const disp = V.display.length ? `<h2>Displayed values = calculated values</h2><ul>${V.display.map(d => `<li><span class="${d.ok ? 'ok' : 'bad'}">${d.ok ? 'PASS' : 'FAIL'}</span> ${esc(d.name)}${d.detail ? ` <small>${esc(d.detail)}</small>` : ''}</li>`).join('')}</ul>` : '';
-    const cmp = V.compare ? `<h2>The same room read in other ways</h2><p class="muted">A furnished small room (an assumed profile, not measured data): nominal RT ${V.compare.rts.map((x, k) => `${BANDS[k]} Hz ${x.toFixed(2)}`).join(', ')}. Different reference bands, averages and evaluation methods give different single numbers for the same room. Information only; no pass or fail. "—" = no reliable value (this app) or not applicable.</p>
-      <div class="wrap"><table><thead><tr><th>Method</th><th class="r">1000 Hz</th><th class="r">Mean 500–1000 Hz</th><th class="r">Mean 125–4000 Hz</th><th class="r">EDT 1000 Hz</th></tr></thead><tbody>
-      ${V.compare.rows.map(r => `<tr><td>${esc(r.what)}</td><td class="r">${f3(r.f1k)}</td><td class="r">${f3(r.mid)}</td><td class="r">${f3(r.all)}</td><td class="r">${f3(r.edt)}</td></tr>`).join('')}</tbody></table></div>` : '';
+    const cmp = V.compare ? `<h2>The same room read in other ways</h2><p class="muted">A furnished small room (an assumed profile, not measured data): nominal RT ${V.compare.rts.map((x, k) => `${BANDS[k]} Hz ${x.toFixed(2)}`).join(', ')}. Different reference bands, averages and evaluation methods give different single numbers for the same room. Information only; no pass or fail. "—" = no reliable value (this app) or not applicable. This app's averages follow its own rules (the 125–4000 Hz average over the bands that have a value, at least 3 of 6, with how many in brackets; 500–2000 Hz at least 2 of 3). The "RT" app's "Average" is what that app shows: the mean of its 2000 and 4000 Hz entries, which read the 2–4 kHz and 8 kHz curves (above 4 kHz this synthetic room keeps its 4000 Hz value, ${V.compare.rts[5].toFixed(2)} s).</p>
+      <div class="wrap"><table><thead><tr><th>Method</th><th class="r">1000 Hz</th><th class="r">T<sub>mid</sub> 500–1000 Hz (ISO 3382-1)</th><th class="r">Average 500–2000 Hz</th><th class="r">Average 125–4000 Hz</th><th class="r">"RT" app "Average"</th><th class="r">EDT 1000 Hz</th></tr></thead><tbody>
+      ${V.compare.rows.map(r => `<tr><td>${esc(r.what)}</td><td class="r">${f3(r.f1k)}</td><td class="r">${f3(r.tmid)}</td><td class="r">${f3(r.mid3)}</td><td class="r">${f3(r.all)}${r.all != null && r.allN != null && r.allN < 6 ? ` (${r.allN}/6)` : ''}</td><td class="r">${f3(r.rtAvg)}</td><td class="r">${f3(r.edt)}</td></tr>`).join('')}</tbody></table></div>` : '';
     el.innerHTML = secs + disp + cmp;
     const rows = V.sections.flatMap(s => s.rows), all = rows.map(r => r.ok).concat(V.display.map(d => d.ok));
     document.getElementById('summary').innerHTML = V.total != null
@@ -387,12 +438,13 @@
     try {
       const { x, fs, channels } = parseWav(await file.arrayBuffer());
       const res = analyseImpulse(x, fs);
-      const rows = BANDS.map((f, k) => { const b = res.bands[k], p = res.plain[k]; return `<tr><td>${f}</td><td class="r">${f3(b.t20)}</td><td class="r">${f3(b.t30)}</td><td class="r"><b>${f3(b.rt60)}</b></td><td>${b.path || '—'}${b.decayRangeDb != null ? ` · ${Math.round(b.decayRangeDb)} dB` : ''}</td><td class="r">${f3(p.rtApp)}</td><td class="r">${f3(p.edt)}</td><td><small>${esc(b.rt60 == null ? (b.reason || '') : (b.notes || []).join(' '))}</small></td></tr>`; }).join('');
-      const iso = res.bands.map(b => b.rt60);
-      el.innerHTML = `<p>${esc(file.name)}: ${fs} Hz, ${channels} channel${channels > 1 ? 's' : ''} (first used), arrival at ${res.onsetSec.toFixed(3)} s, ${res.seconds.toFixed(2)} s after it.
-        Mean 500–1000 Hz: <b>${f3(mean([iso[2], iso[3]]))}</b> s · mean 125–4000 Hz: <b>${f3(mean(iso))}</b> s (only when every band has a value).</p>
-        <div class="wrap"><table><thead><tr><th>Band (Hz)</th><th class="r">T20</th><th class="r">T30</th><th class="r">RT60 (this app)</th><th>Path · usable decay</th><th class="r">−5…−15 dB × 6, whole file</th><th class="r">EDT</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table></div>
-        <p class="muted">"This app": the application's own band analysis and decision (Lundeby truncation, noise subtraction, direct sound separated, T30 or T20). "−5…−15 dB × 6, whole file": the method in the source code of the open-source Android app "RT" (causal band filter, Schroeder curve over the whole file with no truncation or noise compensation, two points). EDT: 0…−10 dB × 6. For an impulse response exported from REW, compare "This app" T20/T30 with REW's T20/T30 for the same band.</p>`;
+      const rows = BANDS.map((f, k) => { const b = res.bands[k], p = res.plain[k]; return `<tr><td>${f}</td><td class="r">${f3(b.t20)}</td><td class="r">${f3(b.t30)}</td><td class="r"><b>${f3(b.rt60)}</b></td><td>${b.path || '—'}${b.decayRangeDb != null ? ` · ${Math.round(b.decayRangeDb)} dB` : ''}</td><td class="r">${f3(p.rtApp)}</td><td class="r">${f3(p.rtAppShown)}</td><td class="r">${f3(p.edt)}</td><td><small>${esc(b.rt60 == null ? (b.reason || '') : (b.notes || []).join(' '))}</small></td></tr>`; }).join('');
+      const iso = res.bands.map(b => b.rt60), av = res.averages, said = a => (a.available ? `<b>${f3(a.value)}</b> s (${esc(RA.describe(a))})` : `none (${esc(a.reason || '')})`);
+      el.innerHTML = `<p>${esc(file.name)}: ${fs} Hz, ${channels} channel${channels > 1 ? 's' : ''} (first used), arrival at ${res.onsetSec.toFixed(3)} s, ${res.seconds.toFixed(2)} s after it.</p>
+        <p>This app's averages, by its own rules: 125–4000 Hz ${said(av.all)} · 500–2000 Hz ${said(av.mid)} · ISO 3382-1 T<sub>mid</sub> (500 and 1000 Hz): <b>${f3(mean([iso[2], iso[3]]))}</b> s.
+        The "RT" app's method as it displays, "Average" (its 2000 and 4000 Hz entries): <b>${f3(res.rtAppAverage)}</b> s.</p>
+        <div class="wrap"><table><thead><tr><th>Band (Hz)</th><th class="r">T20</th><th class="r">T30</th><th class="r">RT60 (this app)</th><th>Path · usable decay</th><th class="r">−5…−15 dB × 6, whole file, own band</th><th class="r">"RT" app as it displays</th><th class="r">EDT</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table></div>
+        <p class="muted">"This app": the application's own band analysis and decision (Lundeby truncation, noise subtraction, direct sound separated, T30 or T20). "−5…−15 dB × 6, whole file": the method in the source code of the open-source Android app "RT" (causal band filter, Schroeder curve over the whole file with no truncation or noise compensation, two points), each band from its own curve. "As it displays": its 2000 Hz entry reads the −15 dB point from the 4 kHz curve, its 4000 Hz entry the 8 kHz curve (ReverbTimeCalculator.kt); its band filters are not reproduced exactly (see the code). EDT: 0…−10 dB × 6. For an impulse response exported from REW, compare "This app" T20/T30 with REW's T20/T30 for the same band.</p>`;
     } catch (e) { el.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
   });
 

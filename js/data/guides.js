@@ -93,5 +93,103 @@
         ] },
       ],
     },
+
+    /* Target step: what RT60 is and why it matters, before the target is set. An explainer, not a measurement: the
+       room types are placed in their usual order, not at values, and the targets themselves come from js/data/targets.js. */
+    rt60: {
+      title: 'What is RT60?',
+      lengthLabel: '1 min',
+      closeLabel: 'Close and set the target',
+      video: { src: '' },
+      poster: { scene: 'rtDefine', u: 0.95 },
+      chapters: [
+        { id: 'linger', from: 0, to: 10, title: 'Sound lingers', scene: 'rtWhat', captions: [
+          'Every room keeps a sound going after it stops: it bounces off the walls, the floor and the ceiling.',
+          'Each bounce is a little quieter, until the sound dies away. That lingering is called reverberation.',
+        ] },
+        { id: 'define', from: 10, to: 22, title: 'What RT60 measures', scene: 'rtDefine', captions: [
+          'RT60 is the time it takes for a sound to fade by 60 decibels after it stops: from a loud clap to almost nothing.',
+          'It is given in seconds. The longer it is, the more the room rings.',
+        ] },
+        { id: 'long', from: 22, to: 34, title: 'Too long', scene: 'rtLong', captions: [
+          'When RT60 is too long, each word is still ringing when the next one starts.',
+          'Speech blurs, people raise their voices, and the room gets noisy and tiring, in meetings and on calls.',
+        ] },
+        { id: 'short', from: 34, to: 44, title: 'Short', scene: 'rtShort', captions: [
+          'When it is short, each word fades before the next one: speech is clear and easy to follow.',
+          'Far too short can sound dead. That matters for music, not for meeting rooms.',
+        ] },
+        { id: 'depends', from: 44, to: 55, title: 'The right value', scene: 'rtDepends', captions: [
+          'There is no single best value. Rooms for speech, like meeting rooms and classrooms, need a short RT60.',
+          'Rooms for music, like concert halls, need a longer one. Standards set the target for each use and size, and this step uses them.',
+        ] },
+        { id: 'treat', from: 55, to: 66, title: 'What changes it', scene: 'rtTreat', captions: [
+          'Hard, bare surfaces such as glass, plaster and concrete reflect sound, and bigger rooms ring for longer.',
+          'Acoustic panels absorb sound and shorten RT60. The treatment steps work out how much is needed.',
+        ] },
+        { id: 'app', from: 66, to: 72, title: 'In this app', scene: 'rtInApp', captions: [
+          'Here you set the target. Then you measure the room, compare the two, and choose treatment if it is needed.',
+        ] },
+      ],
+    },
+
+    /* Home: a walkthrough of the workflow, one chapter per step, on a sketch of the app. Not every feature: the steps and
+       what you do in each. The room in it is an example (10 × 6 × 3 m), not a measurement. */
+    tour: {
+      title: 'How the app works',
+      lengthLabel: '2 min',
+      closeLabel: 'Close the walkthrough',
+      video: { src: '' },
+      poster: { scene: 'tourMeasure', u: 0.95 },
+      chapters: [
+        { id: 'intro', from: 0, to: 7, title: 'The workflow', scene: 'tourIntro', captions: [
+          'The app takes you through ten steps, from describing the room to a report you can share.',
+          'The rail on the left always shows where you are and what is done.',
+        ] },
+        { id: 'room', from: 7, to: 18, title: 'Room Setup', scene: 'tourRoom', captions: [
+          'Step 1: name the room, choose its type and use, and enter its length, width and height.',
+          'The app works out the volume. You can also describe the surfaces, for the treatment later.',
+        ] },
+        { id: 'target', from: 18, to: 27, title: 'Target', scene: 'tourTarget', captions: [
+          'Step 2: the app recommends a target RT60 from the room’s use and size.',
+          'Check it and confirm. Adjust it only if the project has its own criteria.',
+        ] },
+        { id: 'setup', from: 27, to: 38, title: 'Measurement Setup', scene: 'tourSetup', captions: [
+          'Step 3: allow the microphone, prepare the room, and measure the background noise.',
+          'One device does everything: its own speaker plays the test signal and its microphone records.',
+        ] },
+        { id: 'measure', from: 38, to: 52, title: 'Measure', scene: 'tourMeasure', captions: [
+          'Step 4: place the device at the first position and start the measurement. A take lasts about 10 seconds.',
+          'Then move to a second position and measure again. The room’s values are the average of the positions.',
+        ] },
+        { id: 'processing', from: 52, to: 61, title: 'Processing', scene: 'tourProcessing', captions: [
+          'Step 5: the app checks each take and calculates RT60, band by band.',
+          'A take that cannot be trusted is rejected with the reason, never guessed.',
+        ] },
+        { id: 'results', from: 61, to: 71, title: 'Results', scene: 'tourResults', captions: [
+          'Step 6: the measured RT60, averaged over the positions, in plain words first.',
+          'The technical detail is one click away when you need it.',
+        ] },
+        { id: 'assessment', from: 71, to: 80, title: 'Assessment', scene: 'tourAssessment', captions: [
+          'Step 7: the room is compared with its target, band by band.',
+          'You see straight away whether it meets the target or needs treatment.',
+        ] },
+        { id: 'treatment', from: 80, to: 91, title: 'Treatment', scene: 'tourTreatment', captions: [
+          'Step 8: choose tested acoustic products and how many.',
+          'The app shows how much absorption is needed and how much your plan adds.',
+        ] },
+        { id: 'prediction', from: 91, to: 100, title: 'Predicted Result', scene: 'tourPrediction', captions: [
+          'Step 9: see the RT60 the room is predicted to have after treatment, against the target.',
+          'Change the amounts here and the prediction updates.',
+        ] },
+        { id: 'final', from: 100, to: 111, title: 'Final Result', scene: 'tourFinal', captions: [
+          'Step 10: the whole project on one page.',
+          'Fill in the short report form, then download the PDF report for your client.',
+        ] },
+        { id: 'end', from: 111, to: 116, title: 'Ready', scene: 'tourOutro', captions: [
+          'That is the workflow. Every step has an Explain button, and short videos where they help.',
+        ] },
+      ],
+    },
   };
 })(window.AM);

@@ -7,6 +7,9 @@
      sync(root, sheet) mount the player when the guide sheet is shown, stop it when the sheet closes
      poster(id)        still frame for thumbnails
 
+   Videos: How to measure (Measure), How to measure the room (Room Setup), What is RT60? (Target) and the app
+   walkthrough (Home), all in js/data/guides.js.
+
    The player only plays a video. It never touches the project or the measurement. */
 (function (AM) {
   'use strict';
@@ -291,8 +294,344 @@
       s += `<g opacity="${op(co)}">${tick(176, 286, true)}</g>` + T(196, 291, 'Check the sketch looks like your room', { size: 14, op: co });
       return s;
     },
+
+    /* ----- What is RT60? (Target step): what reverberation is, what too long and too short do, what changes it ----- */
+    // A clap in a room. The direct sound and its reflections off the walls, floor and ceiling (drawn as mirror-image
+    // sources, which is how reflections behave) spread out and fade as the surfaces absorb them.
+    rtWhat(u) {
+      const x0 = 60, y0 = 84, x1 = 580, y1 = 296, sx = 176, sy = 230, sec = u * 10;
+      let s = T(320, 54, 'Sound lingers after it stops', { size: 20, weight: 700, anchor: 'middle', op: ease(seg(u, 0, 0.1)) });
+      s += `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="none" stroke="${P.line}" stroke-width="3"/>`;
+      const srcs = [[sx, sy, 1], [2 * x0 - sx, sy, 0.62], [2 * x1 - sx, sy, 0.62], [sx, 2 * y1 - sy, 0.62], [sx, 2 * y0 - sy, 0.62],
+        [2 * x1 - sx, 2 * y0 - sy, 0.4], [2 * x0 - sx, 2 * y0 - sy, 0.4], [2 * x1 - sx, 2 * y1 - sy, 0.4]];
+      let level = 0, fronts = '';
+      [0.5, 5.2].forEach(at => {
+        const age = sec - at;
+        if (age <= 0) return;
+        const fade = Math.exp(-age / 1.7), r = 8 + age * 125;
+        level = Math.max(level, fade);
+        srcs.forEach(([x, y, k]) => { if (fade * k > 0.02) fronts += `<circle cx="${n(x)}" cy="${n(y)}" r="${n(r)}" fill="none" stroke="${P.accent}" stroke-width="2" opacity="${op(fade * k)}"/>`; });
+      });
+      s += `<svg x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" viewBox="${x0} ${y0} ${x1 - x0} ${y1 - y0}" overflow="hidden">${fronts}</svg>`;
+      // the clap
+      const flash = Math.max(c01(1 - Math.abs(sec - 0.6) / 0.35), c01(1 - Math.abs(sec - 5.3) / 0.35));
+      s += `<circle cx="${sx}" cy="${sy}" r="7" fill="${P.ink}"/><circle cx="${sx}" cy="${sy}" r="${n(10 + 10 * flash)}" fill="none" stroke="${P.ink}" stroke-width="2" opacity="${op(flash)}"/>`;
+      s += T(sx, sy + 30, 'Clap', { size: 12, fill: P.dim, anchor: 'middle' });
+      s += T(420, 130, 'Reflections off walls, floor and ceiling', { size: 13, fill: P.ink, anchor: 'middle', op: ease(seg(u, 0.14, 0.24)) * (1 - ease(seg(u, 0.5, 0.55))) });
+      s += T(420, 150, 'keep the sound going', { size: 13, fill: P.ink, anchor: 'middle', op: ease(seg(u, 0.14, 0.24)) * (1 - ease(seg(u, 0.5, 0.55))) });
+      // how loud the room still is
+      s += T(x0, 326, 'Sound in the room', { size: 11, fill: P.dim }) + `<rect x="${x0 + 110}" y="317" width="190" height="8" rx="4" fill="${P.line}"/><rect x="${x0 + 110}" y="317" width="${n(190 * level)}" height="8" rx="4" fill="${P.accent}"/>`;
+      s += T(x1, 326, 'This lingering is reverberation', { size: 12, weight: 650, fill: P.accent, anchor: 'end', op: ease(seg(u, 0.3, 0.4)) });
+      return s;
+    },
+
+    // RT60 defined on a level-against-time graph: the sound stops, its level falls in a straight line in decibels, and the
+    // time it takes to fall by 60 dB is the RT60.
+    rtDefine(u) {
+      const gx0 = 116, gx1 = 576, gy0 = 96, gy1 = 280, dbY = db => gy0 + (gy1 - gy0) * (-db / 60);
+      let s = T(320, 50, 'RT60: the time for sound to fade by 60 dB', { size: 18, weight: 700, anchor: 'middle', op: ease(seg(u, 0, 0.1)) });
+      s += L(gx0, gy0 - 10, gx0, gy1 + 18, P.line, 2) + L(gx0, gy1 + 18, gx1, gy1 + 18, P.line, 2);
+      [0, -20, -40, -60].forEach(db => {
+        s += L(gx0, dbY(db), gx1, dbY(db), P.faint, 1, 'stroke-dasharray="2 5"') + T(gx0 - 10, dbY(db) + 4, db === 0 ? '0 dB' : `−${-db} dB`, { size: 11, fill: P.dim, anchor: 'end' });
+      });
+      s += T(gx1, gy1 + 36, 'time', { size: 11, fill: P.dim, anchor: 'end' }) + T(gx0 - 10, gy0 - 18, 'level', { size: 11, fill: P.dim, anchor: 'end' });
+      const xOn = gx0 + 16, xStop = gx0 + 120, xEnd = xStop + 300;
+      const reveal = xOn + (gx1 - xOn) * ease(seg(u, 0.06, 0.66));
+      let d = '';
+      for (let x = xOn; x <= reveal; x += 3) {
+        const db = x < xOn + 6 ? -60 + 60 * (x - xOn) / 6 : x < xStop ? -2.2 * Math.abs(Math.sin(x * 0.37)) : Math.max(-63, -60 * (x - xStop) / (xEnd - xStop) + 1.4 * Math.sin(x * 0.9));
+        d += `${d ? 'L' : 'M'}${n(x)},${n(dbY(db))} `;
+      }
+      if (d) s += `<path d="${d}" fill="none" stroke="${P.accent}" stroke-width="2.6" stroke-linejoin="round"/>`;
+      const so = ease(seg(u, 0.24, 0.32));
+      s += L(xStop, gy0 - 6, xStop, gy1 + 18, P.dim, 1.4, `stroke-dasharray="4 4" opacity="${op(so)}"`) + T(xStop + 6, gy0 - 14, 'Sound stops', { size: 12, fill: P.dim, op: so });
+      const ro = ease(seg(u, 0.68, 0.78));
+      s += `<g opacity="${op(ro)}">${L(xStop, gy1 + 4, xEnd, gy1 + 4, P.ink, 2)}${L(xStop, gy1 - 2, xStop, gy1 + 10, P.ink, 2)}${L(xEnd, gy1 - 2, xEnd, gy1 + 10, P.ink, 2)}<circle cx="${xEnd}" cy="${dbY(-60)}" r="5" fill="${P.ink}"/></g>`;
+      s += T((xStop + xEnd) / 2, gy1 - 8, 'RT60', { size: 18, weight: 700, anchor: 'middle', op: ro });
+      s += T(320, 344, 'Measured in seconds. The longer it is, the more the room rings.', { size: 13, fill: P.ink, anchor: 'middle', op: ease(seg(u, 0.82, 0.92)) });
+      return s;
+    },
+
+    // The same four words in two rooms: a long RT60 (their tails overlap) …
+    rtLong(u) {
+      let s = T(320, 50, 'Too long: words blur into each other', { size: 18, weight: 700, anchor: 'middle', op: ease(seg(u, 0, 0.1)) });
+      s += speech(u, 0.2, P.warn);
+      const oo = ease(seg(u, 0.55, 0.65));
+      s += `<g opacity="${op(oo)}">${L(160, 140, 222, 140, P.bad, 2)}${L(160, 134, 160, 146, P.bad, 2)}${L(222, 134, 222, 146, P.bad, 2)}</g>` + T(191, 128, 'still ringing', { size: 12, weight: 650, fill: P.bad, anchor: 'middle', op: oo });
+      s += T(320, 336, 'Harder to understand · people talk louder · the room gets noisy and tiring', { size: 13, fill: P.warn, anchor: 'middle', op: ease(seg(u, 0.72, 0.82)) });
+      return s;
+    },
+    // … and a short one (each word ends before the next).
+    rtShort(u) {
+      let s = T(320, 50, 'Short: every word stays clear', { size: 18, weight: 700, anchor: 'middle', op: ease(seg(u, 0, 0.1)) });
+      s += speech(u, 0.03, P.good);
+      s += T(320, 322, 'Right for meetings, classrooms and offices.', { size: 13, fill: P.good, anchor: 'middle', op: ease(seg(u, 0.62, 0.72)) });
+      s += T(320, 344, 'Far too short can sound dead: rooms for music need more.', { size: 12, fill: P.dim, anchor: 'middle', op: ease(seg(u, 0.78, 0.88)) });
+      return s;
+    },
+
+    // Where rooms sit between short and long (their order, not values): speech rooms short, music rooms long.
+    rtDepends(u) {
+      const ax0 = 84, ax1 = 556, ay = 206, at = f => ax0 + (ax1 - ax0) * f;
+      let s = T(320, 50, 'The right RT60 depends on how the room is used', { size: 18, weight: 700, anchor: 'middle', op: ease(seg(u, 0, 0.1)) });
+      s += L(ax0, ay, ax1, ay, P.ink, 3) + `<path d="M${ax1 + 2},${ay} l-10,-6 v12 Z" fill="${P.ink}"/>`;
+      s += T(ax0, ay + 76, '← shorter', { size: 12, fill: P.dim }) + T(ax1, ay + 76, 'longer →', { size: 12, fill: P.dim, anchor: 'end' }) + T(320, ay + 76, 'RT60', { size: 13, weight: 650, anchor: 'middle' });
+      [['Meeting room', 0.12, -1, 0.1], ['Classroom', 0.24, 1, 0.18], ['Restaurant', 0.42, -1, 0.26], ['Theatre', 0.6, 1, 0.34], ['Concert hall', 0.8, -1, 0.42], ['Church', 0.94, 1, 0.5]].forEach(([label, f, side, a]) => {
+        const o = ease(seg(u, a, a + 0.07)), x = at(f);
+        s += `<g opacity="${op(o)}"><circle cx="${n(x)}" cy="${ay}" r="6" fill="${f < 0.3 ? P.good : f > 0.55 ? P.blue : P.dim}"/>${L(x, ay + side * 10, x, ay + side * 26, P.faint, 1.4)}</g>`;
+        s += T(x, ay + side * 36 + (side > 0 ? 4 : 0), label, { size: 12, anchor: 'middle', op: o });
+      });
+      const bo = ease(seg(u, 0.58, 0.68));
+      s += `<g opacity="${op(bo)}">${L(at(0.06), 118, at(0.3), 118, P.good, 2)}${L(at(0.56), 118, at(0.98), 118, P.blue, 2)}</g>`;
+      s += T(at(0.18), 108, 'Speech: clarity', { size: 13, weight: 650, fill: P.good, anchor: 'middle', op: bo }) + T(at(0.77), 108, 'Music: fullness', { size: 13, weight: 650, fill: P.blue, anchor: 'middle', op: bo });
+      s += T(320, 336, 'This step sets the target from standards for the room’s use and size.', { size: 13, fill: P.accent, anchor: 'middle', op: ease(seg(u, 0.78, 0.88)) });
+      return s;
+    },
+
+    // What changes it: hard, bare surfaces and size make it longer; absorbing panels make it shorter.
+    rtTreat(u, t) {
+      const x0 = 50, y0 = 88, x1 = 290, y1 = 268, pi = ease(seg(u, 0.38, 0.52));
+      let s = T(320, 50, 'What changes RT60', { size: 18, weight: 700, anchor: 'middle', op: ease(seg(u, 0, 0.1)) });
+      s += `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="none" stroke="${P.ink}" stroke-width="3"/>`;
+      // panels arrive on the walls and under the ceiling
+      if (pi > 0) {
+        s += `<g opacity="${op(pi)}">`;
+        [130, 190].forEach(y => { s += `<rect x="${x0 + 3}" y="${y}" width="8" height="46" rx="2" fill="${P.good}"/><rect x="${x1 - 11}" y="${y}" width="8" height="46" rx="2" fill="${P.good}"/>`; });
+        [90, 150, 210].forEach(x => { s += `<rect x="${x0 + x - 30}" y="${y0 + 8}" width="46" height="7" rx="2" fill="${P.good}"/>`; });
+        s += '</g>';
+      }
+      // the sound in the room: it reaches the walls and comes back while the room is bare, and dies away soon with panels
+      s += rings(170, 200, t, 1, lerp(230, 70, pi), [x0 + 1, y0 + 1, x1 - 1, y1 - 1]);
+      s += T(170, y1 + 20, pi > 0.5 ? 'With panels' : 'Bare, hard surfaces', { size: 12, fill: pi > 0.5 ? P.good : P.dim, anchor: 'middle' });
+      // the decay before and after
+      const gx0 = 340, gx1 = 600, gy0 = 96, gy1 = 262;
+      s += L(gx0, gy0 - 6, gx0, gy1, P.line, 2) + L(gx0, gy1, gx1, gy1, P.line, 2) + T(gx1, gy1 + 18, 'time', { size: 11, fill: P.dim, anchor: 'end' });
+      const b = ease(seg(u, 0.06, 0.3));
+      s += L(gx0 + 4, gy0, gx0 + 4 + (gx1 - gx0 - 10) * b, gy0 + (gy1 - gy0 - 8) * b, P.warn, 2.6) + T(gx1 - 2, gy1 - 34, 'Before', { size: 12, fill: P.warn, anchor: 'end', op: ease(seg(u, 0.26, 0.32)) });
+      const a = ease(seg(u, 0.52, 0.7));
+      if (a > 0) s += L(gx0 + 4, gy0, gx0 + 4 + 110 * a, gy0 + (gy1 - gy0 - 8) * a, P.good, 2.6);
+      s += T(gx0 + 122, gy1 - 6, 'After', { size: 12, weight: 650, fill: P.good, anchor: 'start', op: ease(seg(u, 0.68, 0.74)) });
+      s += T(320, 322, 'Hard surfaces and bigger rooms make it longer.', { size: 13, fill: P.ink, anchor: 'middle', op: ease(seg(u, 0.12, 0.22)) });
+      s += T(320, 344, 'Absorbing panels make it shorter. That is what the treatment steps plan.', { size: 13, fill: P.good, anchor: 'middle', op: ease(seg(u, 0.74, 0.84)) });
+      return s;
+    },
+
+    // How the app uses it: target, measure, compare and treat.
+    rtInApp(u) {
+      let s = T(320, 50, 'How this app uses RT60', { size: 18, weight: 700, anchor: 'middle', op: ease(seg(u, 0, 0.1)) });
+      const cards = [
+        ['Set the target', 'Step 2 · this step', (x, y) => `<circle cx="${x}" cy="${y}" r="17" fill="none" stroke="${P.accent}" stroke-width="3"/><circle cx="${x}" cy="${y}" r="9" fill="none" stroke="${P.accent}" stroke-width="3"/><circle cx="${x}" cy="${y}" r="2.6" fill="${P.accent}"/>`],
+        ['Measure the room', 'Steps 3 to 6', (x, y) => `<rect x="${x - 7}" y="${y - 18}" width="14" height="24" rx="7" fill="none" stroke="${P.ink}" stroke-width="3"/><path d="M${x - 13},${y} a13,13 0 0 0 26,0 M${x},${y + 13} v8" fill="none" stroke="${P.ink}" stroke-width="3" stroke-linecap="round"/>`],
+        ['Compare and treat', 'Steps 7 to 9', (x, y) => [[-16, -16], [2, -16], [-16, 2], [2, 2]].map(([dx, dy]) => `<rect x="${x + dx}" y="${y + dy}" width="14" height="14" rx="2" fill="none" stroke="${P.good}" stroke-width="3"/>`).join('')],
+      ];
+      cards.forEach(([title, sub, icon], i) => {
+        const x = 46 + i * 196, y = 104, o = ease(seg(u, 0.08 + i * 0.18, 0.2 + i * 0.18));
+        s += `<g opacity="${op(o)}"><rect x="${x}" y="${y}" width="164" height="160" rx="14" fill="${P.panel}" stroke="${i === 0 ? P.accent : P.panel}" stroke-width="2"/>${icon(x + 82, y + 50)}</g>`;
+        s += T(x + 82, y + 106, title, { size: 15, weight: 700, anchor: 'middle', op: o }) + T(x + 82, y + 128, sub, { size: 12, fill: i === 0 ? P.accent : P.dim, anchor: 'middle', op: o });
+        if (i < 2) s += `<path d="M${x + 172},${y + 80} h16 m-6,-6 l6,6 l-6,6" fill="none" stroke="${P.dim}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="${op(ease(seg(u, 0.2 + i * 0.18, 0.26 + i * 0.18)))}"/>`;
+      });
+      s += T(320, 318, 'The target, the measured value and the predicted value always stay separate.', { size: 13, fill: P.dim, anchor: 'middle', op: ease(seg(u, 0.7, 0.8)) });
+      return s;
+    },
+
+    /* ----- App walkthrough (Home): the ten steps, one chapter each, on a sketch of the app. Example room, not data. ----- */
+    tourIntro(u) {
+      let s = T(320, 92, 'How the app works', { size: 26, weight: 700, anchor: 'middle', op: ease(seg(u, 0, 0.14)) });
+      s += T(320, 122, 'Ten steps, from the room to the report', { size: 14, fill: P.dim, anchor: 'middle', op: ease(seg(u, 0.08, 0.22)) });
+      [['Define', 'Steps 1–2'], ['Measure', 'Steps 3–5'], ['Analyse', 'Steps 6–7'], ['Improve', 'Steps 8–9'], ['Summary', 'Step 10']].forEach(([name, steps], i) => {
+        const x = 52 + i * 112, o = ease(seg(u, 0.2 + i * 0.1, 0.3 + i * 0.1));
+        s += `<g opacity="${op(o)}"><rect x="${x}" y="158" width="96" height="108" rx="12" fill="${P.panel}"/>${PHASE_GLYPH[i](x + 48, 196)}</g>`;
+        s += T(x + 48, 240, name, { size: 14, weight: 700, anchor: 'middle', op: o }) + T(x + 48, 257, steps, { size: 11, fill: P.dim, anchor: 'middle', op: o });
+        if (i < 4) s += `<path d="M${x + 100},212 h8 m-4,-4 l4,4 l-4,4" fill="none" stroke="${P.dim}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity="${op(o)}"/>`;
+      });
+      s += T(320, 314, 'The rail on the left always shows where you are.', { size: 14, fill: P.accent, anchor: 'middle', op: ease(seg(u, 0.75, 0.88)) });
+      return s;
+    },
+
+    tourRoom(u) {
+      let s = appFrame(0, 'Describe the room');
+      s += field(160, 116, 210, 'Room name', 'Conference Room A', seg(u, 0.04, 0.2));
+      s += field(160, 160, 210, 'Room type and use', 'Meeting room', seg(u, 0.22, 0.32));
+      [['Length', '10'], ['Width', '6'], ['Height', '3']].forEach(([label, v], i) => { s += field(160 + i * 72, 204, 62, label, `${v} m`, seg(u, 0.36 + i * 0.08, 0.42 + i * 0.08)); });
+      const vo = ease(seg(u, 0.64, 0.74));
+      s += T(160, 270, 'Volume', { size: 10, fill: P.dim, op: vo }) + T(160, 302, '180 m³', { size: 24, weight: 700, op: vo });
+      const { pts } = isoBox(10, 6, 3, 13, 486, 206);
+      s += `<g opacity="${op(vo)}">${box3d(pts, 10, 6, 3)}</g>`;
+      return s;
+    },
+
+    tourTarget(u) {
+      let s = appFrame(1, 'Confirm the target');
+      s += T(160, 128, 'Recommended for a meeting room of this size', { size: 11, fill: P.dim });
+      s += T(160, 166, '0.48 s', { size: 30, weight: 700, op: ease(seg(u, 0.05, 0.18)) }) + T(268, 166, 'acceptable 0.38–0.59 s', { size: 12, fill: P.dim, op: ease(seg(u, 0.1, 0.22)) });
+      s += scale(196, null, null, ease(seg(u, 0.2, 0.35)));
+      const tap = seg(u, 0.62, 0.74), done = u > 0.7;
+      s += button(472, 270, 136, done ? 'Target confirmed' : 'Confirm target', done ? P.good : P.accent, tap);
+      return s;
+    },
+
+    tourSetup(u) {
+      let s = appFrame(2, 'Prepare to measure');
+      [['Allow the microphone', 0.14], ['Prepare the room: doors closed, quiet', 0.34], ['Measure the background noise', 0.68]].forEach(([label, at], i) => {
+        const y = 140 + i * 42;
+        s += tick(172, y - 4, u >= at) + T(190, y + 1, label, { size: 13, fill: u >= at ? P.ink : P.dim });
+      });
+      const lv = seg(u, 0.44, 0.66);
+      if (lv > 0) s += `<rect x="190" y="236" width="150" height="7" rx="3.5" fill="${P.line}"/><rect x="190" y="236" width="${n(150 * lv)}" height="7" rx="3.5" fill="${TEAL}"/>`;
+      s += pill(190, 254, 'Suitable for measuring', P.good, ease(seg(u, 0.68, 0.76)));
+      s += table(528, 244, 320, 104) + laptop(528, 244);
+      s += T(528, 334, 'One device plays and records', { size: 11, fill: P.dim, anchor: 'middle' });
+      return s;
+    },
+
+    tourMeasure(u, t) {
+      let s = appFrame(3, 'Measure at two positions');
+      const rx0 = 160, ry0 = 116, rw = 196, rh = 132, p1 = [205, 200], p2 = [315, 150];
+      s += `<rect x="${rx0}" y="${ry0}" width="${rw}" height="${rh}" rx="3" fill="${P.bg}" stroke="${P.ink}" stroke-width="2"/>`;
+      const mv = ease(seg(u, 0.48, 0.58)), dx = lerp(p1[0], p2[0], mv), dy = lerp(p1[1], p2[1], mv);
+      [['P1', p1, 0.44], ['P2', p2, 0.92]].forEach(([id, [x, y], at]) => { s += `<circle cx="${x}" cy="${y}" r="5" fill="none" stroke="${P.dim}" stroke-width="1.6"/>` + T(x, y - 12, id, { size: 11, weight: 650, anchor: 'middle' }) + (u >= at ? tick(x - 22, y + 12, true) : ''); });
+      s += `<rect x="${n(dx - 7)}" y="${n(dy - 5)}" width="14" height="10" rx="2" fill="${TEAL}"/>`;
+      const first = u < 0.5, prog = first ? seg(u, 0.1, 0.42) : seg(u, 0.6, 0.9);
+      s += T(380, 128, first ? 'Take at P1' : 'Take at P2', { size: 12, weight: 650 }) + take(380, 606, 184, 24, prog);
+      const tap = first ? seg(u, 0.06, 0.16) : seg(u, 0.56, 0.66);
+      s += button(380, 228, 150, 'Start measurement', P.accent, tap);
+      s += T(160, 300, 'Each position: a background check, then a 10 s take.', { size: 12, fill: P.dim });
+      s += T(160, 322, 'The room’s values are the average of the positions.', { size: 12, fill: TEAL, op: ease(seg(u, 0.9, 0.98)) });
+      return s;
+    },
+
+    tourProcessing(u) {
+      let s = appFrame(4, 'Processing checks each take');
+      ['Separate the room’s decay', 'Check it against the background', 'Choose T30 or T20', 'Calculate RT60, band by band'].forEach((label, i) => {
+        const y = 138 + i * 36, a = 0.1 + i * 0.18, done = u >= a + 0.12, on = u >= a && !done;
+        s += (done ? tick(172, y - 4, true) : on ? `<circle cx="172" cy="${y - 4}" r="9" fill="none" stroke="${P.line}" stroke-width="2.4"/><path d="M172,${y - 13} a9,9 0 0 1 9,9" fill="none" stroke="${TEAL}" stroke-width="2.4" transform="rotate(${n((u * 2400) % 360)} 172 ${y - 4})"/>` : `<circle cx="172" cy="${y - 4}" r="9" fill="none" stroke="${P.line}" stroke-width="2"/>`);
+        s += T(190, y + 1, label, { size: 13, fill: done || on ? P.ink : P.dim });
+      });
+      s += T(160, 318, 'A take that cannot be trusted is rejected with its reason, never guessed.', { size: 12, fill: P.good, op: ease(seg(u, 0.84, 0.92)) });
+      return s;
+    },
+
+    tourResults(u) {
+      let s = appFrame(5, 'Read the results');
+      s += T(160, 128, 'Measured RT60 · average over 2 positions', { size: 11, fill: P.dim });
+      s += T(160, 170, '0.72 s', { size: 32, weight: 700, fill: TEAL, op: ease(seg(u, 0.06, 0.18)) });
+      const vals = [0.95, 0.8, 0.76, 0.7, 0.62, 0.52], labels = ['125', '250', '500', '1k', '2k', '4k'];
+      vals.forEach((v, i) => {
+        const g = ease(seg(u, 0.2 + i * 0.06, 0.32 + i * 0.06)), h = v * 110 * g, x = 380 + i * 38;
+        s += `<rect x="${x}" y="${n(286 - h)}" width="22" height="${n(h)}" rx="3" fill="${TEAL}"/>` + T(x + 11, 302, labels[i], { size: 10, fill: P.dim, anchor: 'middle' });
+      });
+      s += L(372, 286, 610, 286, P.line, 1.4);
+      s += T(160, 212, 'Low sounds 0.95 s', { size: 12, op: ease(seg(u, 0.5, 0.58)) }) + T(160, 234, 'Voices 0.72 s', { size: 12, weight: 650, op: ease(seg(u, 0.56, 0.64)) }) + T(160, 256, 'High sounds 0.57 s', { size: 12, op: ease(seg(u, 0.62, 0.7)) });
+      s += T(160, 322, 'Plain words first; the technical detail is one click away.', { size: 12, fill: P.dim, op: ease(seg(u, 0.78, 0.88)) });
+      return s;
+    },
+
+    tourAssessment(u) {
+      let s = appFrame(6, 'Compare with the target');
+      s += T(160, 128, 'Target 0.48 s (0.38–0.59)  ·  measured 0.72 s', { size: 12, fill: P.dim });
+      s += scale(180, ease(seg(u, 0.12, 0.3)) > 0 ? 0.72 : null, null, 1);
+      s += pill(160, 252, 'Does not meet the target', P.bad, ease(seg(u, 0.4, 0.5)));
+      s += T(160, 300, 'Every band from 250 Hz to 2 kHz is checked against the range.', { size: 12, fill: P.ink, op: ease(seg(u, 0.55, 0.65)) });
+      s += T(160, 322, 'Here it is too long: treatment is needed.', { size: 12, fill: P.accent, op: ease(seg(u, 0.72, 0.82)) });
+      return s;
+    },
+
+    tourTreatment(u) {
+      let s = appFrame(7, 'Choose treatment');
+      ['Acoustic wall panel', 'Ceiling panel', 'Fabric wall panel'].forEach((name, i) => {
+        const y = 118 + i * 38, sel = i === 0 && u > 0.18;
+        s += `<rect x="160" y="${y}" width="206" height="30" rx="6" fill="${sel ? '#2A1E1B' : P.panel}" stroke="${sel ? P.accent : P.panel}" stroke-width="1.6"/>` + T(172, y + 19, name, { size: 12, weight: sel ? 650 : 400 }) + T(356, y + 19, 'tested', { size: 10, fill: P.dim, anchor: 'end' });
+      });
+      const q = Math.round(10 * ease(seg(u, 0.34, 0.66)));
+      s += T(392, 128, 'How many', { size: 11, fill: P.dim }) + `<rect x="392" y="136" width="120" height="32" rx="7" fill="${P.bg}" stroke="${P.line}"/>` + T(408, 157, '−', { size: 15, fill: P.dim }) + T(452, 157, String(q), { size: 15, weight: 700, anchor: 'middle' }) + T(496, 157, '+', { size: 15, fill: P.dim, anchor: 'end' });
+      s += T(392, 196, 'Absorption needed', { size: 11, fill: P.dim }) + `<rect x="392" y="204" width="214" height="8" rx="4" fill="${P.line}"/><rect x="392" y="204" width="${n(214 * c01(q / 10))}" height="8" rx="4" fill="${VIO}"/>`;
+      s += T(392, 232, `This plan adds ${q * 10}% of it`, { size: 12, op: c01(q) });
+      s += T(160, 318, 'Each product keeps its own tested absorption data.', { size: 12, fill: P.dim, op: ease(seg(u, 0.72, 0.82)) });
+      return s;
+    },
+
+    tourPrediction(u) {
+      let s = appFrame(8, 'See the predicted result');
+      [['Measured', '0.72 s', TEAL], ['Predicted', '0.50 s', VIO], ['Target', '0.48 s', P.ink]].forEach(([k, v, col], i) => {
+        const x = 160 + i * 150, o = ease(seg(u, 0.05 + i * 0.12, 0.15 + i * 0.12));
+        s += `<g opacity="${op(o)}"><rect x="${x}" y="114" width="134" height="64" rx="10" fill="${P.panel}" stroke="${i === 1 ? VIO : P.panel}" stroke-width="1.6" ${i === 1 ? 'stroke-dasharray="5 4"' : ''}/></g>` + T(x + 12, 134, k, { size: 11, fill: P.dim, op: o }) + T(x + 12, 164, v, { size: 22, weight: 700, fill: col, op: o });
+      });
+      s += scale(226, 0.72, ease(seg(u, 0.45, 0.6)) > 0 ? lerp(0.72, 0.5, ease(seg(u, 0.45, 0.6))) : null, 1);
+      s += pill(160, 280, 'Within target', P.good, ease(seg(u, 0.64, 0.72)));
+      s += T(160, 326, 'Change the amounts and the prediction updates.', { size: 12, fill: P.dim, op: ease(seg(u, 0.76, 0.86)) });
+      return s;
+    },
+
+    tourFinal(u) {
+      let s = appFrame(9, 'Get the report');
+      [['Before', '0.72 s', TEAL], ['Predicted', '0.50 s', VIO], ['Target', '0.48 s', P.ink]].forEach(([k, v, col], i) => {
+        s += T(160 + i * 120, 128, k, { size: 10, fill: P.dim }) + T(160 + i * 120, 150, v, { size: 16, weight: 700, fill: col });
+      });
+      s += field(160, 172, 180, 'Your name', 'A. Sales', seg(u, 0.12, 0.24)) + field(352, 172, 210, 'Email', 'name@company.com', seg(u, 0.26, 0.4));
+      s += tick(170, 234, u > 0.44) + T(186, 238, 'I agree the details are sent with this report', { size: 11, fill: u > 0.44 ? P.ink : P.dim });
+      s += button(160, 256, 108, 'Submit', P.accent, seg(u, 0.5, 0.6));
+      const un = u > 0.66;
+      s += button(282, 256, 170, un ? 'Download PDF report' : 'PDF locked', un ? P.good : P.line, seg(u, 0.84, 0.94));
+      s += T(160, 322, 'A one- or two-page PDF for your client.', { size: 12, fill: P.dim, op: ease(seg(u, 0.7, 0.8)) });
+      return s;
+    },
+
+    tourOutro(u) {
+      let s = T(320, 110, 'That is the whole workflow', { size: 24, weight: 700, anchor: 'middle', op: ease(seg(u, 0, 0.15)) });
+      [['Explain this step', 'on every step, with your own numbers'], ['Short videos', 'where a step needs one'], ['Saved on this device', 'reopen any project from Home']].forEach(([a, b], i) => {
+        const y = 168 + i * 44, o = ease(seg(u, 0.15 + i * 0.15, 0.27 + i * 0.15));
+        s += `<g opacity="${op(o)}">${tick(178, y - 4, true)}</g>` + T(198, y + 1, a, { size: 15, weight: 700, op: o }) + T(390, y + 1, b, { size: 13, fill: P.dim, op: o });
+      });
+      s += T(320, 318, 'Press New Measurement to start.', { size: 15, fill: P.accent, weight: 650, anchor: 'middle', op: ease(seg(u, 0.65, 0.78)) });
+      return s;
+    },
   };
 
+  /* helpers for the walkthrough: a sketch of the app (the workflow rail with the step on show) and its controls */
+  const TEAL = '#3BC2B6', VIO = '#A48EFF';
+  const TOUR = ['Room Setup', 'Target', 'Setup', 'Measure', 'Processing', 'Results', 'Assessment', 'Treatment', 'Prediction', 'Final Result'];
+  function appFrame(cur, title) {
+    let s = `<rect x="16" y="48" width="608" height="298" rx="10" fill="#0D1112" stroke="${P.line}"/><path d="M26,48 h118 v298 h-118 a10,10 0 0 1 -10,-10 v-278 a10,10 0 0 1 10,-10 z" fill="#080B0C"/>`;
+    TOUR.forEach((name, i) => {
+      const y = 72 + i * 27, done = i < cur, on = i === cur;
+      if (on) s += `<rect x="21" y="${y - 11}" width="118" height="22" rx="5" fill="#1C2427"/>`;
+      s += `<circle cx="35" cy="${y}" r="6.5" fill="${done ? TEAL : on ? '#fff' : 'none'}" stroke="${done ? TEAL : on ? P.accent : P.line}" stroke-width="1.6"/>`;
+      s += T(48, y + 4, name, { size: 11, weight: on ? 650 : 400, fill: on ? '#fff' : done ? P.ink : P.dim });
+      if (on) s += `<path d="M129,${y - 6} l-3,12 M134,${y - 6} l-3,12" stroke="${P.accent}" stroke-width="2.2" stroke-linecap="round"/>`;
+    });
+    return s + T(160, 74, `Step ${cur + 1} of 10`, { size: 11, weight: 650, fill: P.accent }) + T(160, 98, title, { size: 18, weight: 700 });
+  }
+  // A form field being typed in (prog 0…1 of the text shown).
+  function field(x, y, w, label, val, prog) {
+    const on = prog > 0 && prog < 1;
+    return T(x, y, label, { size: 10, fill: P.dim }) + `<rect x="${x}" y="${y + 5}" width="${w}" height="26" rx="5" fill="${P.bg}" stroke="${on ? P.accent : P.line}" stroke-width="${on ? 1.6 : 1}"/>`
+      + T(x + 8, y + 22, val.slice(0, Math.ceil(val.length * c01(prog))), { size: 12, weight: 600 });
+  }
+  function button(x, y, w, label, col, tap = 0) {
+    return `<rect x="${x}" y="${y}" width="${w}" height="30" rx="7" fill="${col}"/>` + T(x + w / 2, y + 20, label, { size: 12, weight: 650, fill: '#fff', anchor: 'middle' })
+      + (tap > 0 && tap < 1 ? `<circle cx="${n(x + w / 2)}" cy="${y + 15}" r="${n(6 + 30 * tap)}" fill="none" stroke="#fff" stroke-width="2" opacity="${op(1 - tap)}"/>` : '');
+  }
+  function pill(x, y, text, col, o = 1) {
+    if (o <= 0) return '';
+    return `<rect x="${x}" y="${y}" width="${n(text.length * 7 + 24)}" height="24" rx="12" fill="none" stroke="${col}" stroke-width="1.6" opacity="${op(o)}"/>` + T(x + 12, y + 16, text, { size: 12, weight: 650, fill: col, op: o });
+  }
+  // The RT60 scale (0 to 1.5 s): the target range and preferred value, a measured and a predicted value.
+  function scale(y, m, pr, o = 1) {
+    if (o <= 0) return '';
+    const X = v => 160 + (v / 1.5) * 446;
+    let s = `<g opacity="${op(o)}"><rect x="160" y="${y - 3}" width="446" height="6" rx="3" fill="${P.line}"/><rect x="${n(X(0.38))}" y="${y - 12}" width="${n(X(0.59) - X(0.38))}" height="24" fill="rgba(242,239,236,.08)" stroke="${P.dim}" stroke-dasharray="3 3"/>${L(X(0.48), y - 15, X(0.48), y + 15, P.dim, 2)}`;
+    [0, 0.5, 1, 1.5].forEach(v => { s += T(X(v), y + 32, `${v.toFixed(1)} s`, { size: 10, fill: P.dim, anchor: 'middle' }); });
+    if (m != null) s += `<circle cx="${n(X(m))}" cy="${y}" r="7" fill="${TEAL}"/>` + T(X(m), y - 20, `${m.toFixed(2)} s`, { size: 11, weight: 650, fill: TEAL, anchor: 'middle' });
+    if (pr != null) s += `<circle cx="${n(X(pr))}" cy="${y}" r="7" fill="${VIO}"/>` + T(X(pr), y - 20, `${pr.toFixed(2)} s`, { size: 11, weight: 650, fill: VIO, anchor: 'middle' });
+    return `${s}</g>`;
+  }
+  const PHASE_GLYPH = [
+    (x, y) => { const { pts } = isoBox(3, 2, 1.4, 9, x - 4, y - 8); return box3d(pts, 3, 2, 1.4); },
+    (x, y) => `<rect x="${x - 7}" y="${y - 18}" width="14" height="24" rx="7" fill="none" stroke="${P.ink}" stroke-width="3"/><path d="M${x - 13},${y} a13,13 0 0 0 26,0 M${x},${y + 13} v7" fill="none" stroke="${P.ink}" stroke-width="3" stroke-linecap="round"/>`,
+    (x, y) => [[-14, 12], [-3, 22], [8, 8]].map(([dx, h]) => `<rect x="${x + dx}" y="${y + 12 - h}" width="8" height="${h}" rx="2" fill="${TEAL}"/>`).join(''),
+    (x, y) => [[-15, -15], [2, -15], [-15, 2], [2, 2]].map(([dx, dy]) => `<rect x="${x + dx}" y="${y + dy}" width="13" height="13" rx="2" fill="none" stroke="${P.good}" stroke-width="2.6"/>`).join(''),
+    (x, y) => `<path d="M${x - 11},${y - 16} h15 l8,8 v24 h-23 z" fill="none" stroke="${P.accent}" stroke-width="2.6" stroke-linejoin="round"/>${L(x - 6, y, x + 6, y, P.accent, 2)}${L(x - 6, y + 6, x + 6, y + 6, P.accent, 2)}`,
+  ];
   /* helpers for the room scenes */
   function isoBox(Lm, Wm, Hm, s, ox, oy) {
     const c = 0.866, P = (x, y, z) => [ox + (x - y) * c * s, oy + (x + y) * 0.5 * s - z * s];
@@ -313,6 +652,28 @@
   function plan(ox, oy, W, H) {
     return `<rect x="${ox}" y="${oy}" width="${W}" height="${H}" fill="#211E1C" stroke="${P.ink}" stroke-width="5"/>`
       + `<rect x="${ox + W * 0.34}" y="${oy + H * 0.34}" width="${W * 0.32}" height="${H * 0.32}" rx="6" fill="${P.panel}" stroke="${P.line}"/>`;
+  }
+  // Speech on a timeline: four words, each a burst of sound followed by the room's reverberant tail, which falls with the
+  // time constant tau (a fraction of the timeline). With a long tail each word is still sounding when the next starts.
+  function speech(u, tau, col) {
+    const x0 = 80, x1 = 580, base = 268, h = 120, W = x1 - x0, words = ['Please', 'join', 'the', 'call'], starts = [0.04, 0.29, 0.53, 0.76], len = 0.11;
+    const reveal = x0 + W * ease(seg(u, 0.06, 0.72));
+    let s = L(x0, base, x1, base, P.line, 2) + T(x1, base + 44, 'time', { size: 11, fill: P.dim, anchor: 'end' });
+    starts.forEach((a, i) => {
+      const xa = x0 + W * a, xb = xa + W * len;
+      if (xa >= reveal) return;
+      let d = `M${n(xa)},${base} `, last = xa;
+      for (let x = xa; x <= Math.min(reveal, x1); x += 3) {
+        const y = x <= xb ? h * Math.min(1, (x - xa) / 8) * (0.78 + 0.22 * Math.abs(Math.sin((x - xa) * 0.16))) : h * Math.exp(-(x - xb) / (W * tau));
+        if (x > xb && y < 0.6) break;
+        d += `L${n(x)},${n(base - y)} `;
+        last = x;
+      }
+      d += `L${n(last)},${base} Z`;
+      s += `<path d="${d}" fill="${col}" fill-opacity=".26" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
+      s += T((xa + xb) / 2, base + 24, words[i], { size: 15, weight: 650, anchor: 'middle' });
+    });
+    return s;
   }
   const reading = (x, y, txt) => `<rect x="${x}" y="${y}" width="64" height="24" rx="5" fill="#0E1A12"/>` + T(x + 32, y + 17, txt, { size: 13, weight: 650, fill: P.good, anchor: 'middle' });
 

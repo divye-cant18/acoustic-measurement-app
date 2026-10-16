@@ -39,7 +39,7 @@
       'One device does the whole measurement: the laptop or phone you are using plays the test signal through its own speaker and records the room with its own microphone. Nothing else needs to be connected.',
       'A measurement is only as good as its conditions. Background noise sets a floor the decay has to fall through, so a noisier room leaves less usable decay to measure.',
       'The background is measured with the microphone for five seconds, in the frequency bands RT60 is measured in. If voices, knocks or a changing level are picked up, you are told to measure with care; only a silent or overloaded input has to be measured again. Each take then checks its own background: sounds during the take that could affect the decay are counted as noise, and the take says so.',
-      'Levels are shown in dBFS, relative to the microphone input\'s full scale, because the microphone is not calibrated. RT60 only needs relative levels: it is a time, not a loudness.',
+      'Recording levels are shown as dB below max: how far below the loudest level the microphone can record. They are not the room\'s real loudness, because the microphone is not calibrated. RT60 only needs relative levels: it is a time, not a loudness.',
       'Place the device where people actually sit, on a firm support, not held, and away from walls where practical.',
     ],
     measure: () => [
@@ -51,15 +51,16 @@
       'The How to measure video at the top of this step shows how to place the device and what to avoid during the take.',
     ],
     processing: () => [
-      'The impulse response is split into octave bands. In each band the device\'s direct sound is separated from the room\'s reverberant decay, the noise floor and the point where the decay meets it are found (Lundeby\'s method), and the decay curve is built by backward integration (Schroeder).',
-      'For every band it asks how much of the room\'s own decay sits above the noise floor. With 45 dB it fits 30 dB and extrapolates (T30). With 35 dB it fits 20 dB and extrapolates (T20). With less, that band has no value.',
+      'The impulse response is split into octave bands. In each band the device\'s direct sound is separated from the room\'s reverberant decay, the recording background noise and the point where the decay meets it are found (Lundeby\'s method), and the decay curve is built by backward integration (Schroeder).',
+      'For every band it asks how much of the room\'s own decay sits above the recording background noise. With 45 dB it fits 30 dB and extrapolates (T30). With 35 dB it fits 20 dB and extrapolates (T20). With less, that band has no value.',
       'A value is also rejected when the decay is not a straight line. If the 1000 Hz band has no value, the result is "Unable to obtain a reliable RT60 measurement" and nothing is estimated in its place.',
     ],
     results: p => {
-      const m = AM.derive.measured(p), avg = AM.derive.averageRT60(p);
+      const m = AM.derive.measured(p), r = AM.derive.room(p), avg = AM.derive.averageRT60(p), sm = AM.derive.summaryRT60(p), pol = AM.derive.policy(p), s = AM.derive.positions(p);
       return [
-        m ? (avg.available ? `Averaged over 500, 1000 and 2000 Hz, the room takes ${fmt.s(avg.value)} for sound to fall by 60 dB. The average always uses these three bands, so it means the same on every device; if one of them has no reliable value there is no average, rather than one over fewer bands. It is a summary of the mid frequencies, not a standardised single-number rating.` : `There is no average RT60 (500–2000 Hz) for this measurement: ${avg.reason} The bands that have a value are listed on their own.`) : 'No valid result yet.',
-        m ? `At ${m.headline.f} Hz, the band the target is compared at, it takes ${fmt.s(m.headline.rt60)}, calculated with ${m.headline.method} from the take recorded ${new Date(m.takenAt).toLocaleString()}.` : '',
+        r ? `The room is measured at ${s.count} position${s.count > 1 ? 's' : ''}${s.complete ? '' : ` (at least ${s.required} are needed)`}. In each octave band its RT60 is the average of the positions that measured that band; each position keeps its own values.` : '',
+        r ? (sm.available ? `Over the bands its target is checked on, ${pol.short}, the room takes ${fmt.s(sm.value)} on average for sound to fall by 60 dB${avg.available ? `, and ${fmt.s(avg.value)} over all bands, 125 to 4000 Hz` : ''}. A band no position could measure is left out and named, and at least half of the bands are needed. These are summaries: the next step judges every band on its own.` : `There is no average for the ${pol.label.toLowerCase()}: ${sm.reason} Without it the room cannot be compared with its target. The bands that have a value are listed on their own.`) : 'No valid result yet.',
+        r ? `At ${r.headline.f} Hz, the reference band that decides whether a take is valid, it takes ${fmt.s(r.headline.rt60)} averaged over the positions; the latest take was recorded ${new Date(m.takenAt).toLocaleString()}.` : '',
         'Low frequencies usually ring longest, because most surfaces absorb bass poorly. A laptop or phone speaker produces little low-frequency sound: those bands may show "Not reliable" rather than a guess.',
         'This is a browser-based measurement with the device\'s built-in speaker and microphone. The RT60 comes from the room\'s measured decay, but neither the microphone nor the speaker is calibrated, so it is not a laboratory-grade measurement.',
         'Confidence follows what was measured: T30 with a straight decay gives high confidence; T20, a curved decay or browser processing that stayed on gives medium.',
@@ -68,10 +69,11 @@
     assessment: p => {
       const a = AM.derive.assessment(p);
       return [
-        a ? `At ${a.f} Hz, where the target is set, the room measures ${fmt.s(a.rt)} against a preferred ${fmt.s(a.target.preferred)}, a difference of ${fmt.signedS(a.diff)}. The average across the measured bands on Results is a summary and is not what is compared.` : 'No assessment yet.',
+        !a ? 'No assessment yet.' : a.available ? `${a.explanation.headline}. ${a.explanation.lines.join(' ')} The verdict follows the room's criterion: ${a.policy.basis} The average over ${a.policy.short}, ${fmt.s(a.rt)} against a preferred ${fmt.s(a.target.preferred)}, is a summary and never passes the room on its own.` : `The room cannot be assessed: ${a.reason} The room is judged in the bands its criterion sets, and no single band is used in their place.`,
+        a && a.warnings.length ? `Band warnings, apart from the verdict: ${a.explanation.warnings.join(' ')}` : '',
         'The assessment only compares two things that already exist: the target you set and the value you measured. It does not change either of them.',
         'A room above its range sounds boomy and blurs speech. A room below its range sounds dead and tiring.',
-      ];
+      ].filter(Boolean);
     },
     treatment: () => [
       'Treatment adds absorption. Each square metre contributes its absorption coefficient (α), which changes with frequency.',
@@ -80,7 +82,7 @@
       'A plan can combine several products, for example wall panels and ceiling tiles. Each keeps its own configuration and α; their absorption adds up band by band in the prediction.',
     ],
     prediction: () => [
-      'The prediction starts from the measured RT60: it gives the room’s equivalent absorption, everything in the room included. The panels’ tested absorption is added (less that of the surface they cover) and RT60 is recalculated with the Sabine formula. The room’s own RT60 is never estimated: it is measured.',
+      'The prediction starts from the measured RT60: it gives the room’s equivalent absorption, everything in the room included. The panels’ tested absorption is added (less that of the surface they cover) and RT60 is recalculated with the Sabine formula, in each band. The predicted average, over the same bands as the measured one, is compared with the target, as the measured average is. The room’s own RT60 is never estimated: it is measured.',
       'The model assumes an even spread of sound. In a room that becomes very absorbent (average absorption coefficient above about 0.3) Sabine reads long, and the page says so.',
       'It is an estimate. It is shown apart from measured values so the two are never confused. Only a new measurement after installation can confirm it.',
     ],
