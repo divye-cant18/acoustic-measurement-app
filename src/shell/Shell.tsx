@@ -35,8 +35,11 @@ function Rail() {
   return (
     <>
       <div className="brand">
-        <Logo size={34} />
-        <div className="brand-txt"><div className="brand-name">{am.brand.name}</div><div className="brand-sub">Acoustic Measurement</div></div>
+        {/* The logo and name lead Home, as on most sites. */}
+        <button type="button" className="brand-home" data-action="nav" data-value="home" aria-label={`${am.brand.name}, Home`} title="Home">
+          <Logo size={34} />
+          <span className="brand-txt"><span className="brand-name">{am.brand.name}</span><span className="brand-sub">Acoustic Measurement</span></span>
+        </button>
         <button type="button" className="iconbtn only-mobile rail-close" data-action="closeNav" aria-label="Close workflow"><Icon name="x" size={18} sw={2} /></button>
       </div>
       {p ? (

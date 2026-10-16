@@ -41,7 +41,7 @@ function homeStops(): Stop[] {
   const p = S.state.project, first = W.STAGES.find(s => s.id !== 'home')!;
   return [
     { title: 'Start here', side: 'bottom', align: 'start',
-      targets: [{ sel: '.home-actions [data-action="startNew"]' }, { sel: '.home-empty [data-action="startNew"]' }],
+      targets: [{ sel: '.home-actions [data-action="startNew"]' }],
       text: `New Measurement starts a project and opens step ${W.stepNo(first.id)}, ${first.title}. Everything is saved in this browser as you go; there is no account.` },
     { title: 'Ten steps, from room to report', side: 'right', align: 'start',
       targets: [{ sel: RAIL }, { sel: MENU, text: `The ${W.NUMBERED} steps of a project open from this menu. Each one unlocks when the one before it is finished.` }],

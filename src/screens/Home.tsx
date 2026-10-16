@@ -54,17 +54,16 @@ export function Home({ ctx }: { ctx: Ctx }) {
             <Btn action="startNew" variant="primary" size="lg" icon="plus">New Measurement</Btn>
             <Btn action="history" size="lg" icon="history">Measurement History</Btn>
           </div>
-        ) : null}
+        ) : <>
+          {/* Nothing saved in this browser yet (a first visit): New Measurement sits here, the first thing seen, and the
+              empty state is one line under it rather than a panel below the fold. */}
+          <div className="home-actions">
+            <Btn action="startNew" variant="primary" size="lg" icon="plus">New Measurement</Btn>
+          </div>
+          <p className="home-first"><Icon name="wave" size={16} sw={2} /><span><b>No measurements yet.</b> Start your first acoustic measurement to create a project.</span></p>
+        </>}
       </section>
-      {!all.length ? (
-        // The empty panel carries the one New Measurement button.
-        <section className="home-empty">
-          <Icon name="wave" size={30} sw={1.8} />
-          <h2>No measurements yet</h2>
-          <p>Start your first acoustic measurement to create a project.</p>
-          <Btn action="startNew" variant="primary" size="lg" icon="plus">New Measurement</Btn>
-        </section>
-      ) : <>
+      {!all.length ? null : <>
         {pinned.length ? (
           <section className="home-sec" aria-labelledby="pinned-h">
             <div className="home-sec-h"><h2 id="pinned-h"><Icon name="pushpin" size={16} sw={2} /> Pinned projects <span className="home-count">{pinned.length}</span></h2></div>

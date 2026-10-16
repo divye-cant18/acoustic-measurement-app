@@ -64,13 +64,13 @@ export function SoundField() {
       const near = (d: number) => 1 - (d - dMin) / Math.max(1e-6, dMax - dMin); // 1 nearest, 0 farthest
       // Lines across, then lines in depth (fainter): a wireframe whose near side reads stronger.
       for (let j = 0; j < NZ; j++) {
-        g.globalAlpha = 0.1 + 0.55 * near(ds[j * NX + (NX >> 1)]) ** 1.2;
+        g.globalAlpha = 0.16 + 0.68 * near(ds[j * NX + (NX >> 1)]) ** 1.2;
         g.beginPath();
         for (let i = 0; i < NX; i++) { const k = j * NX + i; if (i) g.lineTo(xs[k], ys[k]); else g.moveTo(xs[k], ys[k]); }
         g.stroke();
       }
       for (let i = 0; i < NX; i += 2) {
-        g.globalAlpha = 0.05 + 0.22 * near(ds[(NZ >> 1) * NX + i]);
+        g.globalAlpha = 0.09 + 0.3 * near(ds[(NZ >> 1) * NX + i]);
         g.beginPath();
         for (let j = 0; j < NZ; j++) { const k = j * NX + i; if (j) g.lineTo(xs[k], ys[k]); else g.moveTo(xs[k], ys[k]); }
         g.stroke();

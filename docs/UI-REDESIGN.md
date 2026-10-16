@@ -132,6 +132,13 @@ in the top bar with the tour of this screen, the How the app works video and Exp
 While the tour runs the page behind it is inert (as behind a panel), so it only points and never changes anything.
 Nothing about the tour is stored (an earlier version's `acoustic-measurement-prototype:tour` entry is cleared).
 
+## Home on a first visit, logo to Home, sound field (2026-10-16, on request)
+
+- With nothing saved in this browser, New Measurement sits in the hero, the first thing seen, with "No measurements yet"
+  as one line under it (it was a panel below the fold). With saved projects Home is unchanged.
+- The logo and name at the top of the rail lead to Home (the same as the rail's Home step).
+- The sound field behind the Home title is drawn a little darker (higher line opacity), still in the measured teal.
+
 ## Verified (2026-10-16)
 
 - `npm run build` (`tsc --noEmit` strict + Vite): no errors; bundle 412 kB (121 kB gzipped).
