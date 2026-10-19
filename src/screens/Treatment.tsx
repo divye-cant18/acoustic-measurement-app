@@ -260,7 +260,7 @@ function AmountCard({ p, sel, pred, a, need }: { p: Project; sel: any; pred: any
         [`Added absorption at ${fmt.hz(f0)}`, x && isNum(x.addedA) ? fmt.m2(x.addedA) : '—'],
       ]} />
       {need > 0.05 ? (goal ? <AmountGoal goal={goal} sel={sel} targetRT={a.target.preferred} /> : D.planProblem(p) ? null : <GoalUnreachable sel={sel} targetRT={a.target.preferred} />) : null}
-      <SelectInput id={`place-${sel.id}`} label="Placement" bind={`${sel.path}.placement`} value={sel.placement} options={SURF.PLACEMENTS.map((pl: any) => ({ value: pl.value, label: pl.label }))} hint={`Where it goes. ${covers}`} />
+      <SelectInput id={`place-${sel.id}`} label="Placement" bind={`${sel.path}.placement`} value={sel.placement} options={SURF.placementsFor(p.room).map((pl: any) => ({ value: pl.value, label: pl.label }))} hint={`Where it goes. ${covers}`} />
     </Card>
   );
 }

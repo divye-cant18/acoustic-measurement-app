@@ -31,7 +31,7 @@ TMP = tempfile.mkdtemp(prefix='report-form-test-')
 APPROVED = ['submission_id', 'submitted_at', 'full_name', 'email', 'profession_role', 'organization', 'country', 'purpose',
             'feedback', 'consent_given', 'consent_recorded_at', 'marketing_consent', 'project_id', 'project_name', 'room_type',
             'room_volume_m3', 'target_rt60_s', 'measured_rt60_s', 'measured_rt60_avg_s', 'measurement_method', 'predicted_rt60_s',
-            'predicted_rt60_avg_s', 'treatment_status', 'app_version']
+            'predicted_rt60_avg_s', 'treatment_status', 'app_version', 'custom_materials']
 
 
 def form(**kw):
@@ -193,6 +193,55 @@ class Submissions(ServerCase):
         self.assertEqual(status, 200, out)
         row = self.rows()[0]
         self.assertEqual((row['predicted_rt60_s'], row['predicted_rt60_avg_s'], row['measured_rt60_s'], row['measured_rt60_avg_s']), (0.57, 0.49, 0.7, 0.66))
+
+    def test_custom_materials_are_stored_as_a_list_and_none_as_null(self):
+        mats = [{'kind': 'construction', 'surface': 'wall', 'name': '  Hempcrete   blocks ', 'notes': '300 mm, lime-rendered'},
+                {'kind': 'finish', 'surface': 'ceiling', 'name': 'Clay plaster', 'notes': ''}]
+        _, (status, out) = self.submit(p=project(customMaterials=mats))
+        self.assertEqual(status, 200, out)
+        self.assertEqual(self.rows()[0]['custom_materials'], [
+            {'kind': 'construction', 'surface': 'wall', 'name': 'Hempcrete blocks', 'notes': '300 mm, lime-rendered'},
+            {'kind': 'finish', 'surface': 'ceiling', 'name': 'Clay plaster', 'notes': ''}], 'stored as sent, text cleaned like any other')
+        self.assertEqual(self.submit(p=project(customMaterials=[]))[1][0], 200)
+        self.assertIsNone(self.rows()[-1]['custom_materials'], 'none typed in: null')
+        p = project()
+        p.pop('customMaterials', None)
+        self.assertEqual(self.submit(p=p)[1][0], 200, 'an app from before the field may leave it out')
+        self.assertIsNone(self.rows()[-1]['custom_materials'])
+
+    def test_custom_materials_are_checked_strictly(self):
+        ok = {'kind': 'finish', 'surface': 'wall', 'name': 'Clay plaster', 'notes': ''}
+        bad = [
+            ('not a list', {'name': 'x'}),
+            ('too many', [dict(ok, name=f'Material {i}') for i in range(31)]),
+            ('an extra key', [dict(ok, alpha=[0.1, 0.2])]),
+            ('an unknown kind', [dict(ok, kind='product')]),
+            ('an unknown surface', [dict(ok, surface='door')]),
+            ('a name too short', [dict(ok, name='x')]),
+            ('a name too long', [dict(ok, name='y' * 81)]),
+            ('notes too long', [dict(ok, notes='z' * 301)]),
+            ('a name that is not text', [dict(ok, name=42)]),
+            ('an entry that is not an object', ['Clay plaster']),
+        ]
+        for what, value in bad:
+            _, (status, out) = self.submit(p=project(customMaterials=value))
+            self.assertEqual(status, 400, what)
+            self.assertIn('project.customMaterials', out.get('errors', {}), what)
+        self.assertEqual(len(self.rows()), 0, 'nothing stored from a refused request')
+
+    def test_a_request_without_custom_materials_hashes_as_before(self):
+        import hashlib
+        import submissions
+        p = project()
+        sid, (status, out) = self.submit(p=p)
+        self.assertEqual(status, 200, out)
+        _, f, pv = submissions.validate(self.app.spec, {'submissionId': sid, 'form': form(), 'project': p})
+        old = {k: v for k, v in pv.items() if k not in ('predictedRt60Avg', 'customMaterials')}
+        legacy = hashlib.sha256(json.dumps({'id': sid, 'form': f, 'project': old}, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
+        self.assertEqual(submissions.content_hash(sid, f, pv, self.app.spec), legacy)
+        self.assertEqual(self.submit(sid=sid, p=dict(p, customMaterials=[]))[1][0], 200, 'an empty list is the same submission')
+        self.assertEqual(self.submit(sid=sid, p=dict(p, customMaterials=[{'kind': 'finish', 'surface': 'wall', 'name': 'Clay plaster', 'notes': ''}]))[1][0], 409,
+                         'the same ID with a material added is different content')
 
     def test_half_a_character_in_text_is_removed_not_a_crash(self):
         # An emoji cut in two (an unpaired surrogate) in the room name: stored without the broken half.
@@ -532,7 +581,7 @@ class Spec(unittest.TestCase):
             sql = f.read()
         start = sql.index('create table')
         body = sql[start:sql.index('\n);', start)]
-        declared = re.findall(r'^\s{2}([a-z_0-9]+)\s+(?:uuid|timestamptz|text|boolean|numeric)', body, re.M)
+        declared = re.findall(r'^\s{2}([a-z_0-9]+)\s+(?:uuid|timestamptz|text|boolean|numeric|jsonb)', body, re.M)
         self.assertEqual(declared, APPROVED, 'schema.sql declares exactly the approved columns, in order')
 
 

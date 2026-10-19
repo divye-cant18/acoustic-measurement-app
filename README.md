@@ -62,6 +62,8 @@ js/data/targets.js            RT60 target criteria: sources, DIN 18041 groups, r
 js/data/guides.js             videos: How the app works, How to measure, How to measure the room, What is RT60?
                               (chapters, captions; set video.src to use a filmed video)
 js/data/products.generated.js product database, GENERATED from the NRC Master File (do not edit)
+js/data/room-form.js          Room Setup lists: constructions, finishes (and which fit which), wall equipment, each
+                              industry's questions. Descriptions only, no acoustic values
 js/data/materials.js          room surface materials (walls, floors, ceilings, doors, windows): α per octave band, each
                               with its source, data class and conditions; to describe the room and know what a
                               treatment covers
@@ -79,7 +81,8 @@ js/services/                  engines the stages talk to, each with its contract
                               read (through AM.derive.averageRT60)
   prediction.js               RT60 AFTER TREATMENT from the measured RT60 and the treatment plan (simplified Sabine),
                               with the model's assumption checks; the only RT60 the app predicts
-  surfaces.js                 the six surfaces: areas, materials, what a treatment covers. No RT60 estimate. Never
+  surfaces.js                 the walls, floor and ceiling sections: areas, construction and finish, equipment, materials,
+                              the area free for treatment, what a treatment covers. No RT60 estimate. Never
                               read by the measurement
   catalog.js                  SOURCE DATA: products and tested configurations from the NRC Master File
   explain.js                  step guides, filled with the project's own numbers
@@ -99,7 +102,8 @@ server/                       the app server (Python standard library): serves t
   app_server.py               static files (app folders only), /api endpoints, --check
   submissions.py              validation against js/data/report-form.js, the table row, ledger, receipts, rate limits
   supabase_client.py          Supabase REST API (PostgREST): insert, look up, check the table, with the secret key
-  supabase/schema.sql         the report_submissions table, row level security, privileges (run once in Supabase)
+  supabase/schema.sql         the report_submissions table, row level security, privileges, and the review of materials
+                              typed in by users (material_reviews, custom_material_queue) (run in Supabase)
   vercel_adapter.py           the same API as Vercel Functions (see Deploying on Vercel)
 api/                          Vercel Functions: health.py, report-submissions.py, report-submissions/verify.py
 vercel.json                   Vercel: builds the interface, publishes index.html, css/, js/, assets/ only; functions
@@ -197,23 +201,31 @@ Not reported: the take carries a warning, so no band is High confidence.
 **Interruptions.** A recording is aborted, never analysed, when the page is hidden (screen locked, another app or tab),
 left, the system mutes the microphone, the AudioContext stops running, or the set of audio devices changes.
 
-## Room surfaces
+## Room information and surfaces
 
-Room Setup describes six surfaces on their own, going round the room: **Wall 1** and **Wall 3** are the long walls
-(length × height), **Wall 2** and **Wall 4** the end walls (width × height), the **Floor** and the **Ceiling** (length ×
-width). Each has a material from `js/data/materials.js`, chosen by category and, where a material comes in several
-constructions, by construction; optionally a partial covering (another material over a share of it); and on walls, doors,
-windows and open doorways with their sizes and number. Every material shows its data class, conditions, α per band and
-source link.
+Room Setup records the room (name and reference, industry and room type from nine industries, each with "Other"; the
+main activity, which the target follows; purpose; the industry's own questions), its size and shape, occupancy and
+furnishing, current problems and the outcome wanted, and its surfaces: by default four walls going round the room
+(**Wall 1** and **Wall 3** the long walls, length × height; **Wall 2** and **Wall 4** the end walls, width × height), the
+**Floor** and the **Ceiling** (length × width). Walls can be added, duplicated and removed, and the ceiling can have
+sections with their own area. Each surface records what it is built from and its visible finish (separately, so painted
+concrete and painted plasterboard differ), its acoustic data from `js/data/materials.js` (only the entries that fit the
+construction and finish are offered, searchable), optionally an existing treatment or covering over a share of it, and
+on walls doors, windows, openings and what is mounted on them, ticked with nothing to measure (air conditioner,
+speaker, display, electrical fixtures, pipes or cable tray, other). A construction or finish that is not listed is
+typed in and kept, with no acoustic value guessed; its name is sent with the report form for review in Supabase. Every
+material shows its data class, conditions, α per band and source link. docs/ROOM-FORM.md lists the fields, the dependent
+choices, the calculations and the saved data.
 
 The library holds 231 materials from 30 sources (48 manufacturer test reports, 20 from published tables with a citation,
 162 from engineering compilations, 1 by definition), each with its source link, conditions and notes; a band a source
 does not give is empty, never 0. Doors and windows are not chosen for the user. docs/ROOM-SURFACES.md lists the sources,
 the rows left out and why, and what could not be found.
 
-Areas: gross = the surface's two dimensions; openings come off the gross (all of them together never more than the wall);
-the covering takes its share of what is left; the finish keeps the rest. Every m² is counted once and nothing goes
-negative; anything out of range is limited and said.
+Areas: gross = the surface's size (a wall's own length and height where given); openings come off the gross (all of them
+together never more than the wall); the covering takes its share of what is left; the finish keeps the rest, the area free
+for treatment. Every m² is counted
+once and nothing goes negative; anything out of range is limited and said, and invalid sizes are refused.
 
 The surfaces are used for two things: describing the room (screen and report), and the treatment prediction, which needs
 to know what each product covers (`services/surfaces.js`, `coveredBy`). No RT60 is estimated from them.
@@ -503,13 +515,15 @@ purpose, feedback (optional, 1000 characters), consent to send (required) and ma
 needed for the report). Fields are checked as they are left and again on submit; the server checks the same rules, and
 the table's own constraints check them once more.
 
-**What reaches the database: these 24 columns and nothing else** (`server/supabase/schema.sql`): submission_id,
+**What reaches the database: these 25 columns and nothing else** (`server/supabase/schema.sql`): submission_id,
 submitted_at (server, UTC), full_name, email, profession_role, organization, country, purpose, feedback, consent_given and
 consent_recorded_at, marketing_consent (yes/no, separate), project_id, project_name, room_type, room_volume_m3,
 target_rt60_s, measured_rt60_s (the RT60 at 1000 Hz, the reference band), measured_rt60_avg_s (the average of all six
 bands, the room's RT60 compared with the target; null when one band has no value; before app version 2026.10.15 the mean of
 500, 1000 and 2000 Hz), measurement_method, predicted_rt60_s (the prediction at 1000 Hz), predicted_rt60_avg_s (the
-predicted average of the six bands, as the app shows it), treatment_status (No treatment, Not selected, Planned, Predicted, Measured after treatment), app_version. A number outside
+predicted average of the six bands, as the app shows it), treatment_status (No treatment, Not selected, Planned, Predicted, Measured after treatment), app_version, custom_materials
+(the names and notes of materials typed in on Room Setup as "Other / not listed", with their kind and the kind of
+surface: at most 30, checked by the server; null when there are none). A number outside
 the range a column accepts is sent as null, so it never keeps the form from being sent.
 
 **A table made before measured_rt60_avg_s or predicted_rt60_avg_s existed** (predicted_rt60_avg_s was added in app version 2026.10.15) keeps working: the database refuses a row with a column it does not
@@ -653,6 +667,13 @@ Vercel address.
   review flags only on Treatment/Predicted/Final, no reference to the surfaces in the 12 measurement files); projects
   saved before the surfaces migrated by the app's own load; the report and PDF. Runs on open. 52 checks. See
   docs/ROOM-SURFACES.md.
+- `tests/room-form.html`: the Room information form, in the whole app (its own storage prefix): the nine industries and
+  their room types, "Other" everywhere and every main activity on a sourced criterion, earlier industry names moved;
+  every dependent choice (industry, room type, construction, finish, data, equipment kind) through the step's actions;
+  walls and ceiling sections added, duplicated and removed (asked first, numbers kept); equipment ticked per wall (no
+  sizes, no area taken); openings, coverings and the area free for treatment worked by hand; materials not in the
+  library (no value anywhere, sent once with the report form, in the report); invalid entries; saved, reopened and
+  edited; the screen. Runs on open. 65 checks. See docs/ROOM-FORM.md.
 - `tests/rt60-responsiveness.html`: does the measured RT60 follow the room, and only the room? Part A (on load, 18
   checks) runs the production analysis and processing on known rooms: six RT60s, repeatability with a new background
   each take, a noise ladder, band slopes, insufficient decay, no reuse between takes, determinism, a wrong reference,
@@ -711,15 +732,17 @@ Vercel address.
 - `tests/report_submission_test.py` (`python tests/report_submission_test.py`): the report server against
   `tests/fake_supabase.py`, a local stand-in for Supabase's REST API that checks the apikey, shuts out the publishable
   key, knows the table's columns and constraints, enforces the primary key and can drop answers, time out or refuse.
-  42 checks, 8 of them for Vercel (the api/*.py files loaded by path, as Vercel does: health, submit and verify; a cold
+  45 checks, 8 of them for Vercel (the api/*.py files loaded by path, as Vercel does: health, submit and verify; a cold
   start that loses the ledger; no receipt secret = not connected; no files served by a function; the rate limit per
-  address from Vercel's header; the site's own origin; vercel.json publishing only the app). The others: validation, the approved columns only (24 with the optional ones), unlisted fields refused, text stored as typed, null optional
+  address from Vercel's header; the site's own origin; vercel.json publishing only the app). The others: validation, the approved columns only (25 with the optional ones), unlisted fields refused, text stored as typed, null optional
   values, one row per submission ID (repeats, concurrent repeats, lost answers, timeouts, server errors, the primary key
   without the ledger), refused keys, a missing table, public keys refused as the server key, `--check`, receipts, served
   and unserved files (Windows path tricks included), other host names refused, no key in browser files, origin and rate
   limits, a ledger without personal data, schema.sql against the spec, a table without the average column, and one
   without the predicted-average column (rows stored without it), requests from before either column existed (accepted,
-  same content hash), the predicted average in its own column, half a character in a
+  same content hash), the predicted average in its own column, custom materials (stored as a list, none as null, checked
+  strictly: not a list, too many, an extra key, an unknown kind or surface, a name too short or long, notes too long,
+  text that is not text; a request without them hashes as before), half a character in a
   name (removed, not a crash), and database answers that break off or are not JSON (uncertain, retried once). It never contacts Supabase. To try the whole app against the stand-in: run
   `python tests/fake_supabase.py --port 8791`, put the environment it prints in a .env file, and start
   `python server/app_server.py --env-file <that file>`.

@@ -31,13 +31,16 @@ create table if not exists public.report_submissions (
   predicted_rt60_s     numeric(6, 2),                          -- predicted RT60 at 1000 Hz
   predicted_rt60_avg_s numeric(6, 2),                          -- predicted average RT60, mean of 125–4000 Hz (the app's predicted value)
   treatment_status     text not null check (treatment_status in ('No treatment', 'Not selected', 'Planned', 'Predicted', 'Measured after treatment')),
-  app_version          text check (char_length(app_version) <= 40)
+  app_version          text check (char_length(app_version) <= 40),
+  custom_materials     jsonb                                    -- materials typed in on Room Setup: [{kind, surface, name, notes}]
 );
 
 -- Columns added after the table was first created. Running this whole file again adds them to an existing table and
 -- changes nothing else (every statement here can be repeated).
 alter table public.report_submissions add column if not exists measured_rt60_avg_s numeric(6, 2);
 alter table public.report_submissions add column if not exists predicted_rt60_avg_s numeric(6, 2);
+-- Materials typed in on Room Setup ("Other / not listed"): [{kind, surface, name, notes}], validated by the app server.
+alter table public.report_submissions add column if not exists custom_materials jsonb;
 
 comment on table public.report_submissions is 'Report form submissions from the Acoustic Measurement app. Written only by the app server (secret key).';
 
@@ -49,3 +52,50 @@ grant select, insert on table public.report_submissions to service_role;
 
 create index if not exists report_submissions_submitted_at on public.report_submissions (submitted_at desc);
 create index if not exists report_submissions_project_id on public.report_submissions (project_id);
+
+-- ---------------------------------------------------------------------------------------------------------------------
+-- Review of materials typed in by users, for the shared library. Only people with access to this Supabase project (the
+-- dashboard or the secret key) can read or change these: row level security is on and there are no policies, so the
+-- anon and authenticated roles see nothing. The app never reads them; an approved material reaches the app's library
+-- only in a later release, once its acoustic data is sourced (js/data/materials.js). Nothing here is an acoustic value.
+--
+-- How to review: open the view public.custom_material_queue (most used first), then record a decision with
+--   insert into public.material_reviews (name_key, kind, surface, status, reviewer, note)
+--   values ('hempcrete blocks', 'construction', 'wall', 'approved', 'your name', 'source: …')
+--   on conflict (name_key, kind, surface) do update set status = excluded.status, reviewer = excluded.reviewer,
+--     note = excluded.note, reviewed_at = now();
+create table if not exists public.material_reviews (
+  name_key     text not null check (char_length(name_key) between 2 and 80),  -- lower-case name, spaces collapsed
+  kind         text not null check (kind in ('construction', 'finish')),
+  surface      text not null check (surface in ('wall', 'floor', 'ceiling')),
+  status       text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  reviewer     text check (char_length(reviewer) <= 120),
+  note         text check (char_length(note) <= 1000),
+  reviewed_at  timestamptz not null default now(),
+  primary key (name_key, kind, surface)
+);
+comment on table public.material_reviews is 'Decisions on materials typed in by users (approved for the library, rejected). Admin only.';
+alter table public.material_reviews enable row level security;
+-- No policies on purpose: with RLS on, no row is visible or writable through the anon / authenticated roles.
+
+-- Every material typed in, counted across submissions (each submission once), with its review status.
+create or replace view public.custom_material_queue with (security_invoker = true) as
+  select lower(regexp_replace(trim(m->>'name'), '\s+', ' ', 'g')) as name_key,
+         m->>'kind' as kind,
+         m->>'surface' as surface,
+         min(m->>'name') as example_name,
+         count(distinct s.submission_id) as submissions,
+         min(s.submitted_at) as first_seen,
+         max(s.submitted_at) as last_seen,
+         (array_agg(nullif(m->>'notes', '') order by s.submitted_at desc) filter (where nullif(m->>'notes', '') is not null))[1:5] as recent_notes,
+         coalesce(r.status, 'pending') as status,
+         r.reviewer, r.reviewed_at
+  from public.report_submissions s
+  cross join lateral jsonb_array_elements(coalesce(s.custom_materials, '[]'::jsonb)) as m
+  left join public.material_reviews r
+    on r.name_key = lower(regexp_replace(trim(m->>'name'), '\s+', ' ', 'g')) and r.kind = m->>'kind' and r.surface = m->>'surface'
+  group by 1, 2, 3, r.status, r.reviewer, r.reviewed_at
+  order by submissions desc, last_seen desc;
+comment on view public.custom_material_queue is 'Materials typed in by users, most used first, with their review status. Admin only (security_invoker: the caller''s own access applies).';
+revoke all on public.custom_material_queue from anon, authenticated;
+revoke all on public.material_reviews from anon, authenticated;

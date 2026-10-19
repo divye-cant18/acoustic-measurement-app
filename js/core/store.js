@@ -71,6 +71,8 @@
     p.updatedAt = p.updatedAt || p.createdAt || new Date().toISOString();
     p.lastStage = p.lastStage || 'room';
     if (p.room && p.room.industry === undefined) p.room.industry = AM.demo.industryFor(p.room.type);
+    // Industries renamed and regrouped (2026-10-19): an earlier name moves to the one its room type is in now.
+    if (p.room && p.room.industry) p.room.industry = AM.demo.canonicalIndustry(p.room.industry, p.room.type);
     // Room uses now depend on the room type. Map the earlier general uses where the type offers them.
     const uses = AM.services.target.usesFor(p.room.type);
     if (!uses.includes(p.room.use)) p.room.use = uses.includes(LEGACY_USE[p.room.use]) ? LEGACY_USE[p.room.use] : uses[0] || '';

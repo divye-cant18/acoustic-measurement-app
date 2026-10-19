@@ -20,7 +20,10 @@
       return [
         `Reverberation depends on two things: how big the room is and how much of its surface absorbs sound.${g ? ` This room holds ${fmt.m3(g.V)} of air and has ${fmt.m2(g.total, 0)} of surface.` : ''}`,
         'Bigger rooms ring longer. Hard surfaces such as plasterboard, glass and concrete reflect most of the sound that reaches them. Soft, porous materials absorb it.',
-        'Describe each surface on its own: the four walls (1 and 3 are the long walls, 2 and 4 the end walls), the floor and the ceiling, with any doors, windows or partial coverings. The room\'s RT60 is not estimated from them: it is measured later, with the microphone.',
+        (() => {
+          const SF = AM.services.surfaces, t = SF.totals(p.room);
+          return `Describe each surface on its own: the walls (this room has ${t.walls}; by default 1 and 3 are the long walls, 2 and 4 the end walls, and walls can be added, duplicated or removed to match the room), the floor and the ceiling (with sections where part of it differs). For each, say what it is built from and its visible finish; its acoustic data comes only from the sourced library, and a material that is not listed is kept by its name with no values guessed. Doors, windows and existing treatment come off the area free for treatment${t.wallAvailableM2 != null ? `: ${fmt.m2(t.wallAvailableM2)} of wall in this room` : ''}; equipment on a wall (an air conditioner, a speaker) is simply ticked. The room's RT60 is not estimated from any of this: it is measured later, with the microphone.`;
+        })(),
         'Three values stay separate: the target (what the room should be, from its type and use), the measured RT60 (from the microphone) and, if you choose treatment, the RT60 predicted after it. That prediction starts from the measured room; the surfaces tell it what each product covers, so nothing is counted twice. A surface never changes the target or a measurement.',
         'The How to measure the room video in the Dimensions card shows how to take the length, width and height.',
       ];

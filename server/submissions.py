@@ -159,6 +159,17 @@ def validate(spec, body):
     project = {}
     for key, f in pfields.items():
         v = project_in.get(key)
+        if f['type'] == 'materials':
+            # Materials typed in by the user: a short list of {kind, surface, name, notes}, nothing else. Absent (an app
+            # from before them) stays absent, so the request is the one that app sent.
+            if v is None:
+                continue
+            items, problem = materials(f, v)
+            if problem:
+                errors[f'project.{key}'] = problem
+            else:
+                project[key] = items
+            continue
         if f['type'] == 'number':
             if v is None and f.get('nullable'):
                 project[key] = None
@@ -192,11 +203,40 @@ def validate(spec, body):
     return sid, form, project
 
 
+def materials(f, v):
+    """-> (items, None) or (None, problem). A list of at most maxItems entries, each exactly {kind, surface, name,
+    notes}: kind and surface from the allowed values, name and notes text within their lengths (cleaned like every
+    other text). Absent means none."""
+    if v is None:
+        return [], None
+    if not isinstance(v, list):
+        return None, 'Must be a list.'
+    if len(v) > f.get('maxItems', 30):
+        return None, 'Too many entries.'
+    items = []
+    for it in v:
+        if not isinstance(it, dict) or set(it) - {'kind', 'surface', 'name', 'notes'}:
+            return None, 'Each entry has only a kind, a surface, a name and notes.'
+        kind, surface, name, notes = it.get('kind'), it.get('surface'), it.get('name'), it.get('notes', '')
+        if kind not in f['kinds'] or surface not in f['surfaces']:
+            return None, 'Not one of the allowed values.'
+        if not isinstance(name, str) or not isinstance(notes, str):
+            return None, 'Must be text.'
+        name, notes = clean_text(name), clean_text(notes)
+        if not f.get('nameMin', 2) <= len(name) <= f.get('nameMax', 80):
+            return None, f'A name has {f.get("nameMin", 2)}–{f.get("nameMax", 80)} characters.'
+        if len(notes) > f.get('notesMax', 300):
+            return None, f'Notes have at most {f.get("notesMax", 300)} characters.'
+        items.append({'kind': kind, 'surface': surface, 'name': name, 'notes': notes})
+    return items, None
+
+
 def content_hash(sid, form, project, spec=None):
     """What one submission ID stands for: the same ID with different content is refused. Optional project values that
-    are absent (None) are left out, so a submission first sent before such a value existed hashes as it did then."""
+    are absent (None, or an empty list) are left out, so a submission first sent before such a value existed hashes as
+    it did then."""
     optional = {f['key'] for f in (spec or {}).get('project', []) if f.get('optional')}
-    project = {k: v for k, v in project.items() if not (k in optional and v is None)}
+    project = {k: v for k, v in project.items() if not (k in optional and (v is None or v == []))}
     blob =json.dumps({'id': sid, 'form': form, 'project': project}, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(blob.encode('utf-8')).hexdigest()
 
@@ -226,7 +266,7 @@ def build_record(spec, sid, form, project, timestamp, skip=()):
             v = spec.get('appVersion', '')
         else:
             raise ValueError(f'Unknown column source {c["source"]!r}')
-        record[c['column']] = None if v == '' else v
+        record[c['column']] = None if v == '' or v == [] else v
     return record
 
 

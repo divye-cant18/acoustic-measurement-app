@@ -92,7 +92,7 @@
     return {
       projectId: p.id,
       projectName: cut(p.room.name, PF.projectName.maxLength),
-      roomType: cut(p.room.type, PF.roomType.maxLength),
+      roomType: cut(p.room.type === AM.demo.OTHER_TYPE && (p.room.typeOther || '').trim() ? `Other: ${p.room.typeOther.trim()}` : p.room.type, PF.roomType.maxLength),
       roomVolumeM3: g ? r('roomVolumeM3', g.V) : null,
       targetRt60: t ? r('targetRt60', t.preferred) : null,
       measuredRt60: m ? r('measuredRt60', m.headline.rt60) : null,               // at 1000 Hz, the reference band, over the positions
@@ -101,7 +101,18 @@
       predictedRt60: pred ? r('predictedRt60', pred.headline.predicted) : null,  // at 1000 Hz
       predictedRt60Avg: pred && pred.allBands ? r('predictedRt60Avg', pred.allBands.value) : null, // predicted average over the bands of the measured all-band average
       treatmentStatus,
+      customMaterials: customMaterials(p.room, PF.customMaterials),
     };
+  }
+  /* Materials the user typed in on Room Setup ("Other / not listed"), each once (a duplicated wall repeats them): what it
+     is, on which kind of surface, its name and notes. Sent so they can be reviewed for the library (in Supabase:
+     public.custom_material_queue); nothing else about the room is sent. */
+  function customMaterials(room, f) {
+    const seen = new Set(), cut = (x, n) => Array.from(String(x || '')).slice(0, n).join('');
+    return AM.services.surfaces.customMaterials(room).map(x => ({ kind: x.kind, surface: x.surface, name: cut(x.name, f.nameMax), notes: cut(x.notes, f.notesMax) }))
+      .filter(x => Array.from(x.name).length >= f.nameMin && f.kinds.includes(x.kind) && f.surfaces.includes(x.surface))
+      .filter(x => { const k = JSON.stringify([x.kind, x.surface, x.name.toLowerCase(), x.notes]); if (seen.has(k)) return false; seen.add(k); return true; })
+      .slice(0, f.maxItems);
   }
   function cleanForm(values) {
     const out = {};

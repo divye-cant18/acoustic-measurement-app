@@ -422,12 +422,23 @@
     heading(1, 'Room', null, 50);
     const rm = M.room, rec = v => (v ? String(v) : 'Not recorded');
     // Surfaces as set in Room Setup (an earlier version's single entry where a surface was never set).
-    const sf = M.surfaces, surf = k => { const s = sf.find(x => x.key === k); return s.chosen ? s.text : s.legacy ? `${s.legacy} (earlier entry)` : 'not recorded'; };
+    const sf = M.surfaces, said = s => (s.chosen ? s.text : s.legacy ? `${s.legacy} (earlier entry)` : 'not recorded');
+    const surf = k => { const s = sf.find(x => x.key === k); return s ? said(s) : 'not recorded'; };
+    // The room's walls in pairs, in their order (Walls 1 · 2, Walls 3 · 4, … with their own numbers); the ceiling and any
+    // sections after the floor.
+    const num = s => s.key.replace(/^\D+/, '') || '1', walls = sf.filter(s => /^wall\d+$/.test(s.key)), ceil = sf.filter(s => /^ceiling\d*$/.test(s.key));
+    const wallRows = [];
+    for (let i = 0; i < walls.length; i += 2) {
+      const pair = walls.slice(i, i + 2);
+      wallRows.push([pair.length > 1 ? `Walls ${pair.map(num).join(' · ')}` : `Wall ${num(pair[0])}`, pair.map(s => `${num(s)}: ${said(s)}`).join(' · ')]);
+    }
+    const ceilText = ceil.length > 1 ? ceil.map(s => `${s.key === 'ceiling' ? 'ceiling' : `section ${num(s)}`}: ${said(s)}`).join('; ') : surf('ceiling');
+    const named = (v, other, typed) => (v === other && typed ? typed : v);
     kv([
-      [['Room', rm.name], ['Industry · type', [rm.industry, rm.type].filter(Boolean).join(' · ') || 'Not recorded'], ['Use', rec(rm.use)],
+      [['Room', rm.name], ['Industry · type', [named(rm.industry, AM.demo.OTHER_INDUSTRY, rm.industryOther), named(rm.type, AM.demo.OTHER_TYPE, rm.typeOther)].filter(Boolean).join(' · ') || 'Not recorded'], ['Use', rec(rm.use)],
         ['Size (L × W × H)', g ? `${fmt.dims(g)} · ${fmt.m3(g.V, g.V % 1 ? 1 : 0)} · surfaces ${fmt.m2(g.total)}` : 'Not available']],
       [['Occupancy · furnishing', `${isNum(rm.occupancy) ? `${rm.occupancy} people` : 'Occupancy not recorded'} · ${rec(rm.furnishing)}`],
-        ['Walls 1 · 2', `1: ${surf('wall1')} · 2: ${surf('wall2')}`], ['Walls 3 · 4', `3: ${surf('wall3')} · 4: ${surf('wall4')}`], ['Floor · ceiling', `${surf('floor')} · ${surf('ceiling')}`]],
+        ...wallRows, ['Floor · ceiling', `${surf('floor')} · ${ceilText}`]],
     ]);
 
     // 2 Measurement

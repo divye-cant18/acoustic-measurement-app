@@ -100,7 +100,16 @@
     'Community hall': { uses: ['Events and assemblies', 'Sport and exercise', 'Dining and socialising'] },
     'Exhibition hall': { uses: ['Exhibitions and circulation'] },
     'Gymnasium': { uses: ['Sport and exercise'] },
-    'Other': { uses: ['Meetings and presentations', 'Lectures and presentations', 'Music rehearsal and performance', 'Focused desk work', 'Dining and socialising', 'Waiting and arrival', 'Sport and exercise', 'Mixing and critical listening', 'Living and relaxing'] },
+    // Added with the industry list of 2026-10-19. Each offers only uses above, so it follows one of their criteria.
+    'Training room': { uses: ['Teaching', 'Meetings and presentations', 'Video calls and hybrid meetings', 'Inclusive teaching'] },
+    'Rehearsal room': { uses: ['Music rehearsal and performance'] },
+    'Showroom': { uses: ['Exhibitions and circulation', 'Reception and service desk'] },
+    // No criterion in the data names these rooms: the user chooses the main activity, as for "Other".
+    'Retail store': { uses: Object.keys(USES) },
+    'Workshop': { uses: Object.keys(USES) },
+    'Warehouse': { uses: Object.keys(USES) },
+    // A room type the user names: every activity is offered, and the target follows the one chosen.
+    'Other': { uses: Object.keys(USES) },
   };
 
   /* Additional criteria for some room types. ANSI/ASA S12.60: maximum RT60 in unoccupied, furnished

@@ -121,7 +121,7 @@ function ReportCard({ p, about }: { p: Project; about: string }) {
           <li>{`a short summary of this project: ${v.sent.join(', ')};`}</li>
           <li>a submission reference and the app version.</li>
         </ul>
-        <p className="small muted">Nothing else is sent: no recordings or audio, no measurement data or history, no room surfaces or products, no files and not the report itself. The project stays on this device either way. Until your answers are received they are kept in this browser, so that sending again cannot record them twice.</p>
+        <p className="small muted">Nothing else is sent: no recordings or audio, no measurement data or history, nothing about the room beyond the names and notes of materials you typed in yourself (so they can be reviewed for the library), no products, no files and not the report itself. The project stays on this device either way. Until your answers are received they are kept in this browser, so that sending again cannot record them twice.</p>
       </details>
       {st === 'uncertain' ? null : (
         <div className="rf-actions">

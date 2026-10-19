@@ -289,13 +289,13 @@
 
   /* Treatment area against the surface it is placed on, per placement, summed over every item placed there.
      placement: only that group. The surface is its free finish (AM.services.surfaces.coveredBy): the area less doors,
-     windows and an existing covering, so the plan never covers the same m² twice. Returns
+     windows, an existing covering and the equipment on the walls, so the plan never covers the same m² twice. Returns
      [{ placement, label, surfaceM2, areaM2, fraction, count }]. */
   function coverage(p, placement) {
     const g = geometry(p);
     if (!g) return [];
     const items = treatmentItems(p), SF = AM.services.surfaces;
-    return SF.PLACEMENTS.filter(pl => !placement || pl.value === placement).map(pl => {
+    return SF.placementsFor(p.room).filter(pl => !placement || pl.value === placement).map(pl => {
       const here = items.filter(i => i.placement === pl.value);
       if (!here.length) return null;
       const surfaceM2 = SF.coveredBy(p.room, pl.value).freeM2, areaM2 = here.reduce((s, i) => s + i.areaM2, 0);

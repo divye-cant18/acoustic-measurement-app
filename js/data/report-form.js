@@ -57,7 +57,8 @@
       { "key": "measurementMethod", "type": "string", "maxLength": 40, "allowEmpty": true, "pattern": "^[A-Za-z0-9 ()./-]{0,40}$" },
       { "key": "predictedRt60", "type": "number", "min": 0.05, "max": 20, "decimals": 2, "nullable": true },
       { "key": "predictedRt60Avg", "type": "number", "min": 0.05, "max": 20, "decimals": 2, "nullable": true, "optional": true },
-      { "key": "treatmentStatus", "type": "string", "enum": ["No treatment", "Not selected", "Planned", "Predicted", "Measured after treatment"] }
+      { "key": "treatmentStatus", "type": "string", "enum": ["No treatment", "Not selected", "Planned", "Predicted", "Measured after treatment"] },
+      { "key": "customMaterials", "type": "materials", "optional": true, "maxItems": 30, "kinds": ["construction", "finish"], "surfaces": ["wall", "floor", "ceiling"], "nameMin": 2, "nameMax": 80, "notesMax": 300 }
     ],
     "columns": [
       { "column": "submission_id", "header": "Submission ID", "source": "server.submissionId" },
@@ -83,7 +84,8 @@
       { "column": "predicted_rt60_s", "header": "Predicted RT60 at 1000 Hz (s)", "source": "project.predictedRt60" },
       { "column": "predicted_rt60_avg_s", "header": "Predicted average RT60 125–4000 Hz (s)", "source": "project.predictedRt60Avg", "optional": true },
       { "column": "treatment_status", "header": "Treatment status", "source": "project.treatmentStatus" },
-      { "column": "app_version", "header": "Application version", "source": "server.appVersion" }
+      { "column": "app_version", "header": "Application version", "source": "server.appVersion" },
+      { "column": "custom_materials", "header": "Materials typed in (not in the library)", "source": "project.customMaterials", "optional": true }
     ],
     "countries": [
       "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda", "Argentina", "Armenia", "Australia", "Austria",

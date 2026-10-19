@@ -739,6 +739,35 @@ svg.i{display:inline-block;flex:none;vertical-align:middle}
 .surf-row .field{flex:0 1 130px;min-width:96px}
 .surf-adds{gap:4px}
 .surf .grid.g2{gap:10px 14px}
+/* Room Setup: each surface is a folded card; its line says what it is, its area and what is free */
+details.surf{gap:0;padding:0}
+details.surf>.surf-h{list-style:none;cursor:pointer;padding:12px 14px;border-radius:var(--r);align-items:center;flex-wrap:nowrap}
+details.surf>.surf-h::-webkit-details-marker{display:none}
+details.surf>.surf-h:hover{background:var(--hover)}
+details.surf>.surf-h>.i{flex:none;color:var(--muted);transition:transform var(--t-fast) var(--ease)}
+details.surf[open]>.surf-h>.i{transform:rotate(90deg)}
+details.surf>.surf-h b{white-space:nowrap}
+.surf-label{font-size:13px;font-weight:600;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
+.surf-what{min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2)}
+.surf-warn{display:inline-flex;align-items:center;gap:4px;margin-left:8px;color:var(--warn-ink);font-weight:600}
+.surf-b{display:flex;flex-direction:column;gap:10px;padding:0 14px 14px;border-top:1px solid var(--line-soft);padding-top:12px}
+.surf-where{margin:0}
+.surf-free{color:var(--acoustic-ink)!important}
+details.surf>.surf-h .surf-area{flex:none;white-space:nowrap;padding-left:8px}
+.surf-row>.surf-name{flex:1 1 220px;min-width:160px}
+.surf-row>.surf-name .field{max-width:none}
+.surf-acoustic{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:var(--r);background:var(--well);border:1px solid var(--line-soft)}
+.surf-acoustic-h{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap}
+.surf-acoustic-h .field-l{margin:0}
+.surf-acoustic-h .input{flex:1 1 200px;max-width:320px;margin-left:auto}
+.surf-nodata{margin:0}
+.input-sm{height:34px;padding:6px 10px;font-size:13px}
+.select-sm{height:32px;padding:4px 30px 4px 10px;font-size:13px;width:auto}
+.surf-adds{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
+.surf-eq{display:flex;flex-direction:column;gap:8px}
+.surf-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px;border-top:1px solid var(--line-soft);padding-top:10px}
+.surf-confirm{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-left:auto}
+.q-fields{gap:12px}
 
 /* ---------- target ---------- */
 .learn-strip{display:grid;grid-template-columns:176px minmax(0,1fr) auto;gap:6px 20px;align-items:center;padding:14px 20px 14px 14px}
