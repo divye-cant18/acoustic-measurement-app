@@ -15,7 +15,6 @@ interface Question { id: string; label: string; kind: 'int' | 'choice' | 'multi'
 interface RoomModel { DIMS: [string, string, string][]; dimError(k: string, v: unknown): string | null; occError(r: unknown): string | null; questionsFor(r: unknown): Question[] }
 const M = () => stageModel<RoomModel>('room');
 const RF = (): any => (window.AM as any).roomFormData;
-const per = (v: any, kind: string) => (v && typeof v === 'object' ? v[kind] || Object.values(v)[0] : v || '');
 
 /* Isometric sketch of the room box, scaled to its real proportions. */
 function IsoRoom({ r }: { r: any }) {
@@ -120,16 +119,37 @@ function DataLine({ m }: { m: any }) {
   );
 }
 
-// A grouped select of constructions or finishes: the industry's common ones first.
-function GroupedSelect({ id, label, value, groups, kind, action, keyName, placeholder, disabled }: { id: string; label: string; value: string; groups: { common: any[]; rest: any[] }; kind: string; action: string; keyName: string; placeholder: string; disabled?: boolean }) {
-  const opt = (x: any) => <option value={x.id} key={x.id}>{per(x.name, kind)}</option>;
+/* What a surface is, in everyday words: one button per type (js/data/room-form.js SURFACE_TYPES), those most often met
+   in the room's type first. The type's hint is its tooltip and is shown once it is chosen. `only`: a fixed list (what
+   covers part of a surface, doors and windows). */
+function TypePicker({ id, kind, room, value, action, keyName, question, only }: { id: string; kind?: string; room?: any; value: string; action: string; keyName: string; question: string; only?: any[] }) {
+  const g = only ? { common: [], rest: only, label: '' } : SURF.typesFor(kind, room);
+  const chip = (t: any) => (
+    <button type="button" key={t.id} className="chip" id={`${id}-${t.id}`} data-action={action} data-value={`${keyName}|${t.id}`} aria-pressed={value === t.id} title={t.hint || undefined}>{t.name}</button>
+  );
   return (
-    <Field id={id} label={label}>
-      <SyncSelect className="select" id={id} value={value || ''} data-change-action={action} data-key={keyName} disabled={disabled || undefined}>
-        <option value="" disabled>{placeholder}</option>
-        {groups.common.length ? <><optgroup label="Common for this industry">{groups.common.map(opt)}</optgroup><optgroup label="Others">{groups.rest.map(opt)}</optgroup></> : groups.rest.map(opt)}
-      </SyncSelect>
+    <Field label={question}>
+      <div className="type-pick">
+        {g.common.length ? <>
+          <span className="type-pick-l">{g.label}</span>
+          <div className="chips" role="group" aria-label={`${question} ${g.label.toLowerCase()}`}>{g.common.map(chip)}</div>
+          <span className="type-pick-l">More types</span>
+        </> : null}
+        <div className="chips" role="group" aria-label={question}>{g.rest.map(chip)}</div>
+      </div>
     </Field>
+  );
+}
+/* How much sound the chosen material absorbs, in plain words (SURF.soundRating, from its sourced data), and whether that
+   is the type's typical data or an exact entry. Without data, that it is recorded and treated as unknown. */
+function SoundLine({ m, typical }: { m: any; typical: boolean }) {
+  if (!m) return <p className="small muted surf-sound-none">No sound data in the library for this yet. It is recorded as described, and the treatment prediction treats it as unknown rather than guess.</p>;
+  const r = SURF.soundRating(m.id);
+  return (
+    <div className="surf-sound">
+      <span className="sound-meter" aria-hidden="true">{[0, 1, 2, 3].map(i => <i key={i} className={r && i <= r.level ? 'on' : ''} />)}</span>
+      <span><b>{r ? r.word : 'Sound data for some bands only'}</b><span className="small muted">{typical ? ' · typical values for this type' : ' · values for the exact type chosen'}</span></span>
+    </div>
   );
 }
 // "Other / not listed": what it is called, and anything known about it. Its properties are left unspecified.
@@ -160,43 +180,53 @@ function EquipmentTicks({ keyName, s }: { keyName: string; s: any }) {
   );
 }
 
-function SurfaceCard({ p, def, model, industry, search, confirm, walls }: { p: any; def: any; model: any; industry: string; search: string; confirm: string | null; walls: number }) {
+function SurfaceCard({ p, def, model, search, confirm, walls }: { p: any; def: any; model: any; search: string; confirm: string | null; walls: number }) {
   const s = (p.room.surfaces || {})[def.key] || SURF.blankSurface(), key = def.key, ok = model.grossM2 != null, wall = def.kind === 'wall';
   const r = p.room, g = acoustics.geometry(r);
   const dimText = wall ? (model.lengthM && model.heightM ? `${fmt.m(model.lengthM)} × ${fmt.m(model.heightM)}` : '') : def.section ? '' : ok && g ? `${fmt.m(r.L)} × ${fmt.m(r.W)}` : '';
-  const fit = { construction: s.construction || '', finish: s.finish || '' };
-  const fin = materialPicker({ id: `surf-${key}`, kind: def.kind, keyName: key, part: 'finish', value: s.material, label: 'Material', fit, search });
-  const cov = s.cover && (s.cover.material || isNum(s.cover.pct));
+  // Its everyday type (chosen, or recognised for a surface saved before types existed); the exact entries offered are
+  // those of that type.
+  const tx = SURF.typeOfSurface(s, def.kind), type = tx ? tx.type : null, other = !!type && type.id === 'other';
+  const fit = type ? { construction: type.construction || '', finish: type.finish } : { construction: s.construction || '', finish: s.finish || '' };
+  const fin = materialPicker({ id: `surf-${key}`, kind: def.kind, keyName: key, part: 'finish', value: s.material, label: 'Exact type', fit, search });
+  const typical = !!(type && type.material && s.material === type.material);
+  const question = wall ? 'What is this wall?' : def.kind === 'floor' ? 'What is the floor?' : 'What is this ceiling?';
+  const cov = s.cover && (s.cover.type || s.cover.material || isNum(s.cover.pct));
   let coverHtml: ReactNode = null;
   if (cov) {
-    const c = materialPicker({ id: `surf-${key}-cov`, kind: def.kind, keyName: key, part: 'cover', value: s.cover.material, label: 'Covered by' });
+    const ct = SURF.coverTypeOf(s.cover, def.kind), ctFit = ct && ct.id !== 'other' ? { construction: ct.construction || '', finish: ct.finish } : undefined;
+    const c = materialPicker({ id: `surf-${key}-cov`, kind: def.kind, keyName: key, part: 'cover', value: s.cover.material, label: 'Exact type', fit: ctFit });
     coverHtml = (
       <div className="surf-sub">
-        <div className="grid g2">{c.sel}{c.variant}</div>
+        <TypePicker id={`surf-${key}-cov-type`} only={SURF.coverTypesFor(def.kind)} value={ct ? ct.id : ''} action="setCoverType" keyName={key} question="What covers part of it?" />
+        {ct && ct.id === 'other' ? <div className="surf-name"><TextInput id={`surf-${key}-cov-name`} label="What it is" bind={`room.surfaces.${key}.cover.name`} value={s.cover.name} placeholder="e.g. Felt wall hanging" req="optional" /></div> : null}
         <div className="surf-row">
-          <NumberInput id={`surf-${key}-pct`} label="Share of the surface" bind={`room.surfaces.${key}.cover.pct`} value={s.cover.pct} unit="%" placeholder="50"
+          <NumberInput id={`surf-${key}-pct`} label="How much of it is covered" bind={`room.surfaces.${key}.cover.pct`} value={s.cover.pct} unit="%" placeholder="50"
             error={isNum(s.cover.pct) && (s.cover.pct < 0 || s.cover.pct > 100) ? 'Enter 0–100 %' : null} />
-          <span className="small muted">{ok ? `${fmt.m2(model.coverM2)} covered, ${fmt.m2(model.finishM2)} of the finish above` : ''}</span>
+          <span className="small muted">{ok ? `${fmt.m2(model.coverM2)} covered, ${fmt.m2(model.finishM2)} left as it is` : ''}</span>
           <Btn action="removeCover" value={key} variant="ghost" size="sm" icon="x">Remove</Btn>
         </div>
-        <DataLine m={c.cur} />
+        {ct && ct.id !== 'other' ? <SoundLine m={c.cur} typical={!!(ct.material && s.cover.material === ct.material)} /> : null}
+        {!c.none ? <details className="surf-exact"><summary>Exact type and sound data (optional)</summary><div className="grid g2">{c.sel}{c.variant}</div><DataLine m={c.cur} /></details> : null}
       </div>
     );
   }
   const ops = wall ? (s.openings || []).map((o: any, i: number) => {
-    const m = materialPicker({ id: `surf-${key}-o${o.id}`, kind: 'opening', opening: o.kind, keyName: key, part: o.id, value: o.material, label: SURF.OPENINGS[o.kind] || 'Opening' });
-    const a = SURF.openingArea(o);
+    const m = materialPicker({ id: `surf-${key}-o${o.id}`, kind: 'opening', opening: o.kind, keyName: key, part: o.id, value: o.material, label: 'Exact type' });
+    const a = SURF.openingArea(o), types = SURF.openingTypesFor(o.kind), ot = SURF.openingTypeOf(o);
     return (
       <div className="surf-sub surf-op" key={o.id}>
-        <div className="grid g2">{m.sel}{m.variant}</div>
+        {types.length > 1
+          ? <TypePicker id={`surf-${key}-o${o.id}-type`} only={types} value={ot ? ot.id : ''} action="setOpeningType" keyName={`${key}|${o.id}`} question={SURF.OPENINGS[o.kind] || 'Opening'} />
+          : <span className="field-l">{SURF.OPENINGS[o.kind] || 'Opening'}</span>}
         <div className="surf-row surf-dims">
           <NumberInput id={`surf-${key}-o${o.id}-w`} label="Width" bind={`room.surfaces.${key}.openings.${i}.widthM`} value={o.widthM} unit="m" placeholder="e.g. 0.9" />
           <NumberInput id={`surf-${key}-o${o.id}-h`} label="Height" bind={`room.surfaces.${key}.openings.${i}.heightM`} value={o.heightM} unit="m" placeholder="e.g. 2.1" />
-          <NumberInput id={`surf-${key}-o${o.id}-n`} label="How many" bind={`room.surfaces.${key}.openings.${i}.count`} value={o.count} type="int" placeholder="1" />
+          <NumberInput id={`surf-${key}-o${o.id}-n`} label="How many" bind={`room.surfaces.${key}.openings.${i}.count`} value={o.count} type="int" placeholder="1" error={isNum(o.count) && o.count < 1 ? 'Enter 1 or more' : null} />
           <span className="small muted">{a != null ? fmt.m2(a) : 'Enter its size'}</span>
           <Btn action="removeOpening" value={`${key}|${o.id}`} variant="ghost" size="sm" icon="x" label={`Remove this ${(SURF.OPENINGS[o.kind] || 'opening').toLowerCase()}`} />
         </div>
-        <DataLine m={m.cur} />
+        {types.length > 1 && !m.none ? <details className="surf-exact"><summary>Exact type and sound data (optional)</summary><div className="grid g2">{m.sel}{m.variant}</div><DataLine m={m.cur} /></details> : null}
       </div>
     );
   }) : null;
@@ -206,9 +236,9 @@ function SurfaceCard({ p, def, model, industry, search, confirm, walls }: { p: a
   const ownSize = wall && (def.added || (r.shape && r.shape !== 'rectangular'));
   const derived = (k: 'L' | 'W' | 'H') => (isNum(r[k]) && r[k] > 0 ? `${r[k]} (room)` : '');
   const asking = confirm === `surface:${key}`, removable = (wall && walls > 1) || def.section;
-  // What the header says the surface is: built from and finish, or its library entry, or that it is not described yet.
+  // What the header says the surface is: its type, or what was recorded earlier, or that it is not described yet.
   const built = [s.construction ? SURF.constructionText(s, def.kind) : '', s.finish ? SURF.finishText(s, def.kind).toLowerCase() : ''].filter(Boolean).join(', ');
-  const what = built || (fin.cur ? fin.cur.variant || SURF.familyOf(fin.cur, def.kind) : '');
+  const what = SURF.typeText(s, def.kind) || built || (fin.cur ? fin.cur.variant || SURF.familyOf(fin.cur, def.kind) : '');
   const counts = [(s.openings || []).length ? `${(s.openings || []).length} opening${(s.openings || []).length > 1 ? 's' : ''}` : '', ...model.equipment.map((e: any) => e.label.toLowerCase())].filter(Boolean).join(' · ');
   const open = !!((S.state.ui as any).open || {})[`surf-${key}`];
   return (
@@ -232,25 +262,24 @@ function SurfaceCard({ p, def, model, industry, search, confirm, walls }: { p: a
           </> : wall ? null : <NumberInput id={`surf-${key}-area`} label="Area" bind={`room.surfaces.${key}.areaM2`} value={s.areaM2} unit="m²" placeholder="required" error={isNum(s.areaM2) && s.areaM2 <= 0 ? 'Enter more than 0 m²' : null} />}
         </div>
       ) : null}
-      <div className="grid g2">
-        <GroupedSelect id={`surf-${key}-con`} label="Built from" value={s.construction} groups={SURF.constructionsFor(def.kind, industry)} kind={def.kind} action="setConstruction" keyName={key} placeholder="Choose what it is built from" />
-        <GroupedSelect id={`surf-${key}-fin`} label="Visible finish" value={s.finish} groups={SURF.finishesFor(def.kind, s.construction, industry)} kind={def.kind} action="setFinish" keyName={key} placeholder="Choose its finish" />
-      </div>
+      <TypePicker id={`surf-${key}-type`} kind={def.kind} room={r} value={type ? type.id : ''} action="setSurfaceType" keyName={key} question={question} />
+      {!type && built ? <p className="small muted">{`Recorded earlier: ${built}. Choose what it is above, or leave it as recorded.`}</p> : null}
+      {type && type.hint && !other ? <p className="small muted surf-hint">{type.hint}</p> : null}
+      {other ? <CustomEntry keyName={key} field="finishOther" what="material" value={s.finishOther} /> : null}
       {s.construction === 'other' ? <CustomEntry keyName={key} field="constructionOther" what="construction" value={s.constructionOther} /> : null}
-      {s.finish === 'other' ? <CustomEntry keyName={key} field="finishOther" what="finish" value={s.finishOther} /> : null}
-      {s.construction === 'other' || s.finish === 'other' ? <p className="small muted">Kept with this room, with its acoustic properties left unknown until they are sourced: nothing is estimated for it. When you send the report form, the name is included so it can be reviewed for the library.</p> : null}
-      <div className="surf-acoustic">
-        <div className="surf-acoustic-h">
-          <span className="field-l">Acoustic data from the library</span>
-          {fin.none && !search ? null : <input className="input input-sm" id={`surf-${key}-search`} type="text" role="searchbox" data-uibind={`matSearch.${key}`} defaultValue={search} placeholder="Search, e.g. painted, 12 mm" aria-label={`Search the library for ${def.name}`} autoComplete="off" />}
-        </div>
-        {fin.none && !search
-          ? <p className="small muted surf-nodata">{(s.construction || s.finish) ? `No sourced absorption data in the library fits this. ${def.name} is still recorded as described; the treatment prediction names it as unknown rather than estimate it.` : 'No materials in the library for this surface.'}</p>
-          : <><div className="grid g2">{fin.sel}{fin.variant}</div><DataLine m={fin.cur} /></>}
-      </div>
+      {other || s.construction === 'other' ? <p className="small muted">Kept with this room, with its sound properties left unknown until they are sourced: nothing is estimated for it. When you send the report form, the name is included so it can be reviewed for the library.</p> : null}
+      {type && !other ? <SoundLine m={fin.cur} typical={typical} /> : null}
+      {!other && (!fin.none || search) ? (
+        <details className="surf-exact" open={(!type && !!s.material) || !!search || undefined}>
+          <summary>Exact type and sound data (optional)</summary>
+          <p className="small muted">{type ? `Only if you know exactly what it is: the library's entries for ${type.name.toLowerCase()}, with their tested or published values.` : 'The library’s entries for this surface, with their tested or published values.'}</p>
+          <input className="input input-sm" id={`surf-${key}-search`} type="text" role="searchbox" data-uibind={`matSearch.${key}`} defaultValue={search} placeholder="Search, e.g. painted" aria-label={`Search the library for ${def.name}`} autoComplete="off" />
+          <div className="grid g2">{fin.sel}{fin.variant}</div><DataLine m={fin.cur} />
+        </details>
+      ) : null}
       {coverHtml}{ops}{eq}
       <div className="surf-adds">
-        {!cov ? <Btn action="addCover" value={key} variant="ghost" size="sm" icon="plus">Existing treatment or covering</Btn> : null}
+        {!cov ? <Btn action="addCover" value={key} variant="ghost" size="sm" icon="plus">Something covering part of it</Btn> : null}
         {wall ? ['door', 'window', 'opening'].map(k => <Btn key={k} action="addOpening" value={`${key}|${k}`} variant="ghost" size="sm" icon="plus">{k === 'opening' ? 'Opening' : SURF.OPENINGS[k]}</Btn>) : null}
       </div>
       {model.problems.length ? <ul className="bullets small">{model.problems.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul> : null}
@@ -265,6 +294,18 @@ function SurfaceCard({ p, def, model, industry, search, confirm, walls }: { p: a
       </div>
     </details>
   );
+}
+
+/* A saved choice that is no longer offered (a room type without a verified RT60 criterion, kept from an earlier version)
+   stays visible as it was saved, marked, so nothing saved is lost or changed. */
+const withSaved = (list: string[], v: string, mark: string) => (v && !list.includes(v) ? [...list.map(x => ({ value: x, label: x })), { value: v, label: `${v} (${mark})` }] : list);
+
+/* Whether a target can be generated for the room as described (AM.services.target.availability). */
+function CriterionStatus({ av, rec }: { av: any; rec: any }) {
+  if (rec) return <Note tone="good" icon="seal">{`Verified criterion: ${rec.reference.short}, ${rec.criterion.name}. The target is worked out in step 2.`}</Note>;
+  if (av.status === 'unselected') return null;
+  if (av.status === 'needs-input') return <p className="small muted">{av.message}</p>;
+  return <Note tone="warn">{av.message}</Note>;
 }
 
 /* The industry's own questions: all optional, recorded for later recommendations. */
@@ -284,12 +325,23 @@ function Questions({ r, qs }: { r: any; qs: Question[] }) {
 export function RoomScreen({ ctx }: { ctx: Ctx }) {
   const r: any = ctx.project.room, g = acoustics.geometry(r), m = M(), O = DEMO.OPTIONS as any;
   const validG = g && !m.DIMS.some(([k]) => m.dimError(k, r[k]));
-  const types: string[] = DEMO.roomTypesFor(r.industry), uses: string[] = types.includes(r.type) ? TGT.usesFor(r.type) : [];
-  const rec = validG && uses.includes(r.use) ? TGT.recommend(r) : null;
+  // Every industry and room type is offered. Room types and activities with a verified RT60 criterion come first; the
+  // others are grouped and marked: they can be measured, and step 2 says why no target is recommended for them.
+  const NONE = 'No verified RT60 target (can still be measured)';
+  const types: string[] = DEMO.roomTypesFor(r.industry), tg = TGT.typeGroups(r.industry);
+  const typeGroups = [{ label: 'RT60 target from a standard', options: tg.target }, { label: NONE, options: tg.none }];
+  const known: string[] = types.includes(r.type) ? TGT.knownUses(r.type) : [], ug = TGT.useGroups(r.type);
+  const useSaved = r.use && !known.includes(r.use) ? [{ value: r.use, label: `${r.use} (saved)` }] : [];
+  const useGroups = [{ label: 'RT60 target from a standard', options: types.includes(r.type) ? ug.target : [] }, { label: NONE, options: types.includes(r.type) ? ug.none : [] }];
+  const hasUses = known.length + useSaved.length > 0;
+  // A size outside the limits gives no target yet: the criterion is not judged on a size Room Setup does not accept.
+  const avRaw = TGT.availability(r), sizeBad = !validG && (avRaw.status === 'ok' || avRaw.status === 'outside');
+  const av = sizeBad ? Object.assign({}, avRaw, { status: 'needs-input', message: 'The recommended RT60 appears once the length, width and height are within the limits shown.' }) : avRaw;
+  const rec = validG ? TGT.recommend(r) : null;
   const occ = m.occError(r), guide = am.guides.dimensions, qs = r.industry ? m.questionsFor(r) : [];
   const defs = SURF.surfacesOf(r), walls = defs.filter((d: any) => d.kind === 'wall'), others = defs.filter((d: any) => d.kind !== 'wall');
   const ui: any = S.state.ui, search = (k: string) => ((ui.matSearch || {})[k] || ''), confirm = ui.confirm || null;
-  const card = (def: any) => <SurfaceCard key={def.key} p={ctx.project} def={def} model={SURF.surfaceModel(r, def.key)} industry={r.industry} search={search(def.key)} confirm={confirm} walls={walls.length} />;
+  const card = (def: any) => <SurfaceCard key={def.key} p={ctx.project} def={def} model={SURF.surfaceModel(r, def.key)} search={search(def.key)} confirm={confirm} walls={walls.length} />;
   const shape = (O.shape as any[]).find(x => x.value === (r.shape || 'rectangular')) || O.shape[0];
   const t = SURF.totals(r), fin = SURF.finishes(r);
   return (
@@ -302,8 +354,9 @@ export function RoomScreen({ ctx }: { ctx: Ctx }) {
               <TextInput id="room-ref" label="Reference" bind="room.reference" value={r.reference} placeholder="e.g. Level 3, room 3.14" req="optional" />
             </div>
             <div className="grid g2">
-              <SelectInput id="room-industry" label="Industry" changeAction="setIndustry" value={r.industry} options={DEMO.INDUSTRIES.map((i: { name: string }) => i.name)} placeholder="Choose an industry" req />
-              <SelectInput id="room-type" label="Room type" changeAction="setType" value={types.includes(r.type) ? r.type : ''} options={types} placeholder={r.industry ? 'Choose a room type' : 'Choose an industry first'} req disabled={!r.industry} />
+              <SelectInput id="room-industry" label="Industry" changeAction="setIndustry" value={r.industry} options={withSaved(DEMO.INDUSTRIES.map((i: { name: string }) => i.name), r.industry, 'saved')} placeholder="Choose an industry" req />
+              <SelectInput id="room-type" label="Room type" changeAction="setType" value={types.includes(r.type) ? r.type : ''} options={[]} groups={typeGroups} placeholder={r.industry ? 'Choose a room type' : 'Choose an industry first'} req disabled={!r.industry}
+                hint="Room types with no verified RT60 standard can still be measured; step 2 says why no target is recommended for them." />
             </div>
             {r.industry === DEMO.OTHER_INDUSTRY || r.type === DEMO.OTHER_TYPE ? (
               <div className="grid g2">
@@ -311,8 +364,9 @@ export function RoomScreen({ ctx }: { ctx: Ctx }) {
                 {r.type === DEMO.OTHER_TYPE ? <TextInput id="room-type-other" label="Name of the room type" bind="room.typeOther" value={r.typeOther} placeholder="e.g. Podcast booth" req /> : null}
               </div>
             ) : null}
-            <SelectInput id="room-use" label="Main activity" bind="room.use" value={uses.includes(r.use) ? r.use : ''} options={uses} placeholder={r.type ? 'Choose the main activity' : 'Choose a room type first'}
-              hint="The main activity decides which acoustic criterion the target follows." req disabled={!uses.length} />
+            {r.type === DEMO.OTHER_TYPE ? null : <SelectInput id="room-use" label="Main activity" bind="room.use" value={hasUses ? r.use || '' : ''} options={useSaved} groups={useGroups} placeholder={r.type ? 'Choose the main activity' : 'Choose a room type first'}
+              hint={((window.AM as any).targetData.USES[r.use] || {}).hint || 'The main activity decides which criterion the target follows.'} req disabled={!hasUses} />}
+            <CriterionStatus av={av} rec={rec} />
             <TextInput id="room-purpose" label="Purpose and intended use" bind="room.purpose" value={r.purpose} placeholder="e.g. Weekly all-hands, client presentations, hybrid calls" req="optional" />
           </div>
         </Card>
@@ -343,7 +397,7 @@ export function RoomScreen({ ctx }: { ctx: Ctx }) {
         <Card icon="users" title="Occupancy and furnishing">
           <div className="grid g2">
             <NumberInput id="room-occ" label="Typical occupancy (people)" bind="room.occupancy" value={r.occupancy} type="int" placeholder="0" req="optional" error={occ}
-              hint="Rooms for speech get a target that allows for the people usually present." />
+              hint="Recorded with the room. It does not change the target: DIN 18041 targets apply to the room in use, and the app does not convert between an empty and an occupied room." />
             <Field label="Furnishing"><Seg bind="room.furnishing" value={r.furnishing} options={O.furnishing.map((v: string) => ({ value: v, label: v }))} label="Furnishing" id="room-furn" /></Field>
           </div>
           <Field label="In the room" hint="Anything soft or acoustic already there. Choose all that apply."><Chips path="furnishings" options={O.furnishings} value={r.furnishings} label="In the room" /></Field>
@@ -378,9 +432,10 @@ export function RoomScreen({ ctx }: { ctx: Ctx }) {
             ['Total surface', t.wallM2 != null && t.floorM2 != null && t.ceilingM2 != null ? fmt.m2(t.wallM2 + t.floorM2 + t.ceilingM2) : '—'],
             ['Occupancy', isNum(r.occupancy) && !occ ? `${r.occupancy} people` : '—'],
             ['Surfaces described', `${fin.chosen} of ${fin.of}`],
-            ['Recommended RT60', rec ? <>{fmt.s(rec.preferred)}<KvNote>{`${rec.min.toFixed(2)}–${fmt.s(rec.max)} · ${rec.source.short}`}</KvNote></> : '—', 'is-strong'],
+            ['Recommended RT60', rec ? <>{TGT.valueText(rec)}<KvNote>{`${rec.form === 'max' ? 'upper limit' : TGT.rangeText(rec)} · ${rec.reference.short}`}</KvNote></> : av.status === 'unselected' || av.status === 'needs-input' ? '—' : 'None', 'is-strong'],
           ]} />
-          <p className={cx('small', 'muted')}>{rec ? 'Worked out from the room type, main activity, size and occupancy. Step 2 explains it.' : 'Appears once the room type, main activity and size are entered.'}</p>
+          <p className={cx('small', 'muted')}>{rec ? 'From the verified criterion for this room category and size. Step 2 shows the source.'
+            : av.status === 'unselected' || av.status === 'needs-input' ? 'Appears once the room type, main activity and size are entered.' : 'No verified criterion applies, so no target is generated. Step 2 says why.'}</p>
         </Card>
       </div>
     </div>

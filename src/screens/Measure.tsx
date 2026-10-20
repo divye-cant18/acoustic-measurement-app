@@ -44,7 +44,7 @@ function LevelControl({ p, running }: { p: Project; running: boolean }) {
   const peak = 20 * Math.log10(C.amplitude * AN.levelGain(lv)), base = 20 * Math.log10(C.amplitude);
   const [tone, word] = lv === 0 ? ['neutral', 'Default'] : lv > 0 ? ['acoustic', 'Above default'] : ['acoustic', 'Below default'];
   const limit = lv >= r.max ? `${ui.levelDb(r.max, false)} is the highest level: the sweep's peak is then ${ui.dbfs(peak)}, just under the most the recording can hold, and louder would clip (distort). For more sound, raise the device volume, carefully.`
-    : lv <= r.min ? `${ui.levelDb(r.min, false)} is the lowest level: every ${r.step} dB lower costs ${r.step} dB of usable decay.` : '';
+    : lv <= r.min ? `${ui.levelDb(r.min, false)} is the lowest level. Each dB below the default leaves 1 dB less of the room's decay above the background: use it only when louder distorts or rattles.` : '';
   return (
     <div className="sweep-level">
       <div className="sl-row">
@@ -64,7 +64,7 @@ function NoiseRow({ p }: { p: Project }) {
   const change = D.noiseChange(p);
   return (
     <LiveRow k="Background noise">
-      <span className="live-v">{run ? <><Spin />Measuring the background…</> : n ? `${ui.dbfs(n.leqDbfs)} · ${ui.noiseWord(n.status)} · ${ui.timeOf(n.takenAt)}${n.position ? ` · at ${n.position}` : ''}` : 'Not measured'}</span>
+      <span className="live-v">{run ? <><Spin />Measuring the background…</> : n ? `${ui.dbfs(n.inBand ? n.inBand.leqDbfs : n.leqDbfs)}${n.inBand ? ' in the RT60 bands' : ''} · ${ui.noiseWord(n.status)} · ${ui.timeOf(n.takenAt)}${n.position ? ` · at ${n.position}` : ''}` : 'Not measured'}</span>
       {a ? <span className="small tone-critical">{`Latest attempt ${a.status === 'failed' ? 'failed' : 'not usable'}: ${a.reasons[0] || ''}${n ? ' The measurement above is kept.' : ''}`}</span> : null}
       {change != null ? <span className="small tone-warn">{`${Math.abs(change)} dB ${change > 0 ? 'louder' : 'quieter'} than during the current RT60 measurement. Measure again to confirm it.`}</span> : null}
       {M().noiseElsewhere(p) && n ? <span className="small tone-warn">{`Measured at ${n.position}. Measure it again here, at ${p.setup.position}, before the take.`}</span> : null}
@@ -90,7 +90,7 @@ function PositionsCard({ p, busy }: { p: Project; busy: boolean }) {
   const head = s.complete ? `${s.count} positions measured: the session is complete${s.next ? `. ${s.next} can be added (optional)` : ''}.` : `${s.count} of ${s.required} positions measured: ${s.need} more needed.`;
   return (
     <Card icon="pin" title="Measuring positions" sub={head} cls="card-positions"
-      right={<Pill tone={s.complete ? 'good' : 'acoustic'} text={`${s.count} of ${s.required}${s.count > s.required ? '+' : ''}`} icon={s.complete ? 'seal' : 'pin'} />}>
+      right={<Pill tone={s.complete ? 'good' : 'acoustic'} text={s.complete ? `${s.count} positions` : `${s.count} of ${s.required}`} icon={s.complete ? 'seal' : 'pin'} />}>
       <ol className="pos-list">
         {s.rows.map(r => {
           const w = word[r.status];
@@ -186,16 +186,19 @@ export function MeasureScreen({ ctx }: { ctx: Ctx }) {
   const kind = LIVE.kindOf(p), K = DEMO.DEVICE_KINDS[kind];
   const retry = p.measurement.retry;
   const blocker = m.startBlocker(p), canStart = !blocker;
+  // The console speaks of the position selected for the next take: a take made at another position is not this one's.
+  const recHere = !!rec && D.positionOf(rec) === p.setup.position, failed = m.failedLatest(p);
+  const hereRow = (D.positions(p).rows as any[]).find(r => r.current), triedHere = recHere || (!!hereRow && hereRow.status !== 'not-measured');
   const stepState = (ph: any) => {
-    if (!running) return rec && !m.failedLatest(p) ? 'done' : 'idle';
+    if (!running) return recHere && !failed ? 'done' : 'idle';
     if (ph.id === 'complete') return 'idle';
     if (ph.id === 'quality') return take.phase === 'quality' ? 'active' : 'idle';
     if (take.phase === 'quality' || sec >= ph.to) return 'done';
     return sec >= ph.from ? 'active' : 'idle';
   };
-  const sweepState = !running ? (rec ? 'Played' : 'Waiting') : sec < plan.preRoll ? 'Starts in a moment' : take.phase === 'play' ? 'Playing' : 'Finished';
+  const sweepState = !running ? (recHere && !failed ? 'Played' : 'Waiting') : sec < plan.preRoll ? 'Starts in a moment' : take.phase === 'play' ? 'Playing' : 'Finished';
   const takeText = running ? (take.phase === 'quality' ? 'Analysing the recording' : `Recording · ${sec.toFixed(1)} of ${plan.total.toFixed(1)} s`)
-    : st === 'failed' ? 'Last take failed' : rec ? (m.evaluated(p, rec) ? 'Take processed' : 'Take recorded, not processed yet') : 'Not measured';
+    : failed ? 'Last take failed' : recHere ? (m.evaluated(p, rec) ? 'Take processed' : 'Take recorded, not processed yet') : rec ? `Not measured at ${p.setup.position} yet` : 'Not measured';
   return (
     <>
       <section className="card measure-intro" aria-label="Before you measure">
@@ -249,7 +252,7 @@ export function MeasureScreen({ ctx }: { ctx: Ctx }) {
           <div className="hstack">
             {running
               ? <Btn action="cancelTake" icon="stop" disabled={take.phase === 'quality'}>Cancel</Btn>
-              : <button type="button" className="btn btn-primary is-rec" data-action="startTake" disabled={canStart ? undefined : true}><span className="rec"><Icon name="rec" size={16} sw={2} /></span>{` ${rec || cur ? 'Measure again' : 'Start measurement'}`}</button>}
+              : <button type="button" className="btn btn-primary is-rec" data-action="startTake" disabled={canStart ? undefined : true}><span className="rec"><Icon name="rec" size={16} sw={2} /></span>{` ${triedHere ? 'Measure again' : 'Start measurement'}`}</button>}
             <span className="small muted">{running ? 'Leaving this step cancels the take.' : canStart ? (cur ? 'A new take becomes the current measurement only if it is valid.' : `Uses this ${K.noun}'s own speaker and microphone.`) : blocker || ''}</span>
           </div>
         </div>

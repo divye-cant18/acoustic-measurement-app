@@ -1,132 +1,282 @@
-/* RT60 target data: the published criteria, which criterion each room use follows, and the constants the
-   recommendation needs. AM.services.target reads this; nothing here is shown or calculated by the UI directly.
+/* RT60 target criteria: the references, the criteria taken from them, and the room categories that may use them.
+   AM.services.target reads this file and is the only code that turns a criterion into a target; nothing here is shown or
+   calculated by the interface directly. docs/TARGET-CRITERIA.md describes every entry and the evidence behind it.
 
-   To refine a recommendation, edit this file: add a source, add a criterion, or point a room use at another
-   criterion. Values are taken from the sources named; where a room is matched to a criterion by judgement
-   rather than by the source's own examples, the use is marked `interpretation` and says why. */
+   The rule (task of 2026-10-19): a target RT60 is generated only for a room category whose criterion is VERIFIED and
+   applies to that room use, with every input the criterion needs, by the method the reference documents and within the
+   conditions it states. Nothing is extrapolated, clamped, averaged into a single value from an unspecified range, or
+   borrowed from another room type. A category without such a criterion is INCOMPLETE (a reference covers the room but
+   gives no reverberation time, or its values could not be verified) or UNSUPPORTED (no reference found), and gets no
+   target: the user is told why and can choose another category, or enter the project's own target with its source.
+
+   Structure
+     REFERENCES   each document: number, edition, title, issuer, how its values were checked (primary = read in the
+                  document itself; secondary = read in the publications named in checkedIn, the document not available)
+     CRITERIA     each criterion taken from a reference: the clause, the method and its parameters, the conditions it
+                  applies under, the bands and units, the inputs it needs, its status, what it was checked in
+     USES         the main activities (the subtype of a room type) with a stable id
+     CATEGORIES   room type → [main activity, criterion id | { status, reason }]: one entry is one room category
+     NOT_USED     references that were checked and are not used for targets, with the reason
+   Room types and industries are listed in js/data/demo.js (INDUSTRIES); a room type keeps its industries there. */
 (function (AM) {
   'use strict';
 
-  const SOURCES = {
-    din18041: { short: 'DIN 18041:2016', title: 'DIN 18041:2016-03, Acoustic quality in rooms: specifications and instructions for room acoustic design' },
-    ansi: { short: 'ANSI/ASA S12.60-2010', title: 'ANSI/ASA S12.60-2010 Part 1, Acoustical performance criteria, design requirements and guidelines for schools' },
-    ebu: { short: 'EBU Tech 3276 / ITU-R BS.1116', title: 'EBU Tech 3276 and ITU-R BS.1116, listening conditions for the assessment of sound programme material' },
-    iso16283: { short: 'ISO 16283-1', title: 'ISO 16283-1, field measurement of sound insulation: reference reverberation time of furnished dwellings' },
+  const REFERENCES = {
+    din18041: {
+      id: 'din18041', number: 'DIN 18041', edition: '2016-03', short: 'DIN 18041:2016-03',
+      title: 'Hörsamkeit in Räumen – Anforderungen, Empfehlungen und Hinweise für die Planung (Acoustic quality in rooms – Specifications and instructions for the room acoustic design)',
+      issuer: 'DIN Deutsches Institut für Normung e. V.',
+      scope: 'Rooms for hearing at medium and large distances (group A: music, speech, teaching and communication, sport) and at short distances (group B). It does not cover concert halls, theatres, cinemas, churches, studios or other rooms with special requirements for recording or reproducing music and speech.',
+      evidence: 'secondary',
+      checkedIn: [
+        'BNB criterion BNB_BN 3.1.4 "Akustischer Komfort", version 2015, German Federal Ministry for the Environment, Building and Nuclear Safety (BMUB): the T_soll formulas for A1–A5, the 2.0 s above 10,000 m³ for A5, and the tolerance band per octave band, stated to follow DIN 18041:2016-03.',
+        'C. Nocke, "Die neue DIN 18041", Lärmbekämpfung 11 (2016) No. 2, pp. 50–55: the use types and their example rooms, the occupied state (80 % of the normal occupancy), the octave bands 125 Hz–4 kHz, A4 not for rooms over 500 m³, and group B given as A/V guide values only.',
+        'OWA technical brochure DS 9558: the volume range of each formula.',
+      ],
+      note: 'The standard is sold by DIN Media and its text was not available. Its values were checked in the publications above, which agree with one another.',
+    },
+    nbc2016: {
+      id: 'nbc2016', number: 'SP 7:2016 (NBC 2016), Part 8, Section 4', edition: '2016 (third revision)', short: 'NBC 2016 Part 8 Sec. 4',
+      title: 'National Building Code of India 2016, Volume 2, Part 8 Building services, Section 4 Acoustics, sound insulation and noise control',
+      issuer: 'Bureau of Indian Standards (BIS)',
+      scope: 'Acoustic design and noise control of buildings in India, by building type.',
+      evidence: 'primary',
+      checkedIn: ['The BIS text (Public.Resource copy, archive.org "nationalbuilding02"), born-digital and scanned text layers, which agree.'],
+      note: '',
+    },
+    ebu3276: {
+      id: 'ebu3276', number: 'EBU Tech 3276', edition: '2nd edition, May 1998 (Supplement 1, May 2004: no change to the reverberation requirements)', short: 'EBU Tech 3276',
+      title: 'Listening conditions for the assessment of sound programme material: monophonic and two-channel stereophonic',
+      issuer: 'European Broadcasting Union (EBU)',
+      scope: 'Reference listening rooms and high-quality sound control rooms.',
+      evidence: 'primary',
+      checkedIn: ['The EBU PDF (tech.ebu.ch, tech3276.pdf and tech3276s1.pdf); the tolerance mask read from Fig. 1 and its drawing coordinates.', 'ITU-R BS.1116-3 (02/2015), §8.2.3.1 and Figure 1, gives the same formula and the same limits in these bands.'],
+      note: '',
+    },
   };
 
-  /* Criteria.
-       din-a      DIN 18041 group A. T_soll = k·lg(V) + c within [vMin, vMax], for the room in use (80 % occupied).
-                  Tolerance 0.8–1.2 × T_soll from 250 Hz to 2 kHz.
-       din-b      DIN 18041 group B. Recommended A/V ≥ avMin for room heights up to 2.5 m, and
-                  A/V ≥ 1 / (c + 4.69·lg h) above 2.5 m. Only an upper limit on RT60 (T = 0.163·V/A).
-       listening  Reference listening room. Tm = 0.25·(V/100 m³)^(1/3), kept within 0.2–0.4 s, tolerance ±0.05 s.
-       fixed      A single reference value. */
+  /* Band rules: how a criterion judges the octave bands (read by AM.services.evaluation).
+       din-a    DIN 18041 A1–A4: 0.8–1.2 × T_soll from 250 Hz to 2 kHz (the target range), 0.65–1.45 × T_soll at 125 Hz
+                and 0.65–1.2 × T_soll at 4 kHz; every band from 125 Hz to 4 kHz within its limits
+       din-a5   DIN 18041 A5: 0.8–1.2 × T_soll from 250 Hz to 2 kHz only
+       ebu      EBU Tech 3276: Tm ± 0.05 s from 250 Hz to 4 kHz; at 125 Hz the mask's limits at that frequency
+       nbc-500  NBC 2016 offices: a maximum at 500 Hz */
+
+  const CONDITION_DIN_A = 'The room in use, with 80 % of its normal occupancy present (DIN 18041:2016, group A).';
+  const dinA = (id, name, k, c, vMin, vMax, extra) => Object.assign({
+    id, reference: 'din18041', status: 'verified', name, method: 'din-formula', k, c, vMin, vMax, bands: 'din-a', form: 'range',
+    tolerance: { 125: [0.65, 1.45], 250: [0.8, 1.2], 500: [0.8, 1.2], 1000: [0.8, 1.2], 2000: [0.8, 1.2], 4000: [0.65, 1.2] },
+    condition: CONDITION_DIN_A, units: 's, octave bands 125 Hz–4 kHz', inputs: ['volume'],
+  }, extra);
+
   const CRITERIA = {
-    A1: { kind: 'din-a', source: 'din18041', name: 'Group A1, music', k: 0.45, c: 0.07, vMin: 30, vMax: 1000 },
-    A2: { kind: 'din-a', source: 'din18041', name: 'Group A2, speech and presentations', k: 0.37, c: -0.14, vMin: 50, vMax: 5000 },
-    A3: { kind: 'din-a', source: 'din18041', name: 'Group A3, teaching and communication', k: 0.32, c: -0.17, vMin: 30, vMax: 5000 },
-    A4: { kind: 'din-a', source: 'din18041', name: 'Group A4, inclusive teaching and communication', k: 0.26, c: -0.14, vMin: 30, vMax: 500 },
-    A5: { kind: 'din-a', source: 'din18041', name: 'Group A5, sport', k: 0.75, c: -1.00, vMin: 200, vMax: 10000, above: 2.0 },
-    B2: { kind: 'din-b', source: 'din18041', name: 'Group B2, short stays', avMin: 0.15, c: 4.80, vMax: 5000 },
-    B3: { kind: 'din-b', source: 'din18041', name: 'Group B3, longer stays', avMin: 0.20, c: 3.13, vMax: 5000 },
-    B4: { kind: 'din-b', source: 'din18041', name: 'Group B4, workrooms', avMin: 0.25, c: 2.13, vMax: 5000 },
-    B5: { kind: 'din-b', source: 'din18041', name: 'Group B5, rooms with special need for noise reduction', avMin: 0.30, c: 1.47, vMax: 5000 },
-    LISTEN: { kind: 'listening', source: 'ebu', name: 'Reference listening room', v0: 100, base: 0.25, lo: 0.2, hi: 0.4, tol: 0.05 },
-    HOME: { kind: 'fixed', source: 'iso16283', name: 'Furnished dwelling reference', value: 0.5 },
+    'din18041-A1': dinA('din18041-A1', 'Use type A1 "Music"', 0.45, 0.07, 30, 1000, {
+      clause: 'Group A, use type A1 "Musik": T_soll = (0.45 · lg V/m³ + 0.07) s for 30 m³ ≤ V < 1000 m³; tolerance band for A1–A4.',
+      checked: 'Formula and tolerance: BNB 3.1.4; volume range: OWA DS 9558.',
+    }),
+    'din18041-A2': dinA('din18041-A2', 'Use type A2 "Speech/presentation"', 0.37, -0.14, 50, 5000, {
+      clause: 'Group A, use type A2 "Sprache/Vortrag": T_soll = (0.37 · lg V/m³ − 0.14) s for 50 m³ ≤ V < 5000 m³; tolerance band for A1–A4.',
+      checked: 'Formula and tolerance: BNB 3.1.4; volume range: OWA DS 9558.',
+    }),
+    'din18041-A2i': dinA('din18041-A2i', 'Use type "Speech/presentation, inclusive"', 0.32, -0.17, 30, 5000, {
+      clause: 'Group A, "Sprache/Vortrag inklusiv" (rooms of use type A2 for people who depend on good speech intelligibility): T_soll by the A3 formula, (0.32 · lg V/m³ − 0.17) s, up to 5000 m³; tolerance band for A1–A4.',
+      checked: 'A3 formula for this use: BNB 3.1.4; range up to 5000 m³: OWA DS 9558; the use and its examples: Nocke 2016, Table 1.',
+    }),
+    'din18041-A3': dinA('din18041-A3', 'Use type A3 "Teaching/communication"', 0.32, -0.17, 30, 1000, {
+      clause: 'Group A, use type A3 "Unterricht/Kommunikation": T_soll = (0.32 · lg V/m³ − 0.17) s, for this use up to 1000 m³ (30 m³ ≤ V < 1000 m³); tolerance band for A1–A4.',
+      checked: 'Formula and tolerance: BNB 3.1.4; range for this use (to 1000 m³): OWA DS 9558.',
+    }),
+    'din18041-A4': dinA('din18041-A4', 'Use type A4 "Teaching/communication, inclusive"', 0.26, -0.14, 30, 500, {
+      clause: 'Group A, use type A4 "Unterricht/Kommunikation inklusiv": T_soll = (0.26 · lg V/m³ − 0.14) s for 30 m³ ≤ V < 500 m³ (not suitable for larger rooms or for music); tolerance band for A1–A4.',
+      checked: 'Formula and tolerance: BNB 3.1.4; not above 500 m³: Nocke 2016, Table 1; lower limit 30 m³: OWA DS 9558.',
+    }),
+    'din18041-A5': dinA('din18041-A5', 'Use type A5 "Sport"', 0.75, -1.00, 200, 10000, {
+      clause: 'Group A, use type A5 "Sport": T_soll = (0.75 · lg V/m³ − 1.00) s for 200 m³ ≤ V ≤ 10,000 m³, and 2.0 s above 10,000 m³ (sports halls are covered up to about 30,000 m³); 0.8–1.2 × T_soll from 250 Hz to 2 kHz.',
+      fixedAbove: { value: 2.0, vMax: 30000 }, bands: 'din-a5', units: 's, octave bands 250 Hz–2 kHz',
+      tolerance: { 250: [0.8, 1.2], 500: [0.8, 1.2], 1000: [0.8, 1.2], 2000: [0.8, 1.2] },
+      checked: 'Formula, 2.0 s above 10,000 m³ and tolerance: BNB 3.1.4; sports halls to about 30,000 m³: OWA DS 9558 and the standard\'s published scope.',
+    }),
+    'nbc2016-small-office': {
+      id: 'nbc2016-small-office', reference: 'nbc2016', status: 'verified', name: 'Small private offices', method: 'maximum', value: 0.75, band: 500, bands: 'nbc-500', form: 'max',
+      clause: 'Clause 8.3.2.1 "Noise reduction within rooms": in small private offices the reverberation time should not exceed 0.75 s. Note: all reverberation times are specified for a frequency of 500 Hz.',
+      condition: 'None stated in the clause (occupied or empty is not specified).', units: 's, at 500 Hz', inputs: [],
+      checked: 'Read in the BIS text.',
+    },
+    'nbc2016-general-office': {
+      id: 'nbc2016-general-office', reference: 'nbc2016', status: 'verified', name: 'General offices, including open-plan offices', method: 'maximum', value: 1.0, band: 500, bands: 'nbc-500', form: 'max',
+      clause: 'Clause 8.3.2.1 "Noise reduction within rooms": the reverberation time should not exceed 1.0 s in all general offices of the types listed in 8.3.2.2 to 8.3.2.6 (large general offices, lightweight construction, open plan offices, office equipment rooms, banking halls). Note: all reverberation times are specified for a frequency of 500 Hz.',
+      condition: 'None stated in the clause (occupied or empty is not specified).', units: 's, at 500 Hz', inputs: [],
+      checked: 'Read in the BIS text.',
+    },
+    'nbc2016-canteen': {
+      id: 'nbc2016-canteen', reference: 'nbc2016', status: 'verified', name: 'Canteens', method: 'maximum', value: 1.0, band: 500, bands: 'nbc-500', form: 'max',
+      clause: 'Clause 8.3.2.1 "Noise reduction within rooms" (office buildings): for canteens, the recommended maximum reverberation time is 1.0 s. Note: all reverberation times are specified for a frequency of 500 Hz.',
+      condition: 'None stated in the clause (occupied or empty is not specified).', units: 's, at 500 Hz', inputs: [],
+      checked: 'Read in the BIS text.',
+    },
+    'ebu3276-control-room': {
+      id: 'ebu3276-control-room', reference: 'ebu3276', status: 'verified', name: 'Reference listening room or sound control room', method: 'ebu-tm',
+      base: 0.25, v0: 100, lo: 0.2, hi: 0.4, tol: 0.05, bands: 'ebu', form: 'range',
+      clause: '§2.3 Reverberation field: Tm, the mean reverberation time from 200 Hz to 4 kHz, should lie between 0.2 s and 0.4 s; Tm = 0.25 · (V/V0)^1/3 s with V0 = 100 m³ as a guide; Fig. 1, tolerance mask relative to Tm.',
+      condition: 'The room as used for listening. The criterion is set in third-octave bands measured with the room\'s own loudspeakers; Appendix 2 also asks for at least 30 m² of floor (40 m² for a reference listening room) and at most 300 m³.',
+      units: 's, octave bands 125 Hz–4 kHz (the criterion: third-octave bands 63 Hz–8 kHz)', inputs: ['volume'],
+      roomSize: { floorMin: 30, floorMinListening: 40, vMax: 300 },
+      checked: 'Read in the EBU PDF; ITU-R BS.1116-3 §8.2.3.1 gives the same formula and the same limits in these bands.',
+    },
   };
 
-  /* Room uses. Each follows one criterion; `why` is shown to the user as the reason. */
+  /* Main activities: the subtype of a room type. The label is what the project saves; the id is stable. */
   const USES = {
-    'Meetings and presentations': { criterion: 'A3', why: 'DIN 18041 places meeting, seminar and conference rooms in group A3, teaching and communication.' },
-    'Video calls and hybrid meetings': { criterion: 'A4', interpretation: true, why: 'Microphones pick up reverberation that people in the room hardly notice, and remote listeners hear it on top of their own room. The stricter A4 curve, which DIN 18041 sets for listeners with a greater need for clear speech, is applied as an engineering interpretation.' },
-    'Lectures and presentations': { criterion: 'A2', why: 'One person speaking to an audience over a longer distance follows DIN 18041 group A2, speech and presentations.' },
-    'Teaching': { criterion: 'A3', why: 'DIN 18041 places classrooms and other teaching rooms in group A3, teaching and communication.' },
-    'Inclusive teaching': { criterion: 'A4', why: 'DIN 18041 group A4 applies where learners are hearing-impaired, learn in a second language or are taught inclusively.' },
-    'Music rehearsal and performance': { criterion: 'A1', why: 'DIN 18041 group A1 covers rooms for music, which need more reverberation than rooms for speech.' },
-    'Recording': { criterion: 'A1', interpretation: true, why: 'No standard sets an RT60 for recording rooms. DIN 18041 group A1, music, is used as the closest reference. Studios often vary it on purpose.' },
-    'Mixing and critical listening': { criterion: 'LISTEN', why: 'EBU Tech 3276 and ITU-R BS.1116 set the reverberation of reference listening rooms from their volume.' },
-    'Film and TV viewing': { criterion: 'LISTEN', interpretation: true, why: 'A home cinema plays back recorded sound, as a listening room does, so the EBU Tech 3276 listening-room criterion is used as the closest reference.' },
-    'Film screening': { criterion: 'LISTEN', interpretation: true, why: 'No cinema criterion is in the data yet. A cinema plays back recorded sound, so the listening-room criterion is used, with its 0.4 s upper value for larger rooms. Replace it when a cinema criterion is added.' },
-    'Sport and exercise': { criterion: 'A5', why: 'DIN 18041 group A5 covers sports halls.' },
-    'Dining and socialising': { criterion: 'B3', why: 'DIN 18041 lists dining rooms and canteens in group B3, rooms for longer stays.' },
-    'Events and assemblies': { criterion: 'A2', why: 'Speeches and announcements to a gathered audience follow DIN 18041 group A2, speech and presentations.' },
-    'Focused desk work': { criterion: 'B4', why: 'DIN 18041 lists single and multi-person offices in group B4, workrooms.' },
-    'Reception and service desk': { criterion: 'B4', why: 'DIN 18041 lists reception and counter areas in group B4, workrooms.' },
-    'Waiting and arrival': { criterion: 'B2', why: 'DIN 18041 lists entrance halls and reception areas with waiting zones in group B2, short stays.' },
-    'Reading and study': { criterion: 'B3', why: 'DIN 18041 lists libraries in group B3, rooms for longer stays.' },
-    'Exhibitions and circulation': { criterion: 'B2', why: 'DIN 18041 lists exhibition rooms in group B2, short stays.' },
-    'Patient care and rest': { criterion: 'B3', why: 'DIN 18041 lists patient bedrooms in group B3, rooms for longer stays.' },
-    'Consultation and treatment': { criterion: 'B3', why: 'DIN 18041 lists treatment rooms in group B3, rooms for longer stays.' },
-    'Therapy and group sessions': { criterion: 'A3', why: 'Group sessions rely on speech between several people, so they follow DIN 18041 group A3, teaching and communication.' },
-    'Spoken services': { criterion: 'A2', why: 'Speech to a congregation follows DIN 18041 group A2, speech and presentations.' },
-    'Services with music and singing': { criterion: 'A1', why: 'Music and singing follow DIN 18041 group A1, music.' },
-    'Living and relaxing': { criterion: 'HOME', interpretation: true, why: 'No standard sets an RT60 for homes. ISO 16283-1 uses 0.5 s as the reverberation time of a furnished dwelling, so 0.5 s is used as the design value.' },
-    'Sleeping and relaxing': { criterion: 'HOME', interpretation: true, why: 'No standard sets an RT60 for homes. ISO 16283-1 uses 0.5 s as the reverberation time of a furnished dwelling, so 0.5 s is used as the design value.' },
+    'Meetings and presentations': { id: 'meetings' },
+    'Inclusive meetings': { id: 'meetings-inclusive', hint: 'For people who depend on clear speech: hearing impairment, a second language, inclusive use.' },
+    'Video calls and hybrid meetings': { id: 'video-calls' },
+    'Lectures and presentations': { id: 'lectures' },
+    'Lectures and presentations, inclusive': { id: 'lectures-inclusive', hint: 'For listeners who depend on clear speech: hearing impairment, a second language, inclusive use.' },
+    'Teaching': { id: 'teaching' },
+    'Inclusive teaching': { id: 'teaching-inclusive', hint: 'For learners who depend on clear speech: hearing impairment, a second language, inclusive teaching.' },
+    'Music rehearsal and performance': { id: 'music' },
+    'Recording': { id: 'recording' },
+    'Mixing and critical listening': { id: 'critical-listening' },
+    'Film and TV viewing': { id: 'film-tv' },
+    'Film screening': { id: 'film-screening' },
+    'Sport and exercise': { id: 'sport' },
+    'Dining and socialising': { id: 'dining' },
+    'Events and assemblies': { id: 'events' },
+    'Focused desk work': { id: 'desk-work' },
+    'Reception and service desk': { id: 'reception' },
+    'Waiting and arrival': { id: 'waiting' },
+    'Reading and study': { id: 'reading' },
+    'Exhibitions and circulation': { id: 'exhibitions' },
+    'Sales and customer service': { id: 'sales' },
+    'Workshop and manual work': { id: 'workshop' },
+    'Storage and logistics': { id: 'storage' },
+    'Patient care and rest': { id: 'patient-care' },
+    'Consultation and treatment': { id: 'consultation' },
+    'Therapy and group sessions': { id: 'group-sessions' },
+    'Spoken services': { id: 'spoken-services' },
+    'Services with music and singing': { id: 'services-music' },
+    'Living and relaxing': { id: 'living' },
+    'Sleeping and relaxing': { id: 'sleeping' },
   };
 
-  /* Room type → the uses offered in Room Setup, most common first (the first is the default).
-     `checks` add criteria that also apply to that room type. */
-  const SPEECH_ROOM = ['Meetings and presentations', 'Video calls and hybrid meetings'];
-  const ROOMS = {
-    'Conference room': { uses: SPEECH_ROOM },
-    'Meeting room': { uses: SPEECH_ROOM },
-    'Boardroom': { uses: SPEECH_ROOM },
-    'Private office': { uses: ['Focused desk work', 'Meetings and presentations', 'Video calls and hybrid meetings'] },
-    'Open-plan office': { uses: ['Focused desk work'] },
-    'Reception area': { uses: ['Reception and service desk', 'Waiting and arrival'] },
-    'Classroom': { uses: ['Teaching', 'Inclusive teaching'], checks: ['ansiClassroom'] },
-    'Lecture hall': { uses: ['Lectures and presentations', 'Teaching', 'Inclusive teaching'], checks: ['ansiClassroom'] },
-    'Library': { uses: ['Reading and study'] },
-    'Music room': { uses: ['Music rehearsal and performance'] },
-    'Sports hall': { uses: ['Sport and exercise'] },
-    'Restaurant': { uses: ['Dining and socialising'] },
-    'Café': { uses: ['Dining and socialising'] },
-    'Bar': { uses: ['Dining and socialising'] },
-    'Banquet hall': { uses: ['Dining and socialising', 'Events and assemblies'] },
-    'Hotel lobby': { uses: ['Waiting and arrival'] },
-    'Consultation room': { uses: ['Consultation and treatment'] },
-    'Waiting area': { uses: ['Waiting and arrival'] },
-    'Patient room': { uses: ['Patient care and rest'] },
-    'Therapy room': { uses: ['Therapy and group sessions', 'Consultation and treatment'] },
-    'Living room': { uses: ['Living and relaxing', 'Film and TV viewing'] },
-    'Bedroom': { uses: ['Sleeping and relaxing'] },
-    'Home theatre': { uses: ['Film and TV viewing'] },
-    'Home studio': { uses: ['Mixing and critical listening', 'Recording'] },
-    'Recording studio': { uses: ['Recording', 'Mixing and critical listening'] },
-    'Control room': { uses: ['Mixing and critical listening'] },
-    'Cinema': { uses: ['Film screening'] },
-    'Auditorium': { uses: ['Lectures and presentations', 'Music rehearsal and performance'] },
-    'Place of worship': { uses: ['Spoken services', 'Services with music and singing'] },
-    'Community hall': { uses: ['Events and assemblies', 'Sport and exercise', 'Dining and socialising'] },
-    'Exhibition hall': { uses: ['Exhibitions and circulation'] },
-    'Gymnasium': { uses: ['Sport and exercise'] },
-    // Added with the industry list of 2026-10-19. Each offers only uses above, so it follows one of their criteria.
-    'Training room': { uses: ['Teaching', 'Meetings and presentations', 'Video calls and hybrid meetings', 'Inclusive teaching'] },
-    'Rehearsal room': { uses: ['Music rehearsal and performance'] },
-    'Showroom': { uses: ['Exhibitions and circulation', 'Reception and service desk'] },
-    // No criterion in the data names these rooms: the user chooses the main activity, as for "Other".
-    'Retail store': { uses: Object.keys(USES) },
-    'Workshop': { uses: Object.keys(USES) },
-    'Warehouse': { uses: Object.keys(USES) },
-    // A room type the user names: every activity is offered, and the target follows the one chosen.
-    'Other': { uses: Object.keys(USES) },
+  /* Categories without a verified criterion: no target, and the reason shown to the user. */
+  const dinB = (group, av, rooms) => ({ status: 'incomplete', references: ['din18041'],
+    reason: `DIN 18041:2016-03 places ${rooms} in group ${group} and gives only a recommended absorption for it (A/V ≥ ${av} m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. No other verified reference sets one for this room.` });
+  const NONE = {
+    recording: { status: 'unsupported', references: ['din18041', 'ebu3276'], reason: 'No reference found sets a reverberation time for recording rooms. DIN 18041 excludes studios, and EBU Tech 3276 covers listening and control rooms only.' },
+    worship: { status: 'unsupported', references: ['din18041'], reason: 'No reference found sets a reverberation time for places of worship. DIN 18041 excludes churches and other sacred spaces.' },
+    dwelling: { status: 'unsupported', references: ['din18041', 'nbc2016'], reason: 'No reference found sets a reverberation-time target for homes. DIN 18041 excludes dwellings and NBC 2016 gives none for residential buildings. The 0.5 s of ISO 16283-1 is the reference used to normalise sound-insulation measurements, not a design target.' },
+    music: { status: 'incomplete', references: ['din18041', 'is2526'], reason: 'DIN 18041 excludes concert halls and theatres. IS 2526:1963 (clause 6.1, Fig. 1) gives the optimum reverberation time for music halls only as a graph at 500 Hz, with no table or formula to read a value from, and NBC 2016 refers to it for auditoria.' },
+    cinema: { status: 'incomplete', references: ['din18041', 'is2526'], reason: 'DIN 18041 excludes cinemas. IS 2526:1963 (clause 6.1, Fig. 1) has a curve for motion picture theatres, but only as a graph at 500 Hz, with no table or formula to read a value from.' },
+    warehouse: { status: 'unsupported', references: [], reason: 'No reference found sets a reverberation time or an absorption for warehouses.' },
   };
 
-  /* Additional criteria for some room types. ANSI/ASA S12.60: maximum RT60 in unoccupied, furnished
-     core learning spaces, 0.6 s up to 283 m³ and 0.7 s up to 566 m³ (no limit above). */
-  const CHECKS = {
-    ansiClassroom: { source: 'ansi', label: 'ANSI/ASA S12.60 classroom limit', state: 'unoccupied, furnished', limits: [{ vMax: 283, max: 0.6 }, { vMax: 566, max: 0.7 }] },
+  /* Room type → its categories (main activity → criterion), most common first: the first verified one is the default.
+     basis: 'example' when the reference names this room or use among its examples, 'definition' when the room use fits
+     the use type's own description; why: shown to the user. */
+  const V = (criterion, basis, why) => ({ criterion, basis, why });
+  const A3_MEET = V('din18041-A3', 'example', 'DIN 18041 names meeting, conference and seminar rooms as examples of use type A3, teaching and communication.');
+  const A4_MEET = V('din18041-A4', 'example', 'DIN 18041 names meeting and conference rooms as examples of use type A4, the same use for people who depend on good speech intelligibility.');
+  const A4_VIDEO = V('din18041-A4', 'example', 'DIN 18041 names the video-conference room as an example of use type A4, teaching and communication, inclusive.');
+  const A3_TEACH = V('din18041-A3', 'example', 'DIN 18041 names classrooms, seminar rooms and differentiation rooms as examples of use type A3, teaching and communication.');
+  const A4_TEACH = V('din18041-A4', 'example', 'DIN 18041 names classrooms and seminar rooms as examples of use type A4, for learners who depend on good speech intelligibility (hearing impairment, a second language, inclusive teaching).');
+  const A2_LECT = V('din18041-A2', 'example', 'DIN 18041 names lecture halls, assembly rooms and school halls as examples of use type A2, speech and presentation.');
+  const A2I_LECT = V('din18041-A2i', 'example', 'DIN 18041 names lecture halls and assembly rooms as examples of "speech/presentation, inclusive": use type A2 for listeners who depend on good speech intelligibility, set by the A3 formula.');
+  const A1_MUSIC = V('din18041-A1', 'example', 'DIN 18041 names the music room with active music-making and singing as the example of use type A1, music.');
+  const A5_SPORT = V('din18041-A5', 'example', 'DIN 18041 names sports and swimming halls used almost only for sport as the example of use type A5, sport.');
+  const EBU_LISTEN = V('ebu3276-control-room', 'example', 'EBU Tech 3276 sets the reverberation of reference listening rooms and high-quality sound control rooms from their volume.');
+  const SPEECH_ROOM = [['Meetings and presentations', A3_MEET], ['Video calls and hybrid meetings', A4_VIDEO], ['Inclusive meetings', A4_MEET]];
+
+  const CATEGORIES = {
+    'Conference room': SPEECH_ROOM,
+    'Meeting room': SPEECH_ROOM,
+    'Boardroom': [
+      ['Meetings and presentations', V('din18041-A3', 'definition', 'A boardroom is a meeting room: communication-intensive use with several people speaking, which DIN 18041 sets as use type A3 (its examples: meeting and conference rooms).')],
+      ['Video calls and hybrid meetings', A4_VIDEO],
+      ['Inclusive meetings', A4_MEET],
+    ],
+    'Private office': [
+      ['Focused desk work', V('nbc2016-small-office', 'example', 'NBC 2016 sets a maximum for small private offices (clause 8.3.2.1). DIN 18041 gives offices only a recommended absorption (group B4, single offices B3), not a reverberation time. NBC does not define "small".')],
+      ['Meetings and presentations', V('din18041-A3', 'definition', 'An office used mainly for meetings is communication-intensive use with several people speaking, which DIN 18041 sets as use type A3.')],
+      ['Video calls and hybrid meetings', V('din18041-A4', 'definition', 'An office used mainly for video calls is used as a video-conference room, which DIN 18041 names as an example of use type A4.')],
+    ],
+    'Open-plan office': [
+      ['Focused desk work', V('nbc2016-general-office', 'example', 'NBC 2016 sets a maximum for general offices, open-plan offices among them (clauses 8.3.2.1 and 8.3.2.4). DIN 18041 gives offices only a recommended absorption (group B4). ISO 22955 (open-plan offices) is not used: its values could not be verified.')],
+    ],
+    'Reception area': [
+      ['Reception and service desk', dinB('B4', '0.25', 'reception and counter areas with a permanent workplace')],
+      ['Waiting and arrival', dinB('B2', '0.15', 'entrance halls and circulation areas used for waiting')],
+    ],
+    'Training room': [
+      ['Teaching', A3_TEACH], ['Meetings and presentations', A3_MEET], ['Video calls and hybrid meetings', A4_VIDEO], ['Inclusive teaching', A4_TEACH],
+    ],
+    'Staff canteen': [
+      ['Dining and socialising', V('nbc2016-canteen', 'example', 'NBC 2016 sets a recommended maximum for canteens in office buildings (clause 8.3.2.1).')],
+    ],
+    'Classroom': [['Teaching', A3_TEACH], ['Inclusive teaching', A4_TEACH]],
+    'Lecture hall': [
+      ['Lectures and presentations', A2_LECT], ['Lectures and presentations, inclusive', A2I_LECT], ['Teaching', A3_TEACH], ['Inclusive teaching', A4_TEACH],
+    ],
+    'Library': [['Reading and study', dinB('B3', '0.20', 'libraries (lending areas B4)')]],
+    'Music room': [['Music rehearsal and performance', A1_MUSIC]],
+    'Sports hall': [['Sport and exercise', A5_SPORT]],
+    'Gymnasium': [['Sport and exercise', A5_SPORT]],
+    'Recording studio': [['Mixing and critical listening', EBU_LISTEN], ['Recording', NONE.recording]],
+    'Control room': [['Mixing and critical listening', EBU_LISTEN]],
+    'Home studio': [['Mixing and critical listening', EBU_LISTEN], ['Recording', NONE.recording]],
+    'Rehearsal room': [
+      ['Music rehearsal and performance', V('din18041-A1', 'definition', 'A rehearsal room is a music room with active music-making, the example DIN 18041 gives for use type A1. ISO 23591:2021 sets criteria for rehearsal rooms by type of music; its values could not be verified, so it is not used.')],
+    ],
+    'Restaurant': [['Dining and socialising', dinB('B3', '0.20', 'dining rooms')]],
+    'Café': [['Dining and socialising', dinB('B3', '0.20', 'dining rooms')]],
+    'Bar': [['Dining and socialising', dinB('B3', '0.20', 'dining rooms')]],
+    'Banquet hall': [
+      ['Events and assemblies', V('din18041-A2', 'definition', 'Speeches and presentations to a seated audience, mostly from one position, are use type A2 in DIN 18041 (its examples: assembly rooms and community halls).')],
+      ['Dining and socialising', dinB('B3', '0.20', 'dining rooms')],
+    ],
+    'Hotel lobby': [['Waiting and arrival', dinB('B2', '0.15', 'entrance halls and circulation areas used for waiting')]],
+    'Consultation room': [['Consultation and treatment', dinB('B3', '0.20', 'consulting, examination and treatment rooms')]],
+    'Waiting area': [['Waiting and arrival', dinB('B3', '0.20', 'patient waiting rooms')]],
+    'Patient room': [['Patient care and rest', dinB('B3', '0.20', 'patient bedrooms and rest rooms')]],
+    'Therapy room': [
+      ['Therapy and group sessions', V('din18041-A3', 'definition', 'Group sessions are communication-intensive use with several people speaking, which DIN 18041 sets as use type A3 (its examples include group rooms in care facilities).')],
+      ['Consultation and treatment', dinB('B3', '0.20', 'consulting and treatment rooms')],
+    ],
+    'Auditorium': [
+      ['Lectures and presentations', A2_LECT], ['Lectures and presentations, inclusive', A2I_LECT], ['Music rehearsal and performance', NONE.music],
+    ],
+    'Cinema': [['Film screening', NONE.cinema]],
+    'Place of worship': [['Spoken services', NONE.worship], ['Services with music and singing', NONE.worship]],
+    'Community hall': [
+      ['Events and assemblies', V('din18041-A2', 'example', 'DIN 18041 names community halls and assembly rooms as examples of use type A2, speech and presentation.')],
+      ['Lectures and presentations, inclusive', A2I_LECT],
+      ['Dining and socialising', dinB('B3', '0.20', 'dining rooms')],
+    ],
+    'Exhibition hall': [['Exhibitions and circulation', dinB('B2', '0.15', 'exhibition rooms (B3 when interactive or noisy)')]],
+    'Showroom': [
+      ['Exhibitions and circulation', dinB('B2', '0.15', 'exhibition rooms (B3 when interactive or noisy)')],
+      ['Reception and service desk', dinB('B4', '0.25', 'reception and counter areas with a permanent workplace')],
+    ],
+    'Retail store': [['Sales and customer service', dinB('B3', '0.20', 'sales rooms')]],
+    'Workshop': [['Workshop and manual work', dinB('B5', '0.30', 'workshops and other work rooms with a lot of noise')]],
+    'Warehouse': [['Storage and logistics', NONE.warehouse]],
+    'Living room': [['Living and relaxing', NONE.dwelling], ['Film and TV viewing', NONE.dwelling]],
+    'Bedroom': [['Sleeping and relaxing', NONE.dwelling]],
+    'Home theatre': [['Film and TV viewing', NONE.dwelling]],
   };
 
-  const CONSTANTS = {
-    SABINE: 0.163,             // T = 0.163·V/A, as used by DIN 18041
-    TOLERANCE: [0.8, 1.2],     // DIN 18041 group A, 250 Hz–2 kHz
-    OCCUPIED_SHARE: 0.8,       // DIN 18041 group A targets apply with 80 % of the planned occupancy present
-    /* Extra absorption per person present at 1 kHz. Typical published values for a seated adult are about
-       0.4–0.6 m²; DIN 18041 Annex A gives values by seating and clothing. Replace with project data when known. */
-    PERSON_ABSORPTION_M2: 0.5,
-    MAX_PEOPLE_SHARE: 0.5,     // people may account for at most half of the in-use absorption (guards unrealistic occupancy)
+  /* Checked and not used for targets (docs/TARGET-CRITERIA.md has the details and sources). */
+  const NOT_USED = {
+    is2526: { short: 'IS 2526:1963', title: 'IS 2526:1963 Code of practice for acoustical design of auditoriums and conference halls (BIS, reaffirmed)', reason: 'The optimum reverberation time is given only as curves in a graph (Fig. 1, 500 Hz), with no table or formula.' },
+    bb93: { short: 'BB93 (2015)', title: 'Building Bulletin 93, Acoustic design of schools: performance standards (Department for Education, England, February 2015)', reason: 'Verified, but it applies to school buildings in England and depends on new build or refurbishment; the app follows DIN 18041 for teaching rooms.' },
+    ansiS1260: { short: 'ANSI/ASA S12.60', title: 'ANSI/ASA S12.60 Part 1, classroom acoustics', reason: 'The 2010 edition is superseded by ASA/ANSI S12.60-2026/Part 1, whose values could not be read.' },
+    iso23591: { short: 'ISO 23591:2021', title: 'ISO 23591:2021 Acoustic quality criteria for music rehearsal rooms and spaces', reason: 'Its tables (the criteria) could not be read from any free source.' },
+    iso22955: { short: 'ISO 22955:2021', title: 'ISO 22955:2021 Acoustic quality of open office spaces', reason: 'Its per-space tables could not be read; only one value was seen, in a secondary source.' },
+    htm0801: { short: 'HTM 08-01 (2013)', title: 'Health Technical Memorandum 08-01 Acoustics (Department of Health, England, 2013)', reason: 'Sets a minimum absorption (Class C over at least 80 % of the floor area), not a reverberation time.' },
+    fgi2010: { short: 'FGI Guidelines (2010)', title: 'FGI Guidelines for Design and Construction of Health Care Facilities, 2010', reason: 'Sets room-average absorption coefficients, not reverberation times; the current edition could not be read.' },
+    who1999: { short: 'WHO 1999', title: 'WHO Guidelines for Community Noise (1999)', reason: 'Gives about 0.6 s for classrooms and below 1 s for school halls, with no frequency band or room condition.' },
+    iso16283: { short: 'ISO 16283-1', title: 'ISO 16283-1, field measurement of sound insulation', reason: 'Its 0.5 s is the reference reverberation time used to normalise sound-insulation results, not a design target.' },
   };
 
-  AM.targetData = { SOURCES, CRITERIA, USES, ROOMS, CHECKS, CONSTANTS };
+  AM.targetData = { REFERENCES, CRITERIA, USES, CATEGORIES, NOT_USED };
 })(window.AM);

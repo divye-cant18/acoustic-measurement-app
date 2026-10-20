@@ -19,8 +19,37 @@
     return `M${f1(x)},${f1(base)}V${f1(y + rr)}Q${f1(x)},${f1(y)} ${f1(x + rr)},${f1(y)}H${f1(x + w - rr)}Q${f1(x + w)},${f1(y)} ${f1(x + w)},${f1(y + rr)}V${f1(base)}Z`;
   }
 
+  /* The target on a band chart. spec.limits ([{ min, max }] per band, from AM.services.evaluation.bandRows) shades each
+     band's own limits (the criterion may set wider limits at the edge bands, or one band only); without it the target
+     range is shaded across every band. An upper-limit target (min null) is shaded from 0; the preferred line is drawn
+     only when the target has one. */
+  function targetZones(spec, bands, y, xOf, slot, left, right) {
+    const t = spec.target;
+    if (!t) return '';
+    let g = '';
+    if (spec.limits) {
+      bands.forEach((f, i) => {
+        const L = spec.limits[i];
+        if (!L || !isNum(L.max)) return;
+        const lo = isNum(L.min) ? L.min : 0, x0 = Math.max(left, xOf(i) - slot / 2), x1 = Math.min(right, xOf(i) + slot / 2);
+        g += `<rect class="zone" x="${f1(x0)}" width="${f1(x1 - x0)}" y="${f1(y(L.max))}" height="${f1(y(lo) - y(L.max))}"/>`;
+      });
+    } else {
+      const lo = isNum(t.min) ? t.min : 0;
+      g += `<rect class="zone" x="${left}" width="${right - left}" y="${f1(y(t.max))}" height="${f1(y(lo) - y(t.max))}"/>`;
+    }
+    if (isNum(t.preferred)) g += `<line class="zone-line" x1="${left}" x2="${right}" y1="${f1(y(t.preferred))}" y2="${f1(y(t.preferred))}"/>`;
+    return g;
+  }
+  function targetTip(spec, i) {
+    if (!spec.target) return null;
+    const L = spec.limits ? spec.limits[i] : spec.target;
+    if (!L || !isNum(L.max)) return 'No limit at this band';
+    return isNum(L.min) ? `${spec.limits ? 'Limits' : 'Target range'}: ${L.min.toFixed(2)}–${L.max.toFixed(2)} s` : `Limit: at most ${L.max.toFixed(2)} s`;
+  }
+
   /* Columns over frequency bands (the six octave bands unless spec.freqs is given).
-     spec: { series: [{ label, kind: 'measured'|'predicted'|'material', values }], freqs?, target?, unit: 's'|'',
+     spec: { series: [{ label, kind: 'measured'|'predicted'|'material', values }], freqs?, target?, limits?, unit: 's'|'',
              yMax?, step?, digits?, label?: band whose caps get value labels, emphasis?: bands drawn solid (others soft),
              ticks?: bands that get an axis label, missingText?, height?, yTitle?, aria? } */
   BUILDERS.bands = (spec, width) => {
@@ -28,7 +57,7 @@
     const H = spec.height || 240, M = { l: 40, r: 10, t: 24, b: 28 };
     const w = Math.max(260, width), pw = w - M.l - M.r, ph = H - M.t - M.b;
     const bands = spec.freqs || AM.demo.BANDS;
-    const vals = spec.series.flatMap(s => s.values).filter(isNum).concat(spec.target ? [spec.target.max] : []);
+    const vals = spec.series.flatMap(s => s.values).filter(isNum).concat(spec.target ? [spec.target.max] : [], (spec.limits || []).map(L => L && L.max).filter(isNum));
     const top = Math.max(0.1, ...vals) * 1.12;
     const step = spec.step || niceStep(top, 4);
     const yMax = spec.yMax || Math.ceil(top / step) * step;
@@ -43,15 +72,11 @@
       g += `<line class="gl" x1="${M.l}" x2="${w - M.r}" y1="${f1(y(v))}" y2="${f1(y(v))}"/>`;
       g += `<text class="tick" x="${M.l - 8}" y="${f1(y(v) + 4)}" text-anchor="end">${+v.toFixed(2)}</text>`;
     }
-    if (spec.target) {
-      const t = spec.target;
-      g += `<rect class="zone" x="${M.l}" width="${pw}" y="${f1(y(t.max))}" height="${f1(y(t.min) - y(t.max))}"/>`;
-      g += `<line class="zone-line" x1="${M.l}" x2="${w - M.r}" y1="${f1(y(t.preferred))}" y2="${f1(y(t.preferred))}"/>`;
-    }
+    g += targetZones(spec, bands, y, i => M.l + slot * (i + 0.5), slot, M.l, w - M.r);
     bands.forEach((f, i) => {
       const cx = M.l + slot * (i + 0.5), x0 = cx - gw / 2;
       const tip = [fmt.hz(f), ...spec.series.map(s => `${s.label}: ${isNum(s.values[i]) ? s.values[i].toFixed(d) + unit : (spec.missingText || 'not calculated')}`)];
-      if (spec.target) tip.push(`Target range: ${spec.target.min.toFixed(2)}–${spec.target.max.toFixed(2)} s`);
+      if (spec.target) tip.push(targetTip(spec, i));
       const soft = spec.emphasis && !spec.emphasis.includes(f);
       let marks = '';
       spec.series.forEach((s, j) => {
@@ -75,7 +100,7 @@
     const H = spec.height || 190, M = { l: 40, r: 18, t: 22, b: 28 };
     const w = Math.max(260, width), pw = w - M.l - M.r, ph = H - M.t - M.b;
     const bands = spec.freqs || AM.demo.BANDS;
-    const vals = spec.series.flatMap(s => s.values).filter(isNum).concat(spec.target ? [spec.target.max] : []);
+    const vals = spec.series.flatMap(s => s.values).filter(isNum).concat(spec.target ? [spec.target.max] : [], (spec.limits || []).map(L => L && L.max).filter(isNum));
     const top = Math.max(0.1, ...vals) * 1.15;
     const step = spec.step || niceStep(top, 4);
     const yMax = spec.yMax || Math.ceil(top / step) * step;
@@ -89,15 +114,11 @@
       g += `<text class="tick" x="${M.l - 8}" y="${f1(y(v) + 4)}" text-anchor="end">${+v.toFixed(2)}</text>`;
     }
     bands.forEach((f, i) => { g += `<line class="gl gl-v" x1="${f1(x(i))}" x2="${f1(x(i))}" y1="${M.t}" y2="${f1(y(0))}"/>`; });
-    if (spec.target) {
-      const t = spec.target;
-      g += `<rect class="zone" x="${M.l}" width="${pw}" y="${f1(y(t.max))}" height="${f1(y(t.min) - y(t.max))}"/>`;
-      g += `<line class="zone-line" x1="${M.l}" x2="${w - M.r}" y1="${f1(y(t.preferred))}" y2="${f1(y(t.preferred))}"/>`;
-    }
+    g += targetZones(spec, bands, y, x, slot, M.l, w - M.r);
     // Hover targets first (under the marks), one per band.
     bands.forEach((f, i) => {
       const tip = [fmt.hz(f), ...spec.series.map(s => `${s.label}: ${isNum(s.values[i]) ? s.values[i].toFixed(d) + unit : (spec.missingText || 'not calculated')}`)];
-      if (spec.target) tip.push(`Target range: ${spec.target.min.toFixed(2)}–${spec.target.max.toFixed(2)} s`);
+      if (spec.target) tip.push(targetTip(spec, i));
       g += `<g class="col" tabindex="0" data-tip="${esc(tip.join('\n'))}"><rect class="hit" x="${f1(x(i) - slot / 2 + 1)}" y="${M.t - 14}" width="${f1(Math.max(2, slot - 2))}" height="${ph + 14}" rx="${slot > 20 ? 6 : 3}"/></g>`;
     });
     // Lines, then markers on top.

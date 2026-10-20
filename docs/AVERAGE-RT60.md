@@ -1,5 +1,9 @@
 # Average RT60, 125–4000 Hz (the room's RT60), and the 500–2000 Hz average beside it
 
+> **Changed 2026-10-19 (docs/TARGET-CRITERIA.md).** Targets come only from verified criteria. Under DIN 18041 A1–A4 the
+> 125 Hz and 4 kHz bands are judged against the standard's own limits (0.65–1.45 × and 0.65–1.2 × T_soll), not shown as
+> warnings; an NBC 2016 office target is judged at 500 Hz only. Occupancy no longer changes the target.
+>
 > **Changed in app version 2026.10.16 (docs/MULTI-POSITION.md).**
 > - **Positions.** The averages are taken over the room as measured at two or more positions (per band, the mean of the
 >   positions).
@@ -12,8 +16,8 @@
 >   average, read "the average over the bands the room is judged in" (`AM.derive.summaryRT60`).
 
 The room's RT60 is the mean RT60 of the octave bands from 125 to 4000 Hz **that were measured reliably**. It is the one
-value used wherever the app means the room as a whole. The 500–2000 Hz average is shown beside it as a check. Every band
-also keeps its own value.
+value used wherever the app means the room as a whole. The 500–2000 Hz average is kept with the record and the takes
+(it is no longer shown beside it on screen). Every band also keeps its own value.
 
 ## Calculation (`js/services/rt60-average.js`)
 
@@ -43,8 +47,8 @@ bands that have a value, with the 500–2000 Hz average shown beside it.
 `tests/mobile-study.html` a small phone speaker that loses 125 Hz (the band that usually rings longest) read lower than
 a laptop in the same room. The app therefore always says how many bands an average uses and which were left out, and
 shows the 500–2000 Hz average, which every device measures most reliably, next to it. Standards state room targets
-mainly for the mid frequencies (DIN 18041, ANSI/ASA S12.60); the 125 and 4000 Hz bands, when measured, move the value
-the target is compared with.
+mainly for the mid frequencies (DIN 18041 from 250 Hz to 2 kHz, with its own limits at 125 Hz and 4 kHz; NBC 2016 at
+500 Hz); the 125 and 4000 Hz bands, when measured, move the value the target is compared with.
 
 ## What uses it
 
@@ -71,7 +75,6 @@ the target is compared with.
 | α and added absorption at 1000 Hz in the Treatment plan, the product chart's label, the covered finish's α | Product data at one band, labelled; every band is in the frequency table |
 | The Sabine calculation written out at 1000 Hz (Predicted Result, PDF) | An example of the per-band calculation, followed by the average of the six |
 | Takes table: RT60, usable decay, T20 / T30 and r² at 1000 Hz, and the spread between sweep levels | A repeatability check of the measurement at its reference band |
-| Occupancy absorption at 1 kHz (`services/target.js`) | The standard's value per person, used to set the target |
 
 ## Tests
 

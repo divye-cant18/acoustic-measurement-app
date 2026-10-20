@@ -37,6 +37,15 @@ export function StatusPill({ status, text }: { status: Status | 'insufficient' |
   const [tone, ic, label] = STATUS[status || 'insufficient'] || STATUS.insufficient;
   return <Pill tone={tone} text={text || label} icon={ic} />;
 }
+/** The predicted verdict as a tag in everyday words (Treatment, Final Result): too echoey and too dull at once reads
+ *  "Not there yet". v: the predicted verdict (its above and below bands). */
+export function ResultPill({ v, st }: { v: { above: unknown[]; below: unknown[] } | null | undefined; st: string | null | undefined }) {
+  if (st === 'within') return <Pill tone="good" text="Meets the target" icon="seal" />;
+  if (v && v.above.length && v.below.length) return <Pill tone="warn" text="Not there yet" icon="alert" />;
+  if (st === 'above') return <Pill tone="warn" text="Still too echoey" icon="arrowUp" />;
+  if (st === 'below') return <Pill tone="warn" text="Too dull" icon="arrowDn" />;
+  return null;
+}
 /** A predicted value against the target. */
 export function PredPill({ status }: { status: Status | null | undefined }) {
   if (status === 'above') return <Pill tone="warn" text="Above target" icon="arrowUp" />;
@@ -251,14 +260,17 @@ export function NumberInput({ id, label, bind, value, unit, hint, req, error, ty
 }
 
 export type Opt = string | { value: string; label: string };
-export interface SelectProps { id: string; label?: ReactNode; bind?: string; value: string | null | undefined; options: Opt[]; placeholder?: string; hint?: ReactNode; req?: Req; disabled?: boolean; changeAction?: string; data?: Record<string, string> }
-/** changeAction: the change goes to a stage action (for linked fields) instead of straight to data-bind. */
-export function SelectInput({ id, label, bind, value, options, placeholder, hint, req, disabled, changeAction, data }: SelectProps) {
+export interface SelectProps { id: string; label?: ReactNode; bind?: string; value: string | null | undefined; options: Opt[]; groups?: { label: string; options: Opt[] }[]; placeholder?: string; hint?: ReactNode; req?: Req; disabled?: boolean; changeAction?: string; data?: Record<string, string> }
+/** changeAction: the change goes to a stage action (for linked fields) instead of straight to data-bind. groups: options in
+ *  labelled groups, after the ungrouped options (a group with no options is left out). */
+export function SelectInput({ id, label, bind, value, options, groups, placeholder, hint, req, disabled, changeAction, data }: SelectProps) {
   const v = value || '', ref = useSyncedSelect(v);
+  const opt = (o: Opt) => { const ov = typeof o === 'string' ? o : o.value, ol = typeof o === 'string' ? o : o.label; return <option key={ov} value={ov}>{ol}</option>; };
   const sel = (
     <select ref={ref} className="select" id={id} data-change-action={changeAction} data-bind={changeAction ? undefined : bind} disabled={disabled || undefined} defaultValue={v} {...data}>
       {placeholder ? <option value="" disabled>{placeholder}</option> : null}
-      {options.map(o => { const ov = typeof o === 'string' ? o : o.value, ol = typeof o === 'string' ? o : o.label; return <option key={ov} value={ov}>{ol}</option>; })}
+      {options.map(opt)}
+      {(groups || []).filter(g => g.options.length).map(g => <optgroup key={g.label} label={g.label}>{g.options.map(opt)}</optgroup>)}
     </select>
   );
   return label == null ? sel : <Field id={id} label={label} hint={hint} req={req}>{sel}</Field>;
@@ -348,6 +360,41 @@ export function QtyStepper({ q, max, sel, keyName = 'edit' }: { q: number; max: 
   );
 }
 const areaError = (sel: Item) => (isNum(sel.rawAreaM2) && sel.rawAreaM2 < 0 ? 'Enter 0 m² or more' : null);
+/* "How much": one slider in terms anyone can picture: a number of panels, or, for a product sold without a panel size,
+   how much of the wall or ceiling it covers. The app's suggestion is marked on it. The result follows as it moves
+   (events.ts setAmount). Areas in m² are left to "Show the calculation". */
+export const whereWords = (pl: string) => (/^Wall \d$/.test(pl) ? pl : pl === 'Ceiling' ? 'the ceiling' : pl === 'Walls' ? 'the walls' : `the ${pl.toLowerCase()}`);
+export function amountWords(p: unknown, it: Item): string {
+  // None, set by the app: the other products are enough (AM.derive.autoPlan).
+  if (!(it.areaM2 > 0) && it.amountBy === 'app') return 'none needed with the other products';
+  const D = am.derive as any, cov = D.coverage(p, it.placement)[0], share = cov && cov.surfaceM2 > 0 ? it.areaM2 / cov.surfaceM2 : null;
+  const of = share != null ? `${share < 0.995 ? 'about ' : ''}${Math.round(Math.min(1, share) * 100)} % of ${whereWords(it.placement)}` : `on ${whereWords(it.placement)}`;
+  return it.mode === 'units' ? `${it.quantity} panel${it.quantity === 1 ? '' : 's'}, covering ${of}` : share != null ? `covering ${of}` : `on ${whereWords(it.placement)}`;
+}
+export function AmountSlider({ p, sel, keyName = 'edit' }: { p: unknown; sel: Item; keyName?: string }) {
+  const D = am.derive as any, amt = D.autoAmount(p, sel), avail: number | null = amt ? amt.availableM2 : null;
+  const id = `${keyName}-amount-${sel.id}`, units = sel.mode === 'units', per = units ? sel.size.areaM2 : 1;
+  // Panels: up to what fits where it goes (at least the current and the suggested amount). A share: 0–100 % of the free surface.
+  const max = units ? Math.min(ui.MAX_PANELS, Math.max(1, sel.quantity, amt && amt.quantity != null ? amt.quantity : 0, avail != null ? Math.floor(avail / per + 1e-9) : 50)) : 100;
+  const value = units ? sel.quantity : avail ? Math.round(Math.min(1, sel.areaM2 / avail) * 100) : 0;
+  const rec = amt ? (units ? amt.quantity : avail ? Math.round(Math.min(1, amt.areaM2 / avail) * 100) : 0) : null;
+  const ref = useSynced<HTMLInputElement>(String(value));
+  const big = units ? `${value} panel${value === 1 ? '' : 's'}` : `${value} % of ${whereWords(sel.placement)}`;
+  const small = units ? amountWords(p, sel).replace(/^\d+ panels?, /, '') : avail ? 'of the free surface there' : '';
+  return (
+    <div className="amount-slider">
+      <label className="as-head" htmlFor={id}><span className="as-k">How much</span><b className="as-v" data-watch={`${keyName}-amount`}>{big}</b><span className="small muted">{small}</span></label>
+      <input ref={ref} id={id} type="range" className="as-range" min={0} max={max} step={1} defaultValue={String(value)} list={rec != null ? `${id}-rec` : undefined}
+        data-input-action="setAmount" data-item={sel.id} data-mode={units ? 'units' : 'share'} data-avail={avail != null ? String(avail) : '0'}
+        aria-valuetext={big} aria-describedby={`${id}-hint`} />
+      {rec != null ? <datalist id={`${id}-rec`}><option value={String(rec)} /></datalist> : null}
+      <div className="as-scale small muted" aria-hidden="true"><span>None</span><span>{units ? `${max} panels` : 'All of it'}</span></div>
+      <p className="small muted" id={`${id}-hint`}>{rec == null ? 'Move it to see what each amount does.'
+        : value === rec ? `This is the amount the app suggests for this room.` : `The app suggests ${units ? `${rec} panel${rec === 1 ? '' : 's'}` : `${rec} %`} (marked on the bar).`}</p>
+    </div>
+  );
+}
+
 export function AmountControl({ sel, keyName = 'edit' }: { sel: Item; keyName?: string }) {
   if (sel.mode === 'units') {
     return (
@@ -373,16 +420,38 @@ export function AreaIn({ sel, keyName = 'plan' }: { sel: Item; keyName?: string 
     </span>
   );
 }
-export function AmountGoal({ goal, sel, targetRT }: { goal: { areaM2: number; units: number | null; withOthers: boolean } | null; sel: Item; targetRT: number }) {
+/* Octave bands in everyday words, as on Results: low sounds (125, 250 Hz), voices (500 Hz–2 kHz), high sounds (4 kHz). */
+const soundOf = (f: number) => (f <= 250 ? 'low sounds' : f >= 4000 ? 'high sounds' : 'voices');
+export function soundsText(above: number[], below: number[]): string {
+  const names = (fs: number[]) => fmt.list([...new Set(fs.map(soundOf))]);
+  return [above.length ? `${names(above)} would still echo too long` : '', below.length ? `${names(below)} would become too dull` : ''].filter(Boolean).join(', and ');
+}
+// What would help, in everyday words: a product that absorbs where the room still falls short.
+export function soundsAdvice(above: number[], below: number[]): string {
+  const low = above.some(f => f <= 250), dull = below.length > 0;
+  return low ? `Add a second product that absorbs low sounds well (thicker panels, or panels mounted with an air gap)${dull ? ', and use less of this one' : ''}, or choose another mounting.`
+    : dull ? 'Use less of it, or combine it with a product that absorbs evenly across the range.'
+      : 'Add a second product, or choose another mounting.';
+}
+
+/* The amount of the product being edited that meets the target (AM.derive.treatmentForTarget): every judged band within
+   its limits. When no amount does, the amount that brings the average to the aim, said as such, with the bands that
+   stay outside. The area is rounded up to 0.1 m², so the amount shown still meets what it says. */
+export function AmountGoal({ goal, sel, targetRT }: { goal: { areaM2: number; units: number | null; withOthers: boolean; meetsBands?: boolean; above?: number[]; below?: number[] } | null; sel: Item; targetRT: number }) {
   if (!goal || goal.areaM2 <= 0) return null;
-  const also = goal.withOthers ? ' with the other products' : '';
+  const also = goal.withOthers ? ' with the other products' : '', all = goal.meetsBands !== false;
+  const what = all ? 'to meet the target in every band' : `to bring the average to ${fmt.s(targetRT)}`;
+  const hz = (fs: number[]) => fmt.hzList(fs);
+  const short = all ? null : (
+    <Note tone="warn">{`${sel.product.name}${also} cannot fix every part of the sound on its own. With the amount that brings the average to ${fmt.s(targetRT)}, ${soundsText(goal.above || [], goal.below || []) || 'some bands would stay outside their limits'} (${[goal.above && goal.above.length ? `${hz(goal.above)} above` : '', goal.below && goal.below.length ? `${hz(goal.below)} below` : ''].filter(Boolean).join(', ')} their limits). ${soundsAdvice(goal.above || [], goal.below || [])}`}</Note>
+  );
   if (sel.mode === 'units') {
-    if (goal.units === sel.quantity) return null;
-    if ((goal.units || 0) > ui.MAX_PANELS) return <Note tone="warn">Reaching {fmt.s(targetRT)} needs {goal.units} panels of this size, more than the {ui.MAX_PANELS} this tool allows. Choose a larger panel or enter the area directly.</Note>;
-    return <div><Btn action="setQty" value={goal.units ?? 0} item={sel.id} size="sm">{`Use ${goal.units} panels to reach ${fmt.s(targetRT)}${also}`}</Btn></div>;
+    if (goal.units === sel.quantity) return short;
+    if ((goal.units || 0) > ui.MAX_PANELS) return <Note tone="warn">{`This needs ${goal.units} panels of this size, more than the ${ui.MAX_PANELS} this tool allows. Choose a larger panel or enter the area directly.`}</Note>;
+    return <>{short}<div><Btn action="setQty" value={goal.units ?? 0} item={sel.id} size="sm" cls="btn-wrap">{`Use ${goal.units} panels ${what}${also}`}</Btn></div></>;
   }
-  const a = Math.round(goal.areaM2 * 10) / 10;
-  return Math.abs(a - sel.areaM2) < 0.05 ? null : <div><Btn action="setArea" value={a} item={sel.id} size="sm">{`Use ${a.toFixed(1)} m² to reach ${fmt.s(targetRT)}${also}`}</Btn></div>;
+  const a = Math.ceil(goal.areaM2 * 10 - 1e-9) / 10;
+  return Math.abs(a - sel.areaM2) < 0.05 ? short : <>{short}<div><Btn action="setArea" value={a} item={sel.id} size="sm" cls="btn-wrap">{`Use ${a.toFixed(1)} m² ${what}${also}`}</Btn></div></>;
 }
 export const GoalUnreachable = ({ sel, targetRT }: { sel: Item; targetRT: number }) => (
   <Note tone="info">{`No amount of ${sel.product.name} brings the predicted average RT60 to ${fmt.s(targetRT)}, with the rest of the plan as it is: in some bands it absorbs too little, or less than the finish it covers. Combine it with another product, or choose a more absorbent configuration.`}</Note>
@@ -395,7 +464,8 @@ export function CoverageWarning({ cov }: { cov: { label: string; areaM2: number;
 }
 
 /* ---------- RT60 scale: target band, measured and predicted on one axis ---------- */
-export function RtScale({ target, measured, predicted, arrow = false, max }: { target: { min: number; max: number; preferred: number } | null; measured?: number | null; predicted?: number | null; arrow?: boolean; max?: number }) {
+/* An upper-limit target (min and preferred null) is drawn from 0 to its limit, with no preferred line. */
+export function RtScale({ target, measured, predicted, arrow = false, max }: { target: { min: number | null; max: number; preferred: number | null } | null; measured?: number | null; predicted?: number | null; arrow?: boolean; max?: number }) {
   const top = Math.max(measured || 0, predicted || 0, target ? target.max : 0);
   const M = max || Math.max(1.5, Math.ceil(top * 1.3 / 0.5) * 0.5);
   const pos = (v: number) => Math.min(100, Math.max(0, v / M * 100));
@@ -404,15 +474,17 @@ export function RtScale({ target, measured, predicted, arrow = false, max }: { t
   for (let v = 0, i = 0; v <= M + 1e-9; v += 0.5, i++) { const x = pos(v); ticks.push(<span key={i} className={x < 3 ? 'edge-l' : x > 97 ? 'edge-r' : ''} style={{ left: `${x}%` }}>{`${v.toFixed(1)} s`}</span>); }
   for (let k = 1; k * 0.1 < M - 1e-9; k++) minor.push(<i key={k} className={k % 5 ? '' : 'mj'} style={{ left: `${pos(k * 0.1)}%` }} />);
   const legend: [string, string][] = [];
-  if (target) legend.push(['zone', `Target range ${target.min.toFixed(2)}–${target.max.toFixed(2)} s`], ['pref', `Preferred ${target.preferred.toFixed(2)} s`]);
+  const lo = target && isNum(target.min) ? target.min : 0;
+  if (target) legend.push(isNum(target.min) ? ['zone', `Target range ${target.min.toFixed(2)}–${target.max.toFixed(2)} s`] : ['zone', `Target: at most ${target.max.toFixed(2)} s`]);
+  if (target && isNum(target.preferred)) legend.push(['pref', `Preferred ${target.preferred.toFixed(2)} s`]);
   if (isNum(measured)) legend.push(['measured lg-dot', 'Measured']);
   if (isNum(predicted)) legend.push(['predicted lg-dot', 'Predicted (modelled)']);
-  const aria = [isNum(measured) ? `Measured ${fmt.s(measured)}` : '', isNum(predicted) ? `predicted ${fmt.s(predicted)}` : '', target ? `target ${target.min}–${target.max} s` : ''].filter(Boolean).join(', ');
+  const aria = [isNum(measured) ? `Measured ${fmt.s(measured)}` : '', isNum(predicted) ? `predicted ${fmt.s(predicted)}` : '', target ? (isNum(target.min) ? `target ${target.min}–${target.max} s` : `target at most ${target.max} s`) : ''].filter(Boolean).join(', ');
   return (
     <div className="rts" role="img" aria-label={aria}>
       <div className="rts-row">{isNum(measured) ? lab(measured, `Measured ${fmt.s(measured)}`) : null}</div>
       <div className="rts-track">
-        {target ? <><div className="rts-band" style={{ left: `${pos(target.min)}%`, width: `${pos(target.max) - pos(target.min)}%` }} /><div className="rts-pref" style={{ left: `${pos(target.preferred)}%` }} /></> : null}
+        {target ? <><div className="rts-band" style={{ left: `${pos(lo)}%`, width: `${pos(target.max) - pos(lo)}%` }} />{isNum(target.preferred) ? <div className="rts-pref" style={{ left: `${pos(target.preferred)}%` }} /> : null}</> : null}
         {arrow && isNum(measured) && isNum(predicted) && predicted < measured - 0.005 ? <div className="rts-arrow" style={{ left: `${pos(predicted)}%`, width: `${pos(measured) - pos(predicted)}%` }} /> : null}
         {isNum(measured) ? <span className="rts-dot measured" style={{ left: `${pos(measured)}%` }} /> : null}
         {isNum(predicted) ? <span className="rts-dot predicted" style={{ left: `${pos(predicted)}%` }} /> : null}

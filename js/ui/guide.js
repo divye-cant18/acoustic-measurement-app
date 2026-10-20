@@ -502,7 +502,7 @@
 
     tourProcessing(u) {
       let s = appFrame(4, 'Processing checks each take');
-      ['Separate the room’s decay', 'Check it against the background', 'Choose T30 or T20', 'Calculate RT60, band by band'].forEach((label, i) => {
+      ['Separate the room’s decay', 'Check it against the background', 'Calculate T20, check with T30', 'Calculate RT60, band by band'].forEach((label, i) => {
         const y = 138 + i * 36, a = 0.1 + i * 0.18, done = u >= a + 0.12, on = u >= a && !done;
         s += (done ? tick(172, y - 4, true) : on ? `<circle cx="172" cy="${y - 4}" r="9" fill="none" stroke="${P.line}" stroke-width="2.4"/><path d="M172,${y - 13} a9,9 0 0 1 9,9" fill="none" stroke="${TEAL}" stroke-width="2.4" transform="rotate(${n((u * 2400) % 360)} 172 ${y - 4})"/>` : `<circle cx="172" cy="${y - 4}" r="9" fill="none" stroke="${P.line}" stroke-width="2"/>`);
         s += T(190, y + 1, label, { size: 13, fill: done || on ? P.ink : P.dim });

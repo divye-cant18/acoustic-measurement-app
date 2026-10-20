@@ -10,31 +10,31 @@ import { AverageSummary } from '../ui/blocks';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface ProcessingModel { outcome(p: Project, rec: any): Result | null; job(): { i: number } | null }
 const M = () => stageModel<ProcessingModel>('processing');
+const PROC_CURVATURE = (): number => (am as any).analysis.CRITERIA.decay.curvature;
 
+/* The reported value is T20 (ISO 3382-2's preferred range); where 45 dB of decay is usable, T30 is worked out as well,
+   as a check that the decay is one straight line (curvature C = T30/T20 − 1). */
 function Cascade({ band }: { band: any }) {
   // Ranges are counted from the start of the room's decay (below the device's direct sound, when that is strong).
-  const rows = [
-    { q: 'Enough decay for T30?', path: 'T30', calc: "RT60 = T30, fitted from 5 to 35 dB below the start of the room's decay, extrapolated to 60 dB" },
-    { q: 'Enough decay for T20?', path: 'T20', calc: "RT60 = T20, fitted from 5 to 25 dB below the start of the room's decay, extrapolated to 60 dB" },
-  ];
   if (band.decayRangeDb == null) return <ol className="cascade"><li className="cq is-fail"><span className="cq-q">No usable decay</span><span className="cq-need">{band.reason || 'Not measured'}</span><span className="cq-a">Stop</span></li></ol>;
-  let open = true;
-  const items: ReactNode[] = rows.map(r => {
-    const need = PROC.REQUIRED[r.path];
-    if (!open) return <li className="cq is-skipped" key={r.path}><span className="cq-q">{r.q}</span><span className="cq-need">{`Needs ${need} dB`}</span><span className="cq-a">Not needed</span></li>;
-    const yes = band.path === r.path;
-    if (yes) open = false;
-    return (
-      <li className={`cq ${yes ? 'is-yes' : 'is-no'}`} key={r.path}>
-        <span className="cq-q">{r.q}</span><span className="cq-need">{`Needs ${need} dB, has ${Math.round(band.decayRangeDb)} dB`}</span><span className="cq-a">{yes ? 'Yes' : 'No'}</span>
-        {yes ? <span className="cq-calc">{`${r.calc}: ${fmt.s(band.rt60)} (r² ${band.r2.toFixed(4)})`}</span> : null}
-      </li>
-    );
-  });
+  // Sounds during the take (voices, knocks) count as background: the usable decay is what lies above them as well.
+  const dist = band.disturbanceDb || 0, has = band.decayRangeDb - dist;
+  const hasText = dist ? `has ${Math.round(has)} dB (${Math.round(band.decayRangeDb)} dB less ${Math.round(dist)} dB of sounds during the take)` : `has ${Math.round(has)} dB`;
+  const yes = band.path === 'T20', C = band.curvature, lim = PROC_CURVATURE();
+  const checkText = band.t30 == null ? 'Not available: the confidence stays medium'
+    : `T30 ${fmt.s(band.t30)}, ${C == null ? '' : `${C > 0 ? '+' : C < 0 ? '−' : ''}${Math.abs(C)} % from T20: `}${C != null && Math.abs(C) <= lim ? 'the decay is one straight line' : 'the decay is curved (see the notes)'}`;
   return (
     <ol className="cascade">
-      {items}
-      {open ? <li className="cq is-fail"><span className="cq-q">Measurement insufficient</span><span className="cq-need">{band.reason || 'Repeat or adjust the measurement'}</span><span className="cq-a">Stop</span></li> : null}
+      <li className={`cq ${yes ? 'is-yes' : 'is-no'}`}>
+        <span className="cq-q">Enough decay for T20?</span><span className="cq-need">{`Needs ${PROC.REQUIRED.T20} dB, ${hasText}`}</span><span className="cq-a">{yes ? 'Yes' : 'No'}</span>
+        {yes ? <span className="cq-calc">{`RT60 = T20, fitted from 5 to 25 dB below the start of the room's decay, extrapolated to 60 dB: ${fmt.s(band.rt60)}${band.r2 != null ? ` (r² ${band.r2.toFixed(4)})` : ''}`}</span> : null}
+      </li>
+      {yes ? (
+        <li className={`cq ${band.t30 != null ? 'is-yes' : 'is-skipped'}`}>
+          <span className="cq-q">Enough decay for the T30 check?</span><span className="cq-need">{`Needs ${PROC.REQUIRED.T30} dB, ${hasText}`}</span><span className="cq-a">{band.t30 != null ? 'Yes' : 'No'}</span>
+          <span className="cq-calc">{checkText}</span>
+        </li>
+      ) : <li className="cq is-fail"><span className="cq-q">Measurement insufficient</span><span className="cq-need">{band.reason || 'Repeat or adjust the measurement'}</span><span className="cq-a">Stop</span></li>}
     </ol>
   );
 }
@@ -98,7 +98,7 @@ export function ProcessingScreen({ ctx }: { ctx: Ctx }) {
       <div className="grid split">
         <Card icon="sliders" title={`Calculation path at ${fmt.hz(ref.f)}`} sub="The reference band decides whether the measurement is valid."><Cascade band={ref} /></Card>
         <Card icon="decay" title="Required usable decay">
-          <Kv rows={[['T30 (30 dB × 2)', `${PROC.REQUIRED.T30} dB`], ['T20 (20 dB × 3)', `${PROC.REQUIRED.T20} dB`]]} />
+          <Kv rows={[['T20 (20 dB × 3), the value', `${PROC.REQUIRED.T20} dB`], ['T30 (30 dB × 2), the check', `${PROC.REQUIRED.T30} dB`]]} />
           <p className="small muted">Each is the evaluation range plus a 5 dB start offset and a 10 dB margin above the recording background noise (ISO 3382). Usable decay is the room's own decay in each band: from where it starts, below the direct sound of the measuring device, down to the recording background noise.</p>
         </Card>
       </div>
@@ -134,7 +134,7 @@ export function ProcessingScreen({ ctx }: { ctx: Ctx }) {
         <Card icon="info" title="How a result is earned">
           <ol className="principle">
             <li><span><b>Is the decay trustworthy?</b>Separate the device's own direct sound from the room's decay, then find the recording background noise in each band and how much of the room's decay lies above it.</span></li>
-            <li><span><b>Which calculation is valid?</b>Choose T30 or T20 from the usable decay.</span></li>
+            <li><span><b>Which calculation is valid?</b>T20 from at least 35 dB of usable decay, checked against T30 where 45 dB is usable.</span></li>
             <li><span><b>Calculate RT60.</b>Only from a valid path and a straight decay. Otherwise stop and measure again.</span></li>
           </ol>
           <Note tone="info">Every value comes from this take's recording. Where the recording cannot support a value, none is given.</Note>

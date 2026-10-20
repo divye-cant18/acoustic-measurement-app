@@ -7,21 +7,23 @@
      run(take, { onStep, noise })  -> { done: Promise<Result>, cancel() }   steps the evaluation through STEPS for the screen
      details(take, result)         -> one line of evidence per step
 
-   Decision cascade, per band (ISO 3382-2). "Usable decay" is the room's own reverberant decay: from its start, below
-   the direct sound and early reflections of the measuring device (analysis.js), down to 10 dB above the noise floor.
-   The evaluation ranges are counted from that start.
-     usable decay ≥ 45 dB and the decay curve reaches −35 dB  → RT60 from T30 (fit −5…−35 dB, extrapolated × 2)
-     else ≥ 35 dB and reaches −25 dB                          → RT60 from T20 (fit −5…−25 dB, extrapolated × 3)
+   Decision, per band (ISO 3382-2). "Usable decay" is the room's own reverberant decay: from its start, below the direct
+   sound and early reflections of the measuring device (analysis.js), down to 10 dB above the noise floor. The
+   evaluation ranges are counted from that start.
+     usable decay ≥ 35 dB and the decay curve reaches −25 dB  → RT60 from T20 (fit −5…−25 dB, extrapolated × 3)
      else                                                      → no RT60 for this band, with the reason
-   These are the two evaluation ranges of ISO 3382-2. A 60 dB fit (t60) is still reported for information when the
-   decay allows it, but never becomes the RT60: it would make the result depend on the background noise, because a
-   quieter take would switch a curved decay to a different part of the curve.
+     and where ≥ 45 dB is usable, T30 (fit −5…−35 dB, × 2) is worked out as well, as a check: the curvature
+     C = 100·(T30/T20 − 1) says whether the decay is one straight line.
+   T20 is the reported value (20 October 2026; before, T30 was used from 45 dB): ISO 3382-2 gives the 20 dB range its
+   preference, and a value that switched to T30 from 45 dB made a curved decay's result depend on the background noise
+   (a double-slope room read 0.801 s with 45.7 dB usable and 0.677 s with 44.6 dB, measurement-chain audit). A 60 dB fit
+   (t60) is still reported for information when the decay allows it, but never becomes the RT60, for the same reason.
    A band has no value when its decay is cut off (it drops into the background far faster than the room's own decay
    allows: analysis.js, cutoff). A band's value is then rejected when the decay is not straight (ξ = 1000·(1 − r²) above
    50 ‰) or too short for the band filter (bandwidth × RT60 < 4). Quality and confidence come only from these measured properties:
-     Good / High    T30, ξ ≤ 10 ‰ and T30 within 10 % of T20 (curvature C = 100·(T30/T20 − 1); the note says whether
-                    the decay slows down, C > 10 %, or speeds up, C < −10 %, which points to processing)
-     Fair / Medium  T20, or a straightness or curvature warning, or any warning on the take (browser processing not
+     Good / High    ξ ≤ 10 ‰ and the T30 check within 10 % of T20 (the note says whether the decay slows down,
+                    C > 10 %, or speeds up, C < −10 %, which points to processing)
+     Fair / Medium  no T30 check (35–45 dB usable), or a straightness or curvature warning, or any warning on the take (browser processing not
                     reported, a small gain or background change). A background that changed since the noise check is
                     information only: each band is judged on the take's own background.
    The measurement is valid when the reference band (1000 Hz) has a value. Every other band is reported for what it is.
@@ -93,7 +95,7 @@
       out.reason = `The decay is cut off ${Math.round(b.cutoff.atSec * 1000)} ms after the arrival: it drops ${Math.round(b.cutoff.dropDb)} dB into the background within 40 ms, far faster than the room's own decay. A noise gate or noise suppression in the device or the system, or a gap in the recording, cut the sound off, so this is not the room's decay.`;
       return out;
     }
-    out.path = usable('T30') ? 'T30' : usable('T20') ? 'T20' : null;
+    out.path = usable('T20') ? 'T20' : null; // the reported value; T30 (above) is the check
     if (!out.path) {
       out.reason = dist && b.decayRangeDb >= REQUIRED.T20
         ? `Sounds during the take, such as voices, knocks or movement, rose ${Math.round(dist.db)} dB above the background in this band (${dist.events} times). Counted as recording background noise, they leave ${short(R, REQUIRED.T20)} dB of the room's own decay; T20 needs ${REQUIRED.T20} dB. Measure again while the room is quiet.`
@@ -115,8 +117,14 @@
     // A room's decay is a sum of decaying modes, so it can only flatten with time (T30 ≥ T20, apart from small random
     // scatter). One that steepens towards its end points to something cutting it off.
     if (out.curvature != null && out.curvature > D.curvature) out.notes.push(`T30 is ${out.curvature} % longer than T20: the decay slows down towards its end (a curved decay, as in rooms with uneven absorption or coupled spaces).`);
-    if (out.curvature != null && out.curvature < -D.curvature) out.notes.push(`T30 is ${-out.curvature} % shorter than T20: the decay speeds up towards its end, which a room's own decay does not do. Noise suppression or a noise gate in the device or the system may be cutting the end of the decay.`);
-    const good = out.path !== 'T20' && !out.notes.length;
+    // In the low bands one decay's T20 and T30 scatter much more (single-slope synthetic rooms: C has a standard deviation
+    // of about 9–11 % at 125 Hz and 4–6 % at 250 Hz, tests in the measurement-chain audit of 20 October 2026), so there a
+    // shorter T30 is put down to the device only well beyond that scatter.
+    const speedsUp = out.curvature != null && out.curvature < -D.curvature, beyondScatter = b.f >= 500 || out.curvature < -D.curvatureLow;
+    if (speedsUp && beyondScatter) out.notes.push(`T30 is ${-out.curvature} % shorter than T20: the decay speeds up towards its end, which a room's own decay does not do. Noise suppression or a noise gate in the device or the system may be cutting the end of the decay.`);
+    else if (speedsUp) out.notes.push(`T30 is ${-out.curvature} % shorter than T20. In this low band one decay's T20 and T30 scatter by about 10 %, so this alone does not show a problem; more positions make the room's value surer.`);
+    // High confidence needs the straightness confirmed over 30 dB: the T30 check there, within 10 % of T20.
+    const good = out.t30 != null && !out.notes.length;
     out.quality = good ? 'Good' : 'Fair';
     out.confidence = good ? 'High' : 'Medium';
     return out;
@@ -125,7 +133,7 @@
   function evaluate(take, ctx = {}) {
     const base = {
       valid: false, status: 'invalid', reason: null, referenceBand: AM.demo.REFERENCE_BAND, bands: [], headline: null,
-      issues: [], warnings: [], recordingId: take.id, takenAt: take.takenAt, processedAt: new Date().toISOString(), engine: 'live',
+      issues: [], warnings: [], recordingId: take.id, takenAt: take.takenAt, processedAt: new Date().toISOString(), engine: 'live', rtMethod: 'T20',
       meta: {
         deviceLabel: take.deviceLabel, sampleRate: take.sampleRate, settings: take.settings, tap: take.tap, plan: take.plan, levels: take.levels,
         deviceKind: take.deviceKind || null, outputLabel: take.outputLabel || null, position: take.position || null,
@@ -228,6 +236,7 @@
   function details(take, res) {
     const ref = res.bands.find(b => b.f === res.referenceBand) || {}, lv = take.levels || {}, n = res.bands.filter(b => b.rt60 != null).length;
     const pathNote = { T60: 'full 60 dB fit', T30: '30 dB fit × 2', T20: '20 dB fit × 3' };
+    const check = ref.t30 != null ? `; T30 ${ref.t30.toFixed(2)} s as a check (${ref.curvature != null && Math.abs(ref.curvature) <= D.curvature ? 'straight decay' : `C ${ref.curvature} %`})` : '; too little decay for the T30 check (45 dB)';
     const plan = take.plan || {}, an = take.analysis || {};
     const head = ref.headDb;
     return [
@@ -243,8 +252,8 @@
       (ref.decayRangeDb != null ? `Recording background noise ${Math.abs(ref.noiseFloorDb).toFixed(1)} dB below the peak at ${ref.f} Hz (Lundeby): ${Math.round(ref.decayRangeDb)} dB of the room's own decay usable` : `No usable decay at ${res.referenceBand} Hz`)
         + (ref.disturbanceDb ? `; sounds during the take ${Math.round(ref.disturbanceDb)} dB above the background, counted as recording background noise` : '; no sounds above the background during the take')
         + (res.meta && res.meta.backgroundChangeDb != null && Math.abs(res.meta.backgroundChangeDb) >= 3 ? `; background ${Math.abs(res.meta.backgroundChangeDb).toFixed(0)} dB ${res.meta.backgroundChangeDb > 0 ? 'louder' : 'quieter'} than in the noise check (information)` : ''),
-      ref.path ? `${ref.f} Hz uses ${ref.path} (${pathNote[ref.path]})` : `${res.referenceBand} Hz: no valid path`,
-      res.valid ? `RT60 ${ref.rt60.toFixed(2)} s at ${ref.f} Hz (r² ${ref.r2.toFixed(4)})` : 'Unable to obtain a reliable RT60 measurement: not calculated',
+      ref.path ? `${ref.f} Hz uses ${ref.path} (${pathNote[ref.path]})${check}` : `${res.referenceBand} Hz: no valid path`,
+      res.valid ? `RT60 ${ref.rt60.toFixed(2)} s at ${ref.f} Hz${ref.r2 != null ? ` (r² ${ref.r2.toFixed(4)})` : ''}` : 'Unable to obtain a reliable RT60 measurement: not calculated',
       res.valid ? `${n} of ${res.bands.length} bands reliable, ${res.headline.confidence.toLowerCase()} confidence at ${ref.f} Hz` : 'Measurement insufficient',
     ];
   }

@@ -5,7 +5,7 @@
 
    Contract:
      of(result)  -> Average over the six bands, 125–4000 Hz: the room's RT60, the value compared with the target (pure)
-     mid(result) -> Average over the middle bands, 500, 1000 and 2000 Hz: shown beside it as a check (pure)
+     mid(result) -> Average over the middle bands, 500, 1000 and 2000 Hz: kept with the record and the takes (pure)
        { available, value, n, total, required, included: [{ f, rt60, path, quality }], missing: [{ f, reason }],
          excluded: [], partial, reason, recordingId, takenAt }
      ofPrediction(rows, over) -> the predicted average over the bands `over` (the bands the measured average used),
@@ -24,7 +24,7 @@
    shown beside it so the two can be compared. (Until 2026-10-15 the headline was 500–2000 Hz only; on that day it was
    all six bands with every band required, then, the same day, the bands that have a value, as described here.)
    A band counts when the processing engine (services/processing.js, decideBand) gave it a value: a finite RT60 above 0,
-   with the calculation path the engine chose for it (T30 or T20), and a quality that is not "Insufficient" or "Not
+   with the calculation path the engine chose for it (T20; T30 in results from before 20 October 2026), and a quality that is not "Insufficient" or "Not
    measured". Its own RT60 is used: its T20 or T30 is never taken in its place. A predicted band counts when the model
    gave it a finite value above 0. Values are used as stored (measured to the millisecond, predicted unrounded); an
    average is rounded only where it is shown. Only a valid result has an average: a take that is not valid, an earlier
@@ -39,7 +39,7 @@
   const SHORT = range(REQUIRED), MID_SHORT = range(MID);
   const LABEL = `Average RT60, ${SHORT}`, MID_LABEL = `Average RT60, ${MID_SHORT}`;
   const MIN_SHARE = 0.5;
-  const METHOD = `The arithmetic mean of the RT60 in the octave bands from ${SHORT} that were measured reliably. A band the device could not measure is left out and named; at least half of the bands are needed. The ${MID_SHORT} average, the middle bands where speech is, is shown beside it as a check. Every band is also shown on its own. A summary across the bands, not a standardised single-number rating.`;
+  const METHOD = `The arithmetic mean of the RT60 in the octave bands from ${SHORT} that were measured reliably. A band the device could not measure is left out and named; at least half of the bands are needed. Every band is also shown on its own. A summary across the bands, not a standardised single-number rating.`;
   const NO_VALUE = ['Insufficient', 'Not measured'];
 
   const positive = x => typeof x === 'number' && Number.isFinite(x) && x > 0;
@@ -90,7 +90,7 @@
     }), set.length, 'predicted average', 'no predicted value');
   }
 
-  const describe = a => (!a || !a.available ? 'not available' : a.partial ? `${a.n} of ${a.total} bands (${names(a.missing)} not measured)` : `all ${a.total} bands`);
+  const describe = a => (!a || !a.available ? 'not available' : a.partial ? `${a.n} of ${a.total} bands (${names(a.missing)} not measured)` : a.total === 1 ? 'one band' : `all ${a.total} bands`);
 
   AM.services.rt60Average = { REQUIRED, SHORT, LABEL, MID, MID_SHORT, MID_LABEL, METHOD, MIN_SHARE, of, mid, ofBands, ofPrediction, describe, eligible };
 })(window.AM);

@@ -58,7 +58,8 @@ js/data/demo.js               reference lists: octave bands, industries, room op
 js/data/brand.js              application name, tagline, descriptor and logo files (assets/brand)
 js/data/report-form.js        the report form's fields and the database columns (the server reads the same file)
 assets/brand/                 the supplied Univicoustic icon and wordmark
-js/data/targets.js            RT60 target criteria: sources, DIN 18041 groups, room type → uses → criterion
+js/data/targets.js            RT60 target criteria: references, verified criteria, room categories and their status
+                              (docs/TARGET-CRITERIA.md)
 js/data/guides.js             videos: How the app works, How to measure, How to measure the room, What is RT60?
                               (chapters, captions; set video.src to use a filmed video)
 js/data/products.generated.js product database, GENERATED from the NRC Master File (do not edit)
@@ -117,14 +118,18 @@ tests/                        development only, never loaded by the app (see Tes
 
 The app works with three RT60 values, never one in place of another:
 
-1. **Target RT60**: the range the room should have, from its type, use, volume and occupancy (Target step;
-   `services/target.js`, DIN 18041:2016, ANSI/ASA S12.60 for classrooms).
+1. **Target RT60**: only from a verified standard that applies to the room's category (room type and main activity),
+   with the inputs it needs and within its stated conditions (Target step; `services/target.js`, docs/TARGET-CRITERIA.md):
+   DIN 18041:2016 group A (meeting, teaching, lecture, music and sports rooms), NBC 2016 (offices and canteens, an upper
+   limit at 500 Hz), EBU Tech 3276 (listening and control rooms). A category without a verified criterion gets no
+   target, says why, and the project's own target can be entered with its source. Nothing is extrapolated, clamped or
+   taken from another room type.
 2. **Measured RT60**: from the microphone measurement only (background check, sweep, deconvolution, octave bands,
-   decay analysis, T30 or T20 per band), at two or more measuring positions. Per band, the room's RT60 is the mean of
+   decay analysis, T20 per band with T30 as a check), at two or more measuring positions. Per band, the room's RT60 is the mean of
    the positions (docs/MULTI-POSITION.md). The room is judged by its target criterion's own band rule: for a meeting
-   room under DIN 18041 group A, every band from 250 Hz to 2 kHz within the target range, with the average over those
-   bands as its summary and band warnings at 125 Hz and 4 kHz shown apart. The average over all bands, 125–4000 Hz, is
-   shown as the overall figure (docs/AVERAGE-RT60.md).
+   room under DIN 18041 group A, every band from 125 Hz to 4 kHz within its limits (250 Hz–2 kHz the target range,
+   125 Hz and 4 kHz the standard's own), with the average over 250 Hz–2 kHz as its summary. The average over all bands,
+   125–4000 Hz, is shown as the overall figure (docs/AVERAGE-RT60.md).
 3. **Predicted RT60 after treatment**: from the measured RT60 and the chosen products (Treatment, Predicted Result).
 
 The room's own (untreated) RT60 is not estimated from its dimensions or surfaces: it is measured. Room configuration,
@@ -203,19 +208,23 @@ left, the system mutes the microphone, the AudioContext stops running, or the se
 
 ## Room information and surfaces
 
-Room Setup records the room (name and reference, industry and room type from nine industries, each with "Other"; the
-main activity, which the target follows; purpose; the industry's own questions), its size and shape, occupancy and
+Room Setup records the room (name and reference, industry and room type, each industry with "Other"; room types and
+main activities with a verified RT60 criterion are listed first, the others grouped as having no verified RT60 target
+and still measurable; the main activity, which the target follows; purpose; the industry's own questions), its size and shape, occupancy and
 furnishing, current problems and the outcome wanted, and its surfaces: by default four walls going round the room
 (**Wall 1** and **Wall 3** the long walls, length × height; **Wall 2** and **Wall 4** the end walls, width × height), the
 **Floor** and the **Ceiling** (length × width). Walls can be added, duplicated and removed, and the ceiling can have
-sections with their own area. Each surface records what it is built from and its visible finish (separately, so painted
-concrete and painted plasterboard differ), its acoustic data from `js/data/materials.js` (only the entries that fit the
-construction and finish are offered, searchable), optionally an existing treatment or covering over a share of it, and
-on walls doors, windows, openings and what is mounted on them, ticked with nothing to measure (air conditioner,
-speaker, display, electrical fixtures, pipes or cable tray, other). A construction or finish that is not listed is
-typed in and kept, with no acoustic value guessed; its name is sent with the report form for review in Supabase. Every
-material shows its data class, conditions, α per band and source link. docs/ROOM-FORM.md lists the fields, the dependent
-choices, the calculations and the saved data.
+sections with their own area. Each surface is described by one question in everyday words, "What is this wall?",
+answered with a button (painted wall, gypsum board partition, glass partition, wood or laminate panelling, vitrified
+tiles, marble or Kota stone, gypsum or POP false ceiling, grid ceiling, metal roof, …), the types most common in the
+room's type first. A type sets the construction and finish and uses a library entry from `js/data/materials.js` as its
+typical sound data (none where the library has none: never a guessed value), and its line says in plain words how much
+sound it absorbs. The exact library entry, with its sizes and α per band, can be picked under "Exact type and sound data
+(optional)". Optionally something covering a share of it, and on walls doors, windows, openings and what is mounted on
+them, ticked with nothing to measure (air conditioner, speaker, display, electrical fixtures, pipes or cable tray,
+other). A material that is not listed ("Something else") is typed in and kept, with no acoustic value guessed; its name
+is sent with the report form for review in Supabase. docs/ROOM-FORM.md lists the types, their typical data, the types
+common in each room type, the fields, the calculations and the saved data.
 
 The library holds 231 materials from 30 sources (48 manufacturer test reports, 20 from published tables with a citation,
 162 from engineering compilations, 1 by definition), each with its source link, conditions and notes; a band a source
@@ -249,6 +258,46 @@ absorption (above an average coefficient of about 0.3 it reads long, so the real
 measured RT60 representing the room; A0 not exceeding the room's surface (if it does, the dimensions or the measurement
 are wrong); laboratory α on the installed product (edge effects and placement are not modelled); air absorption part of
 A0 and unchanged by treatment. Only a measurement after installation confirms the result.
+
+**Choosing products (20 October 2026).** Treatment opens on the acoustic solutions: the catalogue grouped for choosing
+(`services/solutions.js`), in three views that keep the selection throughout (screen state `ui.catalog`; the selection is
+the plan, saved with the project):
+- **Categories** (six, read from each product's own name in the source; the source has no floor products, so there is no
+  floor category): ceiling clouds, wall panels, textured and 3D panels, tiles and strips, acoustic wallpaper, polyester
+  wool and infill. Each is a collection card, as in a product catalogue: a drawing of a typical product in it, where it
+  goes (walls, ceiling or both), what it is, the finishes of its products and how many there are.
+- **Products** of a category: every product with the same range and name is one product, its thicknesses, weights and
+  sizes its versions (90 catalogue entries, 31 products). A card has an original drawing of the product in a small lit
+  room (wall products on a wall with a chair for scale; clouds and ceiling tiles in a room seen in perspective), and a
+  description put together only from its data: range, finish, thickness, number of versions, where it is applied, the
+  tested NRC. On hover the card lifts, light passes over the drawing and clouds sway (no motion with reduced motion).
+- **A product:** a catalogue header (category and range, name, where it goes, a row of facts from the data: finish,
+  thickness, tested NRC, tested ways of mounting), its drawing drawn deeper for a thicker version, its versions (a version
+  whose tests have no value in a band the room is judged in is marked and cannot be added: its effect cannot be predicted),
+  "Add to my selection", then how it is mounted and how much, with the result. "How much" has a sketch of the room that
+  fills in as the slider moves: the share of the free walls or ceiling the amount covers (the plan's other products there
+  in grey), laid out tidily, not the real positions.
+- **Your selection** above it: each product with its drawing, version and amount, Edit, Remove (with Undo), Add a product,
+  and **View results** (Predicted Result). A search finds products by name, range, thickness or weight.
+
+**Choosing treatment (automatic, 20 October 2026).** The user chooses a product; the app does the rest, with the same
+prediction and verdict (`AM.derive`):
+- **Mounting** (`recommendConfig`): of the product's tested configurations with α in every band the room is judged in,
+  the one with which the whole plan does best at the app's amounts: the fewest judged bands outside their limits, then
+  the least material (or, when some band stays outside, the average closest to the aim). Chosen when the product is
+  picked, marked "Recommended for this room"; any other can be chosen.
+- **Amounts** (`autoPlan`): the app's products are worked out together, so a mix can take the low sounds with one product
+  and the high ones with another: the fewest bands outside their limits, then the least material; within the free surface
+  where each goes (shared with the others there); whole panels. A product whose amount the user set keeps it
+  (`amountBy: 'user'`) and the app's products are worked out again around it; "Go back to the app's amount" hands it back.
+  When the room already meets the target, the app suggests none.
+- **No areas on screen.** The amount is a slider in panels ("4 panels, covering about 14 % of the walls") or, for a
+  product sold without a panel size, a share of the surface ("57 % of the ceiling"), with the app's amount marked on it.
+  The result follows as it moves: echo time now → predicted, a tag in everyday words, and what would still be wrong (low
+  sounds, voices, high sounds) and what would help. Mounting list, test data and the calculation (m², α, coverage) are
+  folded away. The Final Result and the PDF use the same words; the PDF keeps the areas, α and the calculation in its
+  last section, "Details for your acoustic consultant".
+- Results are cached for the same inputs (room, target, measured values, plan), so redrawing is instant.
 
 Isolation: the surfaces and materials never reach the measurement, and nothing in the measurement code refers to them.
 A surface change marks only Treatment, Predicted Result and Final Result for review (`W.affects` in `workflow.js`); the
@@ -404,9 +453,11 @@ above the background gave 1000 Hz +12.6 % and 4000 Hz +17.1 % as valid values. O
 10 ms before the peak, the first point within 20 dB of the peak (ISO 3382-1). A take that fails a check never replaces
 the latest good take or the current measurement.
 
-**Bands.** IEC 61260 base-2 octave bands 125, 250, 500, 1000, 2000 and 4000 Hz, edges fc/√2 and fc·√2. Each band filter is
+**Bands.** Octave bands 125, 250, 500, 1000, 2000 and 4000 Hz (nominal), centred on the exact base-10 midband frequencies
+of IEC 61260-1:2014 (fm = 1000·10^(0.3k): 125.89 … 3981.1 Hz), edges fm·10^(∓0.15). Each band filter is
 a 6th-order Butterworth high-pass at the lower edge cascaded with a 6th-order Butterworth low-pass at the upper edge
-(RBJ biquads, bilinear transform pre-warped at the edges; −3 dB at both edges, 36 dB/octave), run in double precision
+(RBJ biquads, bilinear transform pre-warped at the edges; −3 dB at both edges, about −18 dB at the neighbouring band's
+centre; the IEC 61260-1 filter class has not been verified against its Table 1), run in double precision
 and **time-reversed** so the filter's own ringing does not lengthen the decay. A band outside the sweep's range is not
 measured.
 
@@ -439,11 +490,14 @@ in that time, `CRITERIA.decay.cutoff`) has been cut off — by a noise gate or n
 system, or by a gap in the recording after the sweep. It gets no value, with that reason. Before this rule a decay cut
 off 26–30 dB down read 11–16 % short and passed as valid.
 
-**Decision** (`processing.evaluate`): T30 if ≥ 45 dB usable, else T20 if ≥ 35 dB, else no value ("Not reliable", with
-the reason): the two evaluation ranges of ISO 3382-2. The 60 dB fit is not used for RT60, because in a curved decay it
-would make the result depend on how quiet the room was during the take. A value is rejected when the decay is not
+**Decision** (`processing.evaluate`): RT60 from T20 if ≥ 35 dB is usable, else no value ("Not reliable", with the
+reason). Where ≥ 45 dB is usable, T30 is worked out as well, as a check: the curvature C = 100·(T30/T20 − 1) says whether
+the decay is one straight line. T20 is reported since 20 October 2026 (before, T30 was used from 45 dB): ISO 3382-2 gives
+the 20 dB range its preference, and switching to T30 at 45 dB made a curved decay's result depend on the background (a
+double-slope room read 0.801 s with 45.7 dB usable and 0.677 s with 44.6 dB). Projects processed before are brought over
+to the T20 each take already kept, never re-estimated. The 60 dB fit is not used for RT60 for the same reason. A value is rejected when the decay is not
 straight (ξ = 1000·(1 − r²) above 50 ‰) or too short for the band filter (bandwidth × RT60 < 4). Quality and confidence
-come only from these measured properties: Good / High for T30 with ξ ≤ 10 ‰ and |T30/T20 − 1| ≤ 10 %; Fair / Medium otherwise or when the background
+come only from these measured properties: Good / High when ξ ≤ 10 ‰ and the T30 check is within 10 % of T20; Fair / Medium otherwise (also when there is too little decay for the check) or when the background
 changed since the noise check. Browser processing reported on: no value at all (see Input). The measurement is valid when the 1000 Hz band has a value; otherwise the result is "Unable to obtain a reliable
 RT60 measurement" and nothing is estimated. A valid take becomes the CURRENT measurement and the previous one is kept as
 SUPERSEDED (`processing.history`); the later steps then run again. An invalid take is kept as `processing.attempt` and the
@@ -476,11 +530,13 @@ download prompt saves it; elsewhere it is a normal browser download. Filename:
 - **Page 1:** header (brand icon and name, generation time, project and measurement references, project status),
   key figures (measured, target, measured vs target, predicted or treatment), 1 Room, 2 Measurement (record, RT60 per
   octave band as a table and a chart, notes and warnings), 3 Target and assessment. Without a treatment plan the report
-  ends on page 1 with the summary, next steps and limitations.
-- **Page 2 (only with a treatment plan):** 4 Treatment plan (each product on its own row: name, range and variant, tested
-  configuration and certificate, amount, area and placement, and the configuration's octave-band α), 5 Predicted outcome
-  (labelled a model estimate: the predicted average, per band, chart, and the calculation written out at 1000 Hz), 6 Assumptions and limitations,
-  7 Summary and next steps.
+  then ends with the summary, next steps and limitations.
+- **Then (only with a treatment plan), in everyday words first:** 4 Your treatment (each product on its own row: name,
+  range and variant, the tested mounting and its certificate, and how much: panels, and how much of the wall or ceiling
+  they cover), 5 Predicted outcome (labelled a model estimate: echo time measured → predicted, the verdict and which sounds
+  would still be wrong, per band, chart), 6 Summary and next steps, 7 Assumptions and limitations, 8 Details for your
+  acoustic consultant (treatment areas in m² and coverage, each configuration's octave-band α and NRC, and the
+  calculation written out at the reference band, every line adding up as printed).
 
 **Accuracy.** Every value comes from `AM.derive` for the project being reported: the CURRENT valid measurement (a later
 take that failed, was not valid or is not processed yet is named, never used), the target, the assessment, and the
@@ -490,9 +546,10 @@ prediction. In the calculation, the inputs are shown as stored (volume, measured
 octave-band α to 0.01), each result is rounded half-up to 0.01 m², and the total is the sum of the parts as shown, so every printed
 line adds up. Measured values are dark, the target grey and dashed, predicted values violet, as in the app.
 
-**Length.** One page, or two with a treatment plan. If the content does not fit, the same report is set in a smaller size
-(compact, then dense) rather than shortened; nothing is dropped to make it fit. Plans of up to six products fit two pages;
-a longer plan continues on a third. Text is real, selectable text (Helvetica and Symbol, the PDF standard fonts).
+**Length.** The report aims for one page without a treatment plan and two with one. If the content does not fit, the
+same report is set in a smaller size (compact, then dense) rather than shortened; nothing is dropped to make it fit, so a
+room with several notes, or a plan of several products, continues on another page. The Final Result step does not promise
+a page count. Text is real, selectable text (Helvetica and Symbol, the PDF standard fonts).
 
 ## Report form and Supabase
 
@@ -628,11 +685,12 @@ Vercel address.
   and a take with browser processing reported on (no value). Also: a double-slope room read as ISO 3382-2 reads it, the
   same room giving the same value in a noisy and a very quiet moment, gaps of one render block and of 20 ms rejected with
   their position, no false gap in a quiet 16-bit take, and a decay cut off 26 dB down given no value.
-- `tests/multi-position.html`: the measuring positions and the verdict policy (44 checks). Part A (on load): the room
+- `tests/multi-position.html`: the measuring positions and the verdict policy (46 checks). Part A (on load): the room
   per band as the mean of the positions, worked out by hand; bands missing at some or all positions; one position equal
   to its take; valid, replaced, invalid and unusable takes through the Processing step; the two-position gate; the
-  policy for each room category; an average inside the range that does not pass a room with a band outside it; band
-  warnings; incomplete and unavailable verdicts; the PDF and the report form's record against the room; the report lock
+  policy for each room category (DIN 18041's limits at 125 Hz and 4 kHz judged, NBC's upper limit at 500 Hz, EBU's
+  mask); an average inside the range that does not pass a room with a band outside it; upper-limit targets never
+  "below"; incomplete and unavailable verdicts; the PDF and the report form's record against the room; the report lock
   (a stored receipt alone unlocks nothing; the server is asked before every download); the migration of a project
   measured at one position. Part B (one click, virtual device): the guided workflow with a background check at each
   position, an invalid take and its retry, an optional third position, and reopening the project. See
@@ -668,12 +726,14 @@ Vercel address.
   saved before the surfaces migrated by the app's own load; the report and PDF. Runs on open. 52 checks. See
   docs/ROOM-SURFACES.md.
 - `tests/room-form.html`: the Room information form, in the whole app (its own storage prefix): the nine industries and
-  their room types, "Other" everywhere and every main activity on a sourced criterion, earlier industry names moved;
+  their room types, "Other" everywhere, every activity with a criterion in the data or the reason it has none and only
+  verified ones offered, earlier industry names moved;
   every dependent choice (industry, room type, construction, finish, data, equipment kind) through the step's actions;
   walls and ceiling sections added, duplicated and removed (asked first, numbers kept); equipment ticked per wall (no
   sizes, no area taken); openings, coverings and the area free for treatment worked by hand; materials not in the
   library (no value anywhere, sent once with the report form, in the report); invalid entries; saved, reopened and
-  edited; the screen. Runs on open. 65 checks. See docs/ROOM-FORM.md.
+  edited; the everyday surface types (each one's typical library entry checked, a list per room type, sound in words
+  worked out by hand); the screen. Runs on open. 78 checks. See docs/ROOM-FORM.md.
 - `tests/rt60-responsiveness.html`: does the measured RT60 follow the room, and only the room? Part A (on load, 18
   checks) runs the production analysis and processing on known rooms: six RT60s, repeatability with a new background
   each take, a noise ladder, band slopes, insufficient decay, no reuse between takes, determinism, a wrong reference,
@@ -718,10 +778,18 @@ Vercel address.
   and a disconnected microphone. Synthetic: it checks the software, not real hardware.
 - `tests/calculations.html`: geometry and units, Sabine absorption and RT60, the treatment prediction (one and several
   products, missing data), absorption needed and area for the target, octave-band α from one-third-octave data (mean,
-  1.00 limit, missing bands), the prediction through `AM.derive`, the DIN 18041 targets (A1–A5, B4, occupancy, the ANSI
-  classroom limit) and the target classification (at the digits shown), and a prediction refused where the covered
-  finishes' library absorption exceeds what the room measured, each against values worked out by hand in the test.
-  25 checks.
+  1.00 limit, missing bands), the prediction through `AM.derive`, the targets (DIN 18041 A1–A5, NBC 2016's office
+  limit, EBU Tech 3276; occupancy never converts; outside a formula's range and without a verified criterion, none) and
+  the target classification (at the digits shown), and a prediction refused where the covered finishes' library
+  absorption exceeds what the room measured, each against values worked out by hand in the test. 35 checks.
+- `tests/target-criteria.html`: the standards-based targets, in the whole app (its own storage prefix): the register
+  complete and traceable (references, criteria, 66 room categories with stable ids and a status); every kind of
+  criterion against hand-worked values; the six checks and the record kept with the target; no target for incomplete
+  and unsupported categories (none substituted, not even another room type's); missing inputs asked for; the volume
+  limits at and beyond each boundary; what Room Setup offers; the Target step (empty without a criterion, the project's
+  own target only with its source, no made-up starting value); projects saved earlier (room kept, an unverified target
+  kept apart and not used, review flagged); the Target and Room Setup screens. Runs on open. 47 checks. See
+  docs/TARGET-CRITERIA.md.
 - `tests/virtual-room.html`: the whole application with a virtual device in a virtual room in place of the microphone and
   speaker (`tests/virtual-room.js`): getUserMedia returns the room's output; what the app plays is convolved with a
   synthetic impulse response of known RT60, with the direct sound of a speaker centimetres from the microphone, and mixed

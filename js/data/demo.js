@@ -5,29 +5,30 @@
 (function (AM) {
   'use strict';
 
-  // Octave bands analysed (IEC 61260 base-2 centre frequencies).
+  // Octave bands analysed, by their nominal frequencies (IEC 61260-1; the filters use the exact base-10 midband
+  // frequencies, AM.dsp.octaveBand).
   const BANDS = [125, 250, 500, 1000, 2000, 4000];
 
   // The band at which the measured RT60 is reported and compared with the target. Every band is measured.
   const REFERENCE_BAND = 1000;
 
-  /* Industry → room types. Room Setup offers only the types of the chosen industry, and every industry ends with
-     "Other" (the room type is then named by the user and its main activity chosen from all of them). Both are kept
-     with the project so later stages (e.g. target RT60 recommendations) can use them. Each room type's activities and
-     the criterion each follows: js/data/targets.js.
+  /* Industry → room types: every room type the app knows, so a room saved with any of them keeps it. Room Setup offers
+     only the types that have a verified RT60 criterion for at least one main activity (AM.services.target.offeredTypes),
+     and "Other" (named by the user; it gets no recommended target). Each room type's activities and the criterion each
+     follows, or why it has none: js/data/targets.js.
      legacy: the names an earlier version used for (part of) the industry; saved projects are moved to the new name. */
   const OTHER_TYPE = 'Other';
   const OTHER_INDUSTRY = 'Other / custom industry';
   const INDUSTRIES = [
-    { name: 'Corporate offices and meeting rooms', legacy: ['Corporate / Office'], types: ['Conference room', 'Meeting room', 'Boardroom', 'Private office', 'Open-plan office', 'Reception area', 'Training room'] },
-    { name: 'Education and training facilities', legacy: ['Education'], types: ['Classroom', 'Lecture hall', 'Training room', 'Library', 'Music room', 'Sports hall', 'Gymnasium'] },
-    { name: 'Recording and music studios', legacy: ['Media & Entertainment'], types: ['Recording studio', 'Control room', 'Home studio', 'Rehearsal room'] },
-    { name: 'Hospitality and restaurants', legacy: ['Hospitality'], types: ['Restaurant', 'Café', 'Bar', 'Banquet hall', 'Hotel lobby'] },
-    { name: 'Healthcare facilities', legacy: ['Healthcare'], types: ['Consultation room', 'Waiting area', 'Patient room', 'Therapy room'] },
-    { name: 'Auditoriums and performance spaces', legacy: ['Media & Entertainment', 'Public & Worship'], types: ['Auditorium', 'Cinema', 'Place of worship', 'Community hall'] },
-    { name: 'Industrial and commercial facilities', legacy: ['Public & Worship'], types: ['Exhibition hall', 'Showroom', 'Retail store', 'Workshop', 'Warehouse'] },
-    { name: 'Residential spaces', legacy: ['Residential'], types: ['Living room', 'Bedroom', 'Home theatre', 'Home studio'] },
-    { name: OTHER_INDUSTRY, legacy: ['Other'], types: [] },
+    { id: 'ind.corporate', name: 'Corporate offices and meeting rooms', legacy: ['Corporate / Office'], types: ['Conference room', 'Meeting room', 'Boardroom', 'Private office', 'Open-plan office', 'Reception area', 'Training room', 'Staff canteen'] },
+    { id: 'ind.education', name: 'Education and training facilities', legacy: ['Education'], types: ['Classroom', 'Lecture hall', 'Training room', 'Library', 'Music room', 'Sports hall', 'Gymnasium'] },
+    { id: 'ind.studios', name: 'Recording and music studios', legacy: ['Media & Entertainment'], types: ['Recording studio', 'Control room', 'Home studio', 'Rehearsal room'] },
+    { id: 'ind.hospitality', name: 'Hospitality and restaurants', legacy: ['Hospitality'], types: ['Restaurant', 'Café', 'Bar', 'Banquet hall', 'Hotel lobby'] },
+    { id: 'ind.healthcare', name: 'Healthcare facilities', legacy: ['Healthcare'], types: ['Consultation room', 'Waiting area', 'Patient room', 'Therapy room'] },
+    { id: 'ind.auditoriums', name: 'Auditoriums and performance spaces', legacy: ['Media & Entertainment', 'Public & Worship'], types: ['Auditorium', 'Cinema', 'Place of worship', 'Community hall'] },
+    { id: 'ind.industrial', name: 'Industrial and commercial facilities', legacy: ['Public & Worship'], types: ['Exhibition hall', 'Showroom', 'Retail store', 'Workshop', 'Warehouse'] },
+    { id: 'ind.residential', name: 'Residential spaces', legacy: ['Residential'], types: ['Living room', 'Bedroom', 'Home theatre', 'Home studio'] },
+    { id: 'ind.other', name: OTHER_INDUSTRY, legacy: ['Other'], types: [] },
   ].map(i => Object.assign(i, { types: [...i.types, OTHER_TYPE] }));
   // An earlier version's industry name gives the room types of every industry it became (so a room saved with it
   // still checks out until it is moved to the new name).

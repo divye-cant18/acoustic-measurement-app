@@ -18,10 +18,12 @@
      4. per octave band: time-reversed band filtering; squared response; noise floor and truncation point by Lundeby's
         iterative method (Lundeby et al. 1995); Schroeder backward integration of the squared response minus that
         noise floor, up to the truncation point, with the energy of the extrapolated (noise-free) tail added
-        (ISO 3382-2 allows combining truncation, tail correction and noise subtraction); then the four parts of the
+        (Lundeby's truncation and tail correction, as ISO 3382-1 describes, with the noise floor also subtracted, after
+        Chu; the subtraction reads near the 35/45 dB limits within about 1 % where truncation alone reads 3–6 % long,
+        measurement-chain audit, 20 October 2026); then the four parts of the
         response are told apart (below); least-squares fits of the room's decay over −5…−25 dB (T20), −5…−35 dB (T30)
         and −5…−65 dB (T60, for information only), each with r².
-   Whether T30 or T20 is used, and whether a band is reliable, is decided in services/processing.js.
+   Which fit gives the RT60 (T20, with T30 as a check), and whether a band is reliable, is decided in services/processing.js.
    A take is rejected before any band is analysed when the recording is corrupted (samples that are not numbers),
    incomplete, silent, clipped, too quiet in the RT60 bands, has no clear arrival, has a gap (a run of identical
    samples, which is how a browser fills audio it failed to deliver) during the test signal, has a click (the jump a lost
@@ -61,7 +63,7 @@
       // Steadiness is judged on the frequencies RT60 is measured in: the octave bands 125–4000 Hz, edge to edge. Below
       // them, room noise is mostly ventilation rumble, whose 125 ms levels scatter by 3–6 dB at random even when it is
       // perfectly steady, and which no RT60 band hears; judged broadband, it hid speech and flagged harmless changes.
-      band: [88.4, 5657],
+      band: [89.1, 5623],  // the edges of the 125 Hz and 4000 Hz bands (dsp.octaveBand)
       highDbfs: -30,       // a usual level (median, in the bands) this loud leaves little room below full scale for the test signal
       // Caution, never a stop: the take checks its own background (CRITERIA.take.disturbance), so these only say what
       // may cost a take. The noise study (tests/noise-study.html) found a level fluctuating ±3 dB (L10 − L90 up to
@@ -169,6 +171,7 @@
       cutoff: { before: 3, after: 5, aboveNoiseDb: 15, nearNoiseDb: 6, excessDb: 15 },
       xi: { warn: 10, fail: 50 },                  // non-linearity ξ = 1000·(1 − r²), per mille (ISO 3382-2 annex B)
       curvature: 10,       // C = 100·(T30/T20 − 1), percent (ISO 3382-2)
+      curvatureLow: 25,    // below 500 Hz a shorter T30 is put down to the device only beyond this (random scatter there)
       minBT: 4,            // bandwidth × RT60 below this the band filter limits the result (time-reversed filtering)
     },
   };

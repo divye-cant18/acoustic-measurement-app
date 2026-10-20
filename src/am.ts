@@ -13,8 +13,14 @@ export interface Room {
   name: string; industry: string; type: string; use: string; L: number | null; W: number | null; H: number | null;
   occupancy: number | null; furnishing: string; surfaces?: Record<string, Surface>; [legacy: string]: unknown;
 }
-export interface Target { preferred: number | null; min: number | null; max: number | null; source: 'recommended' | 'custom'; basis: string }
-export interface ValidTarget { preferred: number; min: number; max: number; source: string; basis: string }
+/* A target is a range (preferred, min, max) or, when its criterion gives only a maximum, an upper limit (form 'max':
+   preferred and min null). record: the criterion's source and conditions (js/services/target.js); note: where a target
+   the user entered comes from. */
+export interface Target {
+  preferred: number | null; min: number | null; max: number | null; form?: 'range' | 'max'; source: 'recommended' | 'custom'; basis: string;
+  note?: string; record?: Record<string, unknown>; earlier?: Record<string, unknown>;
+}
+export interface ValidTarget { preferred: number | null; min: number | null; max: number; form?: 'range' | 'max'; source: string; basis: string }
 export interface NoiseResult {
   status: 'valid' | 'warning' | 'unassessed' | 'invalid'; takenAt: string; leqDbfs: number; position?: string | null;
   spreadDb: number; jumpDb: number; driftDb: number; dcDbfs?: number; seconds: number; warnings: string[]; reasons: string[];
@@ -49,7 +55,7 @@ export interface Result {
 }
 export interface Project {
   id: string; kind: string; createdAt: string; updatedAt: string; lastStage: string; pinned?: boolean; followUpOf?: string;
-  legacyNote?: string; room: Room; target: Target; setup: Setup;
+  legacyNote?: string; targetNote?: string; room: Room; target: Target; setup: Setup;
   measurement: { recording: Take | null; failed: { reason: string; takenAt: string; levelDb?: number; position?: string | null } | null; retry: { reason: string | null; position?: string } | null };
   processing: { result: Result | null; attempt: { recordingId: string; takenAt: string; reason: string | null; position?: string; result?: Result } | null; history: unknown[]; positions?: Record<string, Result> };
   treatment: { items: TreatmentItemRef[]; active: string | null };
@@ -78,14 +84,14 @@ export interface UiState {
   toast: string | null; band: number; confirm: string | null; open?: Record<string, boolean>;
   // The tour of the screen (src/shell/Tour.tsx) and the Help menu on a step's top bar.
   tour?: { kind: 'home' | 'step'; i: number; at: string } | null; help?: boolean;
-  catalog: { query: string; category: string; surface: string; browsing: boolean; adding: boolean }; [k: string]: unknown;
+  catalog: { query: string; category: string; surface: string; browsing: boolean; adding: boolean; view?: 'home' | 'category' | 'product'; cat?: string | null; group?: string | null; variant?: string | null }; [k: string]: unknown;
 }
 export interface AppState { project: Project | null; projects: Project[]; current: string; ui: UiState }
 export interface Ctx { project: Project; state: AppState; store: Store; render: () => void }
 export interface Store {
   state: AppState; load(): void; subscribe(fn: (s: AppState) => void): () => void; emit(): void;
   ui(patch: Partial<UiState>): void; uiSet(path: string, v: unknown): void; update(fn: (p: Project) => void): void; set(path: string, v: unknown): void;
-  go(id: string): boolean; advance(): void; back(): void; toast(msg: string): void; history(): Project[];
+  go(id: string): boolean; advance(): void; check(p: Project | null, s: Stage): { ok: boolean; reason?: string }; back(): void; toast(msg: string): void; history(): Project[];
   startProject(kind: string): void; startFollowUp(): void; openProject(id: string): void; closeProject(): void; resetProject(): void;
   deleteProject(id: string): void; togglePin(id: string): void; autofillTo(id: string): void;
 }
@@ -103,8 +109,8 @@ export interface Average {
 }
 export interface AvailableAverage extends Average { available: true; value: number }
 export interface Geometry { L: number; W: number; H: number; V: number; floor: number; ceiling: number; walls: number; total: number }
-export interface Policy { id: string; name: string; label: string; short: string; span: string; primary: Band[]; basis: string; brief: string; interpretation: boolean; criterion: string | null; custom: boolean }
-export interface BandRow { f: Band; rt: number | null; role: 'primary' | 'secondary' | 'info'; min: number | null; max: number | null; status: Status | 'insufficient' | null; diff: number | null; n?: number; of?: number }
+export interface Policy { id: string; name: string; label: string; short: string; span: string; primary: Band[]; judged: Band[]; judgedShort: string; judgedSpan: string; basis: string; brief: string; interpretation: boolean; criterion: string | null; custom: boolean }
+export interface BandRow { f: Band; rt: number | null; role: 'primary' | 'edge' | 'secondary' | 'info'; min: number | null; max: number | null; status: Status | 'insufficient' | null; diff: number | null; n?: number; of?: number }
 export interface Verdict { available: boolean; status: Status | null; summaryStatus: Status | null; complete: boolean; missing: Band[]; failing: BandRow[]; above: BandRow[]; below: BandRow[]; warnings: BandRow[]; masked: boolean; reason: string | null }
 export interface Explanation { headline: string; tone: string; lines: string[]; warnings: string[] }
 export interface Assessment {
@@ -120,7 +126,7 @@ export interface Positions { rows: PositionRow[]; count: number; required: numbe
 export interface SoundGroup { id: 'low' | 'voices' | 'high'; label: string; example: string; icon: string; bands: Band[]; value: number | null; missing: Band[]; status: Status | 'none' | null }
 export interface Summary {
   id: string; name: string; industry: string; type: string; geometry: Geometry | null; measured: number | null; average: number | null; summary: number | null;
-  summaryLabel: string; summaryName: string; summaryShort: string; positions: number; measuredAt: string | null; target: number | null; status: Status | null;
+  summaryLabel: string; summaryName: string; summaryShort: string; positions: number; positionsRequired: number; measuredAt: string | null; target: number | null; targetText: string | null; status: Status | null; provisional: boolean;
   treatment: { items: number; predicted: number | null; predictedStatus: Status | null; required: boolean };
   done: number; total: number; next: string | null; review: number; reviewNext: string | null; pinned: boolean; updatedAt: string;
 }
@@ -144,9 +150,11 @@ export interface Derive {
   room(p: Project | null): RoomResult | null; positions(p: Project): Positions; positionOf(r: unknown): string; policy(p: Project | null): Policy;
   summaryRT60(p: Project | null): Average; averageRT60(p: Project | null): Average; midAverageRT60(p: Project | null): Average;
   noiseChange(p: Project): number | null; assessment(p: Project | null): Assessment | null; soundGroups(p: Project): SoundGroup[] | null;
-  prediction(p: Project): Prediction | null; predictionStarted(p: Project, current: string): boolean; planProblem(p: Project): string | null;
+  prediction(p: Project): Prediction | null; predictionMissing(p: Project): string | null; predictionStarted(p: Project, current: string): boolean; planProblem(p: Project): string | null;
   treatmentPlan(p: Project): { items: PlanItem[]; complete: PlanItem[]; incomplete: PlanItem[]; areaM2: number }; treatmentItems(p: Project): PlanItem[];
-  treatmentSelection(p: Project): PlanItem | null; treatmentForTarget(p: Project, item?: PlanItem): { areaM2: number; units: number | null; itemId: string; withOthers: boolean } | null;
+  treatmentSelection(p: Project): PlanItem | null; treatmentForTarget(p: Project, item?: PlanItem): { areaM2: number; units: number | null; itemId: string; withOthers: boolean; meetsBands: boolean; above: number[]; below: number[] } | null;
+  autoAmount(p: Project, item: PlanItem): { mode: string; quantity: number | null; areaM2: number; capped: boolean; availableM2: number | null; needed: boolean; goal: { areaM2: number; meetsBands: boolean; above: number[]; below: number[] } | null } | null;
+  isAutoAmount(p: Project, item: PlanItem): boolean; recommendConfig(p: Project, item: PlanItem): string | null; summaryBands(p: Project): number[];
   treatmentRequired(p: Project): boolean; noTreatment(p: Project): boolean; absorptionGap(p: Project): number | null; coverage(p: Project, placement?: string): { placement: string; label: string; surfaceM2: number; areaM2: number; fraction: number; count: number }[];
   summary(p: Project): Summary; laterTakes(p: Project): { kind: 'unprocessed' | 'invalid' | 'failed'; takenAt: string; reason: string | null }[];
   takeComparison(p: Project): { rows: TakeRow[]; spread: number | null }; diagnostics(p: Project): unknown; coveredBy(p: Project, item: PlanItem): { alpha: Record<number, number | null>; known: boolean } | null;
@@ -157,7 +165,7 @@ export interface TakeRow { status: 'current' | 'in-use' | 'superseded' | 'invali
 export interface Fmt {
   s(x: number | null | undefined, d?: number): string; signedS(x: number | null | undefined, d?: number): string; m(x: number | null | undefined): string;
   m2(x: number | null | undefined, d?: number): string; m3(x: number | null | undefined, d?: number): string; db(x: number | null | undefined, d?: number): string;
-  dbfs(x: number | null | undefined, d?: number): string; hz(f: number): string; hzShort(f: number): string; pct(x: number | null | undefined, d?: number): string;
+  dbfs(x: number | null | undefined, d?: number): string; hz(f: number): string; hzShort(f: number): string; list(xs: string[]): string; hzList(fs: number[]): string; pct(x: number | null | undefined, d?: number): string;
   dims(r: { L: number | null; W: number | null; H: number | null } | null): string; ago(iso: string): string; when(iso: string): string;
 }
 export interface Util { esc(s: unknown): string; isNum(x: unknown): x is number; num(v: unknown): number | null; int(v: unknown): number | null; clamp(x: number, a: number, b: number): number; trimNum(x: unknown, d?: number): string; fmt: Fmt; ICONS: Record<string, string>; icon(name: string, size?: number, sw?: number): string; getPath(o: unknown, path: string): unknown }

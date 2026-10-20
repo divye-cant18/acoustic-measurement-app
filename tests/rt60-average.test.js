@@ -195,7 +195,9 @@
     const mid = r => [500, 1000, 2000].map(f => r.bands.find(b => b.f === f).rt60).reduce((s, x) => s + x, 0) / 3;
     // Room A: 125 and 250 Hz long and 1000 Hz short, so its six-band average differs clearly from its 1000 Hz value and
     // from its 500–2000 Hz mean.
-    const roomA = [0.62, 0.58, 0.60, 0.45, 0.56, 0.40], roomB = [1.1, 1.0, 0.95, 0.9, 0.85, 0.8];
+    // Room A's 4 kHz band is 0.36 s: with 0.40 s its six-band T20 average came out exactly equal to its 500–2000 Hz mean
+    // (0.5600 s), and this test is about telling those apart.
+    const roomA = [0.62, 0.58, 0.60, 0.45, 0.56, 0.36], roomB = [1.1, 1.0, 0.95, 0.9, 0.85, 0.8];
     const takeA = take('avg-take-a', '2026-10-13T09:00:00.000Z', roomA, 21);
     const resA = PROC.evaluate(takeA, {});
 
@@ -208,7 +210,7 @@
     const PRIM = [250, 500, 1000, 2000], bv = (r, f) => r.bands.find(b => b.f === f).rt60;
     const smOf = r => PRIM.reduce((x, f) => x + bv(r, f), 0) / PRIM.length, smA = smOf(resA), topA = Math.max(...PRIM.map(f => bv(resA, f)));
     const r2 = x => Math.round(x * 100) / 100;
-    // A target whose range holds the average over the judged bands but not the longest of them (500 Hz in room A): the
+    // A target whose range holds the average over the judged bands but not the longest of them (in room A): the
     // verdict must fail the room even though the average passes. 1000 Hz alone would pass too.
     const tgt = { preferred: r2(smA - 0.02), min: r2(smA - 0.15), max: r2((smA + topA) / 2) };
     // A target every judged band meets: no treatment needed (Final Result without a treatment plan).
@@ -222,7 +224,7 @@
     S.state.current = 'results';
     S.emit();
     const ctx = () => ({ project: S.state.project, state: S.state });
-    check('Take A (room 0.62 … 0.40 s) is valid through the production analysis, with all six bands, and a six-band average that differs from its 1000 Hz value, from its 500–2000 Hz mean and from its 250 Hz–2 kHz mean; the room is judged in 250 Hz–2 kHz (DIN 18041 group A)',
+    check('Take A (room 0.62 … 0.36 s) is valid through the production analysis, with all six bands, and a six-band average that differs from its 1000 Hz value, from its 500–2000 Hz mean and from its 250 Hz–2 kHz mean; the room is judged in 250 Hz–2 kHz (DIN 18041 group A)',
       resA.valid && resA.bands.every(b => RA.eligible(b)) && Math.abs(avgA - r1k) > 0.005 && Math.abs(avgA - mid(resA)) > 0.003 && Math.abs(avgA - smA) > 0.003
         && D.policy(p).id === 'din-a' && json(D.policy(p).primary) === json(PRIM),
       `bands ${resA.bands.map(b => `${b.f}: ${b.rt60}`).join(', ')}; 1000 Hz ${r1k} s; average ${avgA.toFixed(4)} s; 500–2000 Hz ${mid(resA).toFixed(4)} s; 250 Hz–2 kHz ${smA.toFixed(4)} s; policy ${D.policy(p).label}`);
@@ -346,18 +348,21 @@
       const above = PRIM.filter(f => A.classify(bv(resA, f), p.target) === 'above');
       check('9 The verdict is decided band by band: the average over 250 Hz–2 kHz is inside the range, but a judged band (worked out here) is above it, so the room does not meet the target ("masked"); the 1000 Hz value alone would pass too',
         a.available && a.rt === smA && a.summaryStatus === 'within' && a.status === 'above' && a.verdict.masked && above.length > 0 && json(a.verdict.above.map(r => r.f)) === json(above)
-          && A.classify(r1k, p.target) === 'within' && a.ref.f === 1000 && a.ref.rt === r1k && /Does not meet the target/.test(a.explanation.headline) && /every band has to be/.test(a.explanation.lines.join(' ')),
+          && A.classify(r1k, p.target) === 'within' && a.ref.f === 1000 && a.ref.rt === r1k && /Does not meet the target/.test(a.explanation.headline) && /every judged band has to be/.test(a.explanation.lines.join(' ')),
         `average ${a.rt.toFixed(4)} s → ${a.summaryStatus}; above its range: ${a.verdict.above.map(r => `${r.f} Hz ${r.rt}`).join(', ')} → verdict ${a.status}; 1000 Hz ${r1k} s alone ${A.classify(r1k, p.target)}`);
-      check('9 The assessment\'s band table compares each band\'s own RT60, with its own limits and role (judged 250–2000 Hz; own limit at 125 Hz and 4 kHz)',
-        json(a.bands.map(b => b.rt)) === json(resA.bands.map(b => b.rt60)) && json(a.bands.map(b => b.role)) === json(['secondary', 'primary', 'primary', 'primary', 'primary', 'secondary'])
-          && a.bands.filter(b => b.role === 'primary').every(b => b.min === p.target.min && b.max === p.target.max) && a.bands.find(b => b.f === 125).max === r2(p.target.max * 1.4 / 1.2),
+      // Changed 2026-10-19: DIN 18041 judges 125 Hz and 4 kHz too, against their own limits (0.65–1.45 × and 0.65–1.2 × T_soll,
+      // BNB 3.1.4), applied to the target range's edges: 125 Hz min × 0.65/0.8 to max × 1.45/1.2; 4 kHz min × 0.65/0.8 to max.
+      check('9 The assessment\'s band table compares each band\'s own RT60, with its own limits and role (250–2000 Hz the target range; 125 Hz and 4 kHz the standard\'s own limits, also judged)',
+        json(a.bands.map(b => b.rt)) === json(resA.bands.map(b => b.rt60)) && json(a.bands.map(b => b.role)) === json(['edge', 'primary', 'primary', 'primary', 'primary', 'edge'])
+          && a.bands.filter(b => b.role === 'primary').every(b => b.min === p.target.min && b.max === p.target.max) && a.bands.find(b => b.f === 125).max === r2(p.target.max * 1.45 / 1.2)
+          && a.bands.find(b => b.f === 125).min === r2(p.target.min * 0.65 / 0.8) && a.bands.find(b => b.f === 4000).max === r2(p.target.max),
         a.bands.map(b => `${b.f}: ${b.rt} ${b.role} ${b.min}–${b.max} ${b.status}`).join(', '));
       check('9 Treatment is needed when the verdict is "above", and the absorption needed is worked out from the 250 Hz–2 kHz average: 0.161 V ÷ target − 0.161 V ÷ average',
         D.treatmentRequired(p) === true && close(D.absorptionGap(p), Math.max(0, A.absorptionFromRT(V, tgt.preferred) - A.absorptionFromRT(V, smA)), 1e-9),
         `required ${D.treatmentRequired(p)}; needed ${D.absorptionGap(p).toFixed(3)} m²`);
       const ah = textOf(W.get('assessment').view(ctx()).body);
-      check('9 Assessment shows the verdict apart from the average: "Does not meet the target" with the bands above, the average with its own status, and how the verdict is decided (DIN 18041, 250 Hz–2 kHz)',
-        /VerdictDoes not meet the target/.test(ah) && /Result against the target/.test(ah) && /Too much echo at/.test(ah) && /DIN 18041:2016, group A/.test(ah) && /average alone does not pass the room/.test(ah) && !bad(ah),
+      check('9 Assessment shows the verdict apart from the average: "Does not meet the target" with the bands above, the average with its own status, and how the verdict is decided (DIN 18041, every band 125 Hz–4 kHz)',
+        /VerdictDoes not meet the target/.test(ah) && /Result against the target/.test(ah) && /Too much echo at/.test(ah) && /DIN 18041:2016, use types A1–A4/.test(ah) && /average alone does not pass the room/.test(ah) && !bad(ah),
         ah.slice(ah.indexOf('Result against the target'), ah.indexOf('Result against the target') + 220));
 
       S.set('treatment', { items: [{ id: 't1', productId: product.id, configurationId: cfg.id, size: String(sizeIndex), quantity: 6, placement: 'Walls' }], active: 't1' });
@@ -435,15 +440,16 @@
     status('A band left out…');
     {
       // 125 Hz without a value: the take stays valid (1000 Hz decides that); the all-band average is of the other five
-      // bands, summed here; the judged bands are all there, so the verdict, the prediction and the amount are unchanged.
+      // bands, summed here; the 250 Hz–2 kHz average, the prediction and the amount are unchanged. 125 Hz is a judged band
+      // (DIN 18041 sets its limits), so the verdict says it could not be confirmed there.
       const gap = copy(resA);
       Object.assign(gap.bands.find(b => b.f === 125), { rt60: null, t30: null, t20: null, path: null, quality: 'Insufficient', reason: NR });
       p.processing.result = gap;
       S.set('treatment', { items: [{ id: 't1', productId: product.id, configurationId: cfg.id, size: String(sizeIndex), quantity: 6, placement: 'Walls' }], active: 't1' });
       const five = [250, 500, 1000, 2000, 4000], avg5 = five.reduce((s2, f) => s2 + gap.bands.find(b => b.f === f).rt60, 0) / 5;
       const a = D.assessment(p), avg = D.averageRT60(p);
-      check('12 125 Hz without a value: the take is still valid, the all-band average is that of the other five bands (summed here), 125 Hz named as left out; the judged 250 Hz–2 kHz average and the verdict are complete and unchanged',
-        D.measured(p) && avg.available && avg.partial && close(avg.value, avg5, 1e-12) && json(avg.missing.map(x => x.f)) === json([125]) && a.available && a.rt === smA && a.verdict.complete && a.status === 'above',
+      check('12 125 Hz without a value: the take is still valid, the all-band average is that of the other five bands (summed here), 125 Hz named as left out; the 250 Hz–2 kHz average and the verdict are unchanged, and the verdict names 125 Hz as not measured',
+        D.measured(p) && avg.available && avg.partial && close(avg.value, avg5, 1e-12) && json(avg.missing.map(x => x.f)) === json([125]) && a.available && a.rt === smA && !a.verdict.complete && json(a.verdict.missing) === json([125]) && a.status === 'above',
         `${avg.value && avg.value.toFixed(4)} s over ${RA.describe(avg)}; 250 Hz–2 kHz ${a.rt && a.rt.toFixed(4)} s, verdict ${a.status}`);
       const gg = D.soundGroups(p), low = gg && gg.find(x => x.id === 'low'), rtx = textOf(W.get('results').view(ctx()).body);
       check('12 The plain view says it simply: low sounds from 250 Hz alone with "Lowest sounds not measured", and "The lowest sounds could not be measured" with what to do',

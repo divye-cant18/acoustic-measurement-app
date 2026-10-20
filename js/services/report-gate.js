@@ -94,6 +94,7 @@
       projectName: cut(p.room.name, PF.projectName.maxLength),
       roomType: cut(p.room.type === AM.demo.OTHER_TYPE && (p.room.typeOther || '').trim() ? `Other: ${p.room.typeOther.trim()}` : p.room.type, PF.roomType.maxLength),
       roomVolumeM3: g ? r('roomVolumeM3', g.V) : null,
+      // The preferred target; an upper-limit target (form 'max') has none, so it is sent as null, never as the limit.
       targetRt60: t ? r('targetRt60', t.preferred) : null,
       measuredRt60: m ? r('measuredRt60', m.headline.rt60) : null,               // at 1000 Hz, the reference band, over the positions
       measuredRt60Avg: avg && avg.available ? r('measuredRt60Avg', avg.value) : null, // average of the bands measured: the room's RT60
@@ -354,11 +355,19 @@
   document.addEventListener('change', e => onEdit(e, false));
   document.addEventListener('focusout', e => onEdit(e, true));
   // Enter in a field sends the form through the same action as the button (never a page submit).
+  // The form has several text fields and its button sits outside it, so browsers do not submit it on Enter by themselves:
+  // Enter in a one-line field is handled here (not in the comments box, where it starts a new line).
+  const pressSubmit = () => { const b = document.getElementById('rf-submit'); if (b && !b.disabled) b.click(); };
   document.addEventListener('submit', e => {
     if (!e.target || e.target.id !== 'report-form') return;
     e.preventDefault();
-    const b = document.getElementById('rf-submit');
-    if (b && !b.disabled) b.click();
+    pressSubmit();
+  });
+  document.addEventListener('keydown', e => {
+    const el = e.target;
+    if (e.key !== 'Enter' || e.isComposing || !el || el.tagName !== 'INPUT' || el.type === 'checkbox' || !el.closest || !el.closest('#report-form')) return;
+    e.preventDefault();
+    pressSubmit();
   });
 
   // The browser's own Print on Final Result prints a notice until the report is unlocked.

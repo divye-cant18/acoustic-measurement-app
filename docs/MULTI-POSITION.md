@@ -41,7 +41,7 @@ Clauses 6–9 and the annexes were not available. Where this table relies on the
 | Sound source: as omnidirectional as possible; no directivity requirement for the survey and engineering methods (4.2.1) | The device's own speaker | **Met for survey and engineering** (no requirement). Its directivity is not known |
 | Omnidirectional microphones shall be used (4.2.2) | The device's own microphone; directivity unknown, varies by device | **Not validated** |
 | Octave bands; survey frequency range at least 250 Hz–2 kHz, engineering 125 Hz–4 kHz (5.1) | Octaves 125–4000 Hz; a band a device cannot measure is left out and named | **Met when the device covers the range.** Phones often lose 125 Hz |
-| Decay range: 35 dB above background for T20, 45 dB for T30 (5.2.1; the integrated impulse response method has the same requirement) | Usable decay ≥ 35 dB (T20) or ≥ 45 dB (T30), counted from the start of the room's decay below the direct sound | **Met** |
+| Decay range: 35 dB above background for T20, 45 dB for T30 (5.2.1, written for interrupted noise; ISO 3382-1 4.2.1 asks the same of the impulse response method) | Usable decay ≥ 35 dB (T20) or ≥ 45 dB (T30), counted from the start of the room's decay below the direct sound | **Met** |
 | Evaluation: T20 / T30 by least squares; non-linearity ξ and curvature C (Annex B) | Least squares over −5…−25 and −5…−35 dB. ξ ≤ 10 ‰ is good; a band above 50 ‰ gets no value; C above ±10 % gives a note | **Met.** Annex B's values come from secondary sources |
 | Integrated impulse response: noise handling (truncation, compensation) | Lundeby truncation, tail compensation and noise subtraction | **Met** (as the standard allows; clause text not read) |
 | Measurement uncertainty (Annex A) | Not stated (section 4) | **Not met.** Deliberately left out: the inputs are not established |
@@ -96,7 +96,8 @@ On 2026.10.16 that changed:
 - **The average over those bands** is the summary figure shown beside the verdict. It never decides alone: if a primary
   band is outside the range, the room does not meet the target even when the average is inside ("masked").
 - **Bands with their own wider limits** in the criterion give band warnings. These are shown separately and do not
-  change the verdict.
+  change the verdict. *(Changed 2026-10-19: DIN 18041's 125 Hz and 4 kHz limits are now judged, as the standard
+  requires; see the table below and docs/TARGET-CRITERIA.md. No verified criterion uses warning-only bands now.)*
 - **A primary band that could not be measured** makes the verdict "Meets the target where measured" (incomplete). It is
   never a full pass.
 - **The treatment amount and the prediction** aim at the same bands. The predicted result is judged by the same rule.
@@ -108,7 +109,7 @@ On 2026.10.16 that changed:
 
 **No.** The app's criterion for meeting and conference rooms is DIN 18041:2016:
 - group A3, "Unterricht/Kommunikation";
-- group A4 for hybrid meetings, applied as an interpretation.
+- group A4 for video calls and hybrid meetings (the standard names the video-conference room as an A4 example).
 
 DIN 18041 sets the target at the mid frequencies, and requires the reverberation time to stay within ±20 % of it in
 every octave band from **250 Hz to 2 kHz**, with wider limits at 125 Hz and 4 kHz. A 500–2000 Hz average would leave out
@@ -122,20 +123,20 @@ Sources:
 
 ### The policies
 
-| Criterion (room uses) | Judged bands (primary) | Own limits (band warnings) | Basis |
-|---|---|---|---|
-| DIN 18041 group A: meeting, conference and board rooms, classrooms, lecture rooms, music, sport, worship | 250, 500, 1000, 2000 Hz within the target range | 125 Hz: 0.75 × min to 1.4/1.2 × max; 4 kHz: 0.75 × min to max | DIN 18041:2016 group A. The 125 Hz and 4 kHz limits are a reading of Ruhe's text, "at 125 Hz up to a further 20 % longer or shorter, at 4 kHz up to a further 20 % shorter": 0.6–1.4 × T and 0.6–1.2 × T against 0.8–1.2 × T in 250 Hz–2 kHz. The standard's figure (Bild 2) was not available to check them; they only raise warnings |
-| DIN 18041 group B: offices, dining, waiting areas, libraries | 250–2000 Hz | none (DIN sets nothing there; shown without a limit) | DIN 18041 group B: the A/V recommendation applies 250 Hz–2 kHz |
-| EBU Tech 3276: listening, mixing, home cinema | 250–4000 Hz | none (125 Hz is below the criterion's range: no limit) | Tm and its tolerance apply to 200 Hz–4 kHz |
-| A single reference value: dwellings (ISO 16283-1, 0.5 s) | 500–2000 Hz | none | An interpretation: the reference names no bands. Said wherever it is shown |
-| No criterion yet (room type or use not set) | 500–2000 Hz | none | An interpretation |
-| A custom target | the bands of the room's criterion | as for that criterion, scaled on the custom range | The custom range replaces the recommended one |
+Since 2026-10-19 (standards-based targets, docs/TARGET-CRITERIA.md):
 
-- **Classrooms** keep the ANSI/ASA S12.60 limit (0.6 s up to 283 m³, 0.7 s up to 566 m³). The target maximum is
-  narrowed to it, and its bands (500, 1000 and 2000 Hz) are among the judged bands, so each is checked.
+| Criterion (room uses) | Judged against the target range (the summary bands) | Judged against their own limits | Basis |
+|---|---|---|---|
+| DIN 18041 A1–A4: meeting, conference and board rooms, classrooms, lecture rooms, music rooms, training rooms | 250, 500, 1000, 2000 Hz | 125 Hz: 0.65–1.45 × T_soll; 4 kHz: 0.65–1.2 × T_soll (applied to the range edges: × 0.65/0.8 and × 1.45/1.2 or 1.2/1.2) | DIN 18041:2016 tolerance band, every octave band 125 Hz–4 kHz (BNB 3.1.4; Nocke 2016) |
+| DIN 18041 A5: sports halls | 250–2000 Hz | none (125 Hz and 4 kHz shown without a limit) | DIN 18041:2016, A5 tolerance 250 Hz–2 kHz only |
+| NBC 2016: offices and canteens (an upper limit) | 500 Hz, at most the limit | none (the other bands shown without a limit) | NBC 2016 Part 8 Sec. 4, cl. 8.3.2.1: all times at 500 Hz |
+| EBU Tech 3276: listening and control rooms | 250–4000 Hz, the room's measured Tm ± 0.05 s; the measured Tm itself strictly between 0.2 and 0.4 s | 125 Hz: measured Tm − 0.05 to + 0.15 s | §2.3 and the tolerance mask (Fig. 1, drawn as T − Tm), at each octave's centre frequency |
+| No verified criterion (the project's own target, entered by the user) | 500–2000 Hz | none | The app's convention, said wherever it is shown |
+| A custom target | the bands of the room's criterion | as for that criterion, on the custom range | The custom range replaces the recommended one |
+
+- **Group B rooms, homes, cinemas and places of worship** have no recommended target (docs/TARGET-CRITERIA.md); the ANSI
+  classroom limit and the occupancy conversion were removed (unverified or superseded).
 - **Thresholds** are compared at 0.01 s, the precision shown (`AM.acoustics.classify`).
-- **The occupancy conversion** (DIN 18041 sets the target for the occupied room) is unchanged. The same band factors
-  are applied to the converted range. People's absorption is known only at 1 kHz, as before.
 
 ### In plain words (for sales representatives)
 

@@ -365,6 +365,8 @@ svg.i{display:inline-block;flex:none;vertical-align:middle}
 .btn-primary,.btn-accent{background:var(--action);color:var(--on-action);box-shadow:0 1px 2px rgba(181,50,27,.22)}
 .btn-secondary{background:var(--raised);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line),0 1px 1px rgba(15,22,24,.03)}
 .btn-ghost{color:var(--ink-2)}
+/* A button whose label is a sentence (the amount for the target): it wraps instead of widening its card. */
+.btn.btn-wrap{white-space:normal;height:auto;text-align:left;max-width:100%}
 .btn-danger{background:var(--critical);color:var(--on-critical)}
 .btn-sm{min-height:32px;padding:5px 12px;font-size:13px;border-radius:8px;gap:6px}
 .btn-lg{min-height:48px;padding:12px 22px;font-size:15.5px;border-radius:12px}
@@ -761,6 +763,20 @@ details.surf>.surf-h .surf-area{flex:none;white-space:nowrap;padding-left:8px}
 .surf-acoustic-h .field-l{margin:0}
 .surf-acoustic-h .input{flex:1 1 200px;max-width:320px;margin-left:auto}
 .surf-nodata{margin:0}
+/* What a surface is, in everyday words: buttons, the common ones first; then how much sound it absorbs, in words */
+.type-pick{display:flex;flex-direction:column;gap:6px}
+.type-pick-l{font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.type-pick .chip{padding:7px 12px;font-size:13px}
+.surf-hint{margin:-2px 0 0}
+.surf-sound{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--r);background:var(--well);border:1px solid var(--line-soft);font-size:13px}
+.surf-sound-none{margin:0}
+.sound-meter{display:inline-flex;gap:3px;flex:none}
+.sound-meter i{width:14px;height:8px;border-radius:2px;background:var(--line)}
+.sound-meter i.on{background:var(--brand)}
+.surf-exact{border-top:1px solid var(--line-soft);padding-top:6px}
+.surf-exact > summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--ink-2);padding:4px 0}
+.surf-exact[open] > summary{margin-bottom:6px}
+.surf-exact > .input{max-width:320px;margin:4px 0 8px}
 .input-sm{height:34px;padding:6px 10px;font-size:13px}
 .select-sm{height:32px;padding:4px 30px 4px 10px;font-size:13px;width:auto}
 .surf-adds{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
@@ -788,6 +804,20 @@ details.surf>.surf-h .surf-area{flex:none;white-space:nowrap;padding-left:8px}
 .target-row{display:flex;gap:16px 24px;flex-wrap:wrap;align-items:flex-end}
 .target-row .field{flex:0 0 auto}
 .rec-sources{margin:0 0 4px;padding-left:20px;display:grid;gap:6px;font-size:12.5px;color:var(--muted);list-style:disc}
+/* The recommendation's source and workings, its notes, and the six checks made before a target is generated (Target step) */
+.rec-workings{margin:0 0 8px;display:grid;gap:10px}
+.rec-workings > div{display:grid;gap:2px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.rec-workings > div:last-child{border-bottom:0;padding-bottom:0}
+.rec-workings dt{font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.rec-workings dd{margin:0;font-size:13px;line-height:1.5}
+.rec-notes{margin:0;padding-left:20px;display:grid;gap:6px;color:var(--muted);list-style:disc}
+.tgt-checks{margin:8px 0 2px;padding:0;display:grid;gap:8px;list-style:none;font-size:13px}
+.tgt-checks li{display:flex;gap:8px;align-items:flex-start}
+.tgt-checks li > .i{flex:none;margin-top:2px}
+.tgt-checks li.is-ok > .i{color:var(--good)}
+.tgt-checks li.is-fail > .i{color:var(--critical)}
+.tgt-checks li.is-skip{color:var(--muted)}
+.tgt-checks li.is-skip > .i{color:var(--faint)}
 
 /* ---------- measurement setup ---------- */
 .status-line{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600}
@@ -1118,6 +1148,158 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
 .undo-bar span{flex:1 1 220px}
 .undo-bar .i{color:var(--muted)}
 .selected-product{display:flex;flex-direction:column;gap:2px;font-size:13px;color:var(--muted)}
+/* Automatic treatment: what the app chose and what it does, first; the controls and the calculation fold away. */
+.stack-sm{display:flex;flex-direction:column;gap:12px;margin-top:10px}
+.auto-amount{display:flex;flex-direction:column;gap:10px}
+.auto-use{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
+.auto-use .small{flex-basis:100%}
+.auto-use b{font-size:16px}
+.auto-result{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;padding:12px 14px;border-radius:var(--r);background:var(--predicted-tint);border:1px dashed color-mix(in srgb,var(--predicted) 45%,transparent)}
+.auto-result .small{flex-basis:100%}
+.auto-rt{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-num);font-size:18px}
+.auto-say{display:flex;gap:8px;align-items:flex-start;margin:0;font-size:14px;line-height:1.5}
+.auto-say.is-good{color:var(--good)}
+.auto-say svg{flex:none;margin-top:2px}
+.auto-mount{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
+.auto-mount .small{flex-basis:100%}
+.cfg-rec{display:inline-block;margin-left:8px;padding:1px 7px;border-radius:999px;font-size:11.5px;font-weight:600;color:var(--good);background:var(--good-tint)}
+.plan-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid var(--line-soft)}
+.plan-list li{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line-soft)}
+.plan-list li.is-active{background:var(--raised)}
+.plan-what{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.plan-act{display:inline-flex;align-items:center;gap:4px;flex:none}
+/* ---------- acoustic solutions (Treatment): categories → products → a product ----------
+   Laid out like a product catalogue: each product drawn in a small lit room (src/ui/solutions.tsx, colours --sc-*),
+   a bold name, then the facts from the data. The brand colour marks small labels, what is chosen and the main action.
+   Motion only on hover: the card lifts, light passes over the drawing, clouds sway (none with reduced motion). */
+:root{
+  --sc-wall-hi:#F7F8F7; --sc-wall-lo:#E3E7E5; --sc-ceil-hi:#F2F4F3; --sc-ceil-lo:#DFE4E2; --sc-side:#EAEDEC; --sc-side-2:#DCE1DF;
+  --sc-floor-hi:#DCD6CC; --sc-floor-lo:#C9C2B6; --sc-line:rgba(17,22,24,.16); --sc-light:rgba(255,255,255,.6); --sc-shadow:rgba(17,22,24,.24);
+  --sc-face-lit:#E4F0ED; --sc-face:#CBE1DC; --sc-face-2:#B3D2CB; --sc-edge:#8BB7AF; --sc-groove:#5D8F88;
+  --sc-hi:rgba(255,255,255,.6); --sc-hi-2:rgba(255,255,255,.22); --sc-lo:rgba(16,44,40,.09); --sc-lo-2:rgba(16,44,40,.2);
+  --sc-prop:#BFB9B0; --sc-prop-hi:#D6D1C9; --sc-prop-2:#A69F95; --sc-wire:rgba(17,22,24,.4);
+  --sc-target:rgba(226,70,46,.06); --sc-other:#CDD2D3; --sc-sheen:.5;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --sc-wall-hi:#283031; --sc-wall-lo:#1E2526; --sc-ceil-hi:#252C2D; --sc-ceil-lo:#1B2122; --sc-side:#202728; --sc-side-2:#1A2021;
+    --sc-floor-hi:#2C2925; --sc-floor-lo:#221F1C; --sc-line:rgba(255,255,255,.09); --sc-light:rgba(255,255,255,.06); --sc-shadow:rgba(0,0,0,.5);
+    --sc-face-lit:#3D6A65; --sc-face:#305955; --sc-face-2:#294C49; --sc-edge:#1E3A37; --sc-groove:#152927;
+    --sc-hi:rgba(255,255,255,.14); --sc-hi-2:rgba(255,255,255,.06); --sc-lo:rgba(0,0,0,.18); --sc-lo-2:rgba(0,0,0,.32);
+    --sc-prop:#3E3C38; --sc-prop-hi:#4C4A45; --sc-prop-2:#32302D; --sc-wire:rgba(255,255,255,.28);
+    --sc-target:rgba(255,106,82,.08); --sc-other:#3A4244; --sc-sheen:.12;
+  }
+}
+:root[data-theme="dark"]{
+  --sc-wall-hi:#283031; --sc-wall-lo:#1E2526; --sc-ceil-hi:#252C2D; --sc-ceil-lo:#1B2122; --sc-side:#202728; --sc-side-2:#1A2021;
+  --sc-floor-hi:#2C2925; --sc-floor-lo:#221F1C; --sc-line:rgba(255,255,255,.09); --sc-light:rgba(255,255,255,.06); --sc-shadow:rgba(0,0,0,.5);
+  --sc-face-lit:#3D6A65; --sc-face:#305955; --sc-face-2:#294C49; --sc-edge:#1E3A37; --sc-groove:#152927;
+  --sc-hi:rgba(255,255,255,.14); --sc-hi-2:rgba(255,255,255,.06); --sc-lo:rgba(0,0,0,.18); --sc-lo-2:rgba(0,0,0,.32);
+  --sc-prop:#3E3C38; --sc-prop-hi:#4C4A45; --sc-prop-2:#32302D; --sc-wire:rgba(255,255,255,.28);
+  --sc-target:rgba(255,106,82,.08); --sc-other:#3A4244; --sc-sheen:.12;
+}
+.sol{display:flex;flex-direction:column;gap:16px;scroll-margin-top:16px}
+.sol-top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 16px}
+.sol-crumbs{display:flex;align-items:center;flex-wrap:wrap;gap:4px;font-size:14px;color:var(--muted)}
+.sol-crumbs button{display:inline-flex;align-items:center;gap:2px;color:var(--ink-2);font-weight:500;padding:4px 6px;margin:-4px -2px;border-radius:6px}
+.sol-crumbs button:hover{background:var(--hover);color:var(--ink)}
+.sol-crumbs [aria-current]{color:var(--ink);font-weight:600}
+.sol-search{max-width:520px}
+/* the drawings */
+.sol-art{display:block;width:100%;height:auto;aspect-ratio:16/10;transition:transform .6s var(--ease)}
+.sc-sheen{opacity:0}
+.sc-cloud{--sway:2.8s;transform-box:fill-box;transform-origin:50% 0}
+.sc-cloud:nth-of-type(2n){--sway:3.5s}
+.sc-cloud:nth-of-type(3n){--sway:2.3s}
+:is(.sol-col,.sol-card):hover .sc-sheen,.sol-stage:hover .sc-sheen{animation:scsheen 1.3s var(--ease) both}
+:is(.sol-col,.sol-card):hover .sc-cloud,.sol-stage:hover .sc-cloud{animation:scsway var(--sway) ease-in-out infinite}
+@keyframes scsheen{0%{opacity:0;transform:translateX(0)}25%{opacity:1}100%{opacity:0;transform:translateX(230px)}}
+@keyframes scsway{0%,100%{transform:rotate(-1.3deg)}50%{transform:rotate(1.3deg)}}
+/* collections (categories) and products: a picture, a bold name, the facts, "View" */
+.sol-cats{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.sol-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+.sol-col,.sol-card{position:relative;width:100%;height:100%;display:flex;flex-direction:column;text-align:left;border-radius:var(--r);overflow:hidden;background:var(--raised);box-shadow:inset 0 0 0 1px var(--line);transition:box-shadow var(--t-med) var(--ease),transform var(--t-med) var(--ease)}
+.sol-col:hover,.sol-card:hover{transform:translateY(-3px);box-shadow:inset 0 0 0 1px var(--faint),var(--sh-h)}
+.sol-card.is-chosen{box-shadow:inset 0 0 0 2px var(--brand)}
+.sol-card.is-chosen:hover{box-shadow:inset 0 0 0 2px var(--brand),var(--sh-h)}
+.sol-pic{position:relative;display:block;overflow:hidden;background:var(--well);border-bottom:1px solid var(--line-soft)}
+:is(.sol-col,.sol-card):hover .sol-pic .sol-art{transform:scale(1.045)}
+.sol-col-where{position:absolute;right:8px;top:8px;padding:3px 10px;border-radius:999px;background:var(--surface);box-shadow:var(--sh-2);font-size:11.5px;font-weight:600;color:var(--ink-2)}
+.sol-col-body,.sol-body{display:flex;flex-direction:column;gap:4px;padding:12px 14px 14px;flex:1;min-width:0}
+.sol-col-name{font-size:16px;font-weight:700;letter-spacing:-.01em;line-height:1.25}
+.sol-col-sub{font-size:13px;color:var(--muted);line-height:1.4}
+.sol-col-fin{font-size:12.5px;color:var(--ink-2)}
+.sol-col-foot{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 10px;margin-top:auto;padding-top:10px;font-size:12.5px;color:var(--muted)}
+.sol-go{display:inline-flex;align-items:center;gap:4px;font-weight:600;color:var(--brand-ink)}
+.sol-go .i{transition:transform var(--t-med) var(--ease)}
+:is(.sol-col,.sol-card):hover .sol-go .i{transform:translateX(3px)}
+.sol-cat-c{font-weight:600;color:var(--brand-ink)}
+.sol-head{display:flex;align-items:center;gap:14px}
+.sol-mini.is-head{width:84px;border-radius:8px}
+.sol-title{margin:0;font-size:18px;font-weight:600;letter-spacing:-.01em}
+.sol-name{font-size:15px;font-weight:700;line-height:1.3;letter-spacing:-.005em}
+.sol-meta{margin:0;font-size:12.5px;color:var(--muted);line-height:1.4}
+.sol-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px}
+.sol-chosen{position:absolute;top:8px;left:8px;z-index:1;display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--brand);color:var(--on-action)}
+/* one product: the drawing beside a catalogue header (eyebrow, name, where it goes, a row of facts) */
+.sol-product{display:flex;flex-direction:column;gap:18px}
+.sol-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:24px;align-items:start}
+.sol-stage{margin:0;display:flex;flex-direction:column;gap:6px;min-width:0}
+.sol-stage .sol-art{border-radius:var(--r);background:var(--well);box-shadow:0 0 0 1px var(--line-soft)}
+.sol-stage figcaption{font-size:12px;color:var(--muted)}
+.sol-hero-t{display:flex;flex-direction:column;gap:12px;min-width:0}
+.sol-eyebrow{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--brand-ink)}
+.sol-eyebrow .sol-chosen{position:static;letter-spacing:0;text-transform:none}
+.sol-title.is-big{font-size:24px;font-weight:700;line-height:1.15;letter-spacing:-.015em;overflow-wrap:anywhere}
+.sol-title-2{display:block;margin-top:5px;font-size:15px;font-weight:500;letter-spacing:0;color:var(--muted)}
+.sol-specs{display:flex;flex-wrap:wrap;gap:10px 28px;margin:0;padding:11px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.sol-specs>div{min-width:0}
+.sol-specs dt{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--brand-ink)}
+.sol-specs dd{margin:3px 0 0;font-size:14px;font-weight:500;color:var(--ink);overflow-wrap:anywhere}
+.sol-versions{display:flex;flex-direction:column;gap:6px}
+.chip.is-nodata{color:var(--muted);background:var(--well)}
+.sol-add{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 20px;padding:16px 18px;border-radius:var(--r);border:1px dashed var(--line);background:var(--well)}
+.sol-add-t{display:flex;flex-direction:column;gap:3px;max-width:520px}
+.sol-actions{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.sol-mini{flex:none;width:64px;border-radius:6px;overflow:hidden;background:var(--well);box-shadow:inset 0 0 0 1px var(--line-soft)}
+.sol-results{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px}
+/* how much, in the room: covered places pop in as the amount grows; clouds drop in from the ceiling */
+.rp-wrap{margin:0;display:flex;flex-direction:column;gap:6px}
+.rp{display:block;width:100%;max-width:400px;height:auto;aspect-ratio:240/150;border-radius:10px;background:var(--well);box-shadow:0 0 0 1px var(--line-soft)}
+.rp-wrap figcaption{font-size:12px;color:var(--muted);line-height:1.45}
+.rp-key{display:inline-block;width:9px;height:9px;margin:0 4px 0 2px;border-radius:2px;vertical-align:-1px;background:var(--sc-face-2);box-shadow:inset 0 0 0 1px var(--sc-lo-2)}
+.rp-key.is-other{background:var(--sc-other)}
+.rp-on{transform-box:fill-box;transform-origin:center;animation:rpin .32s var(--ease) both}
+.rp-drop{animation:rpdrop .45s var(--ease) both}
+.rp .is-other polygon{fill:var(--sc-other)}
+@keyframes rpin{from{opacity:0;transform:scale(.6)}}
+@keyframes rpdrop{from{opacity:0;transform:translateY(-9px)}}
+@media (max-width:1180px){
+  .sol-cats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:760px){
+  .sol-hero{grid-template-columns:minmax(0,1fr)}
+  /* On a phone each collection and product is a row: its drawing beside its name, so a list reads quickly. */
+  .sol-cats,.sol-grid{grid-template-columns:minmax(0,1fr);gap:10px}
+  .sol-col,.sol-card{flex-direction:row;align-items:stretch}
+  .sol-col .sol-pic,.sol-card .sol-pic{flex:none;width:122px;border-bottom:0;border-right:1px solid var(--line-soft)}
+  .sol-col .sol-pic .sol-art,.sol-card .sol-pic .sol-art{height:100%;min-height:84px;aspect-ratio:auto}
+  .sol-col-where{left:6px;right:auto;top:auto;bottom:6px;padding:2px 7px;font-size:10.5px}
+  .sol-col-body,.sol-body{padding:10px 12px 12px}
+  .sol-col-name{font-size:15px}
+  .sol-chosen{top:auto;bottom:8px;left:8px;font-size:10.5px;padding:2px 6px}
+  .sol-col .sol-chosen{top:6px;bottom:auto;left:6px}
+  .sol-eyebrow .sol-chosen{font-size:11.5px}
+}
+
+/* "How much": one slider, in panels or a share of the surface; the app's suggestion is a tick on it. */
+.amount-slider{display:flex;flex-direction:column;gap:6px}
+.as-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.as-k{flex-basis:100%;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.as-v{font-size:20px;font-weight:600;font-family:var(--font-num)}
+.as-range{width:100%;height:28px;margin:2px 0;accent-color:var(--brand);cursor:pointer}
+.as-range:focus-visible{outline:2px solid var(--focus,var(--brand));outline-offset:3px;border-radius:6px}
+.as-scale{display:flex;justify-content:space-between;margin-top:-4px}
 .selected-product b{font-size:14px;color:var(--ink);font-weight:600}
 .amount-item{display:flex;flex-direction:column;gap:10px;padding-bottom:14px;border-bottom:1px solid var(--line-soft)}
 
@@ -1283,6 +1465,13 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
   .proc-step:nth-child(4){border-left:0}
   .proc-step:nth-child(n+4){border-top:1px solid var(--line-soft)}
   .g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  /* Below about 980 px the breadcrumb, Help and the four readouts no longer fit one line beside the rail: the project
+     values wrap onto a line of their own, four readouts across the width. */
+  .topbar .help-wrap{order:1}
+  .topbar .facts{order:2}
+  .facts{width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+  .fact{min-width:0;padding:4px 10px 5px}
+  .fact-v{font-size:14px}
 }
 @media (max-width:900px){
   .app{grid-template-columns:minmax(0,1fr)}
@@ -1291,12 +1480,6 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
   .scrim{position:fixed;inset:0;background:rgba(8,12,13,.42);z-index:55}
   .only-mobile,.iconbtn.only-mobile{display:inline-grid}
   .topbar{padding:8px 16px;gap:8px 10px;min-height:56px}
-  .topbar .help-wrap{order:1}
-  .topbar .facts{order:2}
-  /* The project values wrap onto a line of their own: four readouts across the width. */
-  .facts{width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
-  .fact{min-width:0;padding:4px 10px 5px}
-  .fact-v{font-size:14px}
   .content-inner{padding:20px 16px 32px;gap:16px}
   .actionbar{padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}
   .compare{grid-template-columns:minmax(0,1fr)}

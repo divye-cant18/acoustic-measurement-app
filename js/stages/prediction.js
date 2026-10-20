@@ -16,7 +16,8 @@
       if (problem) return { ok: false, reason: problem };
       const a = AM.derive.assessment(p);
       if (a && !a.available) return { ok: false, reason: a.blocked };
-      return AM.derive.prediction(p) || AM.derive.noTreatment(p) ? { ok: true } : { ok: false, reason: 'Prediction needs a valid measurement.' };
+      const why = AM.derive.predictionMissing(p);
+      return why ? { ok: false, reason: why } : { ok: true };
     },
     continueLabel: 'View final result',
   });

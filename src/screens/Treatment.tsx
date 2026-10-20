@@ -1,13 +1,12 @@
 /* Step 8 · Treatment — build a treatment plan: one or more products, each in one of its tested configurations, with its
    own amount and placement. Product data comes only from AM.services.catalog; the project keeps the plan
    (js/stages/treatment.js). The prediction adds every item's own area × α band by band. */
-import { acoustics, am, CAT, D, DEMO, fmt, isNum, RA, SURF, ui } from '../lib';
+import { acoustics, am, CAT, D, DEMO, fmt, isNum, RA, SURF, TGT, ui } from '../lib';
 import type { Ctx, PrimaryAction, Project } from '../am';
-import { AmountControl, AmountGoal, AreaIn, Btn, Card, Chart, CoverageWarning, ExtLink, GoalUnreachable, Icon, Kv, KvNote, Legend, More, Note, PredPill, QtyStepper, SelectInput, SubH, TableWrap } from '../ui/kit';
+import { RoomPreview, SolutionArt } from '../ui/solutions';
+import { AmountSlider, amountWords, Btn, Card, Chart, CoverageWarning, ExtLink, Icon, Kv, KvNote, Legend, More, Note, Pill, ResultPill, SelectInput, soundsAdvice, soundsText, SubH, TableWrap, whereWords } from '../ui/kit';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const SURFACES: [string, string][] = [['Any', 'Any surface'], ['Wall', 'Wall'], ['Ceiling', 'Ceiling']];
-const nrcRange = (s: any) => (s.nrcMin == null ? 'NRC —' : s.nrcMin === s.nrcMax ? `NRC ${s.nrcMin.toFixed(2)}` : `NRC ${s.nrcMin.toFixed(2)}–${s.nrcMax.toFixed(2)}`);
 const variantText = (p: any) => [p.category, p.finish, p.gsm.raw && `${p.gsm.raw} GSM`, p.thickness.raw && `${p.thickness.raw} mm`, p.size.raw].filter(Boolean).join(' · ');
 const trimNum = am.util.trimNum;
 
@@ -23,54 +22,169 @@ function configChips(c: any): string[] {
 const FlagList = ({ flags }: { flags: any[] }) => (!flags.length ? null : (
   <ul className="flags">{flags.map((f, i) => <li className={`flag flag-${f.severity}`} key={i}><Icon name={f.severity === 'warning' ? 'alert' : 'info'} size={14} sw={2} /><span>{f.message}</span></li>)}</ul>
 ));
-const Chip = ({ action, value, current, label }: { action: string; value: string; current: string; label: string }) => (
-  <button type="button" className="chip" data-action={action} data-value={value} aria-pressed={value === current}>{label}</button>
-);
 
-/* ---------- product browser ---------- */
-function Browser({ ctx, sel, adding }: { ctx: Ctx; sel: any; adding: boolean }) {
-  const c = ctx.state.ui.catalog, src = CAT.getSource();
-  const list: any[] = CAT.getProducts({ query: c.query, category: c.category, surface: c.surface });
+/* ---------- the solutions explorer: categories → products → one product, the selection kept throughout ----------
+   AM.services.solutions groups the catalogue: everyday categories, and each product's versions under one name. Moving
+   between the views is screen state (ui.catalog); what is chosen is the plan, so nothing is lost on the way. */
+const SOL = () => (am.services as any).solutions;
+const nrcText = (s: any) => (s.nrcMin == null ? null : s.nrcMin === s.nrcMax ? `Tested NRC ${s.nrcMin.toFixed(2)}` : `Tested NRC ${s.nrcMin.toFixed(2)}–${s.nrcMax.toFixed(2)}`);
+const solOf = (it: any) => SOL().ofProduct(it.product.id);
+const chosenIn = (p: Project, sol: any) => D.treatmentItems(p).filter((it: any) => sol.products.some((x: any) => x.id === it.product.id));
+/* The bands a version's tests leave without a value, of those this room is judged in (none: it can be predicted here):
+   the fewest over its tested mountings. */
+function missingFor(p: Project, product: any): number[] {
+  const used: number[] = D.summaryBands(p), cfgs: any[] = CAT.getAcousticConfigurations(product.id);
+  if (!cfgs.length) return used;
+  return cfgs.map(c => used.filter(f => CAT.getOctaveAbsorption(c.id, DEMO.BANDS).missing.includes(f))).sort((x, y) => x.length - y.length)[0];
+}
+
+const mmText = (t: [number, number] | null) => (!t ? null : t[0] === t[1] ? `${t[0]} mm` : `${t[0]}–${t[1]} mm`);
+const nOf = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+
+function SolutionCard({ p, sol }: { p: Project; sol: any }) {
+  const mine = chosenIn(p, sol).length, nrc = nrcText(sol);
   return (
-    <Card icon="panels" cls="card-catalog" title={adding ? 'Add a product to the plan' : sel ? `Change the product of #${sel.no}` : 'Choose a product'}
-      sub={`${src.counts.products} products, ${src.counts.configurations} tested configurations · ${src.file}`}
-      right={sel ? <Btn action="cancelBrowse" variant="ghost" size="sm">Cancel</Btn> : null}>
-      {/* Product discovery on the official catalogue, in a new tab; the plan is built only from the tested data below. */}
+    <li>
+      <button type="button" className={mine ? 'sol-card is-chosen' : 'sol-card'} data-action="solOpen" data-value={sol.key}>
+        <span className="sol-pic"><SolutionArt kind={sol.kind} mm={sol.thickness ? sol.thickness[1] : null} /></span>
+        <span className="sol-body">
+          <span className="sol-name">{sol.name}</span>
+          <span className="sol-meta">{SOL().summary(sol)}</span>
+          <span className="sol-tags"><span className="chip-sm">{SOL().whereText(sol)}</span>{nrc ? <span className="chip-sm">{nrc}</span> : null}</span>
+          <span className="sol-col-foot"><span>{sol.products.length > 1 ? nOf(sol.products.length, 'version') : '1 version'}</span><span className="sol-go">View<Icon name="arrowR" size={14} sw={2.2} /></span></span>
+        </span>
+        {mine ? <span className="sol-chosen"><Icon name="check" size={13} sw={2.6} />In your selection</span> : null}
+      </button>
+    </li>
+  );
+}
+
+/* A category as a catalogue collection: a drawing of a typical product in it, its name, what it is, the finishes of its
+   products (from the data), how many there are. */
+const CATEGORY_ART: Record<string, string> = { clouds: 'cloud-hex', panels: 'printed', textured: 'fluted', tiles: 'tiles', wallpaper: 'roll', wool: 'wool' };
+const WHERE_SHORT: Record<string, string> = { ceiling: 'Ceiling', wall: 'Walls', both: 'Walls and ceilings' };
+function CategoryCard({ p, c }: { p: Project; c: any }) {
+  const list: any[] = SOL().byCategory(c.id), chosen = list.filter((s: any) => chosenIn(p, s).length).length;
+  const finishes = [...new Set(list.flatMap((s: any) => s.finishes))].join(' / ');
+  return (
+    <li>
+      <button type="button" className="sol-col" data-action="solCategory" data-value={c.id}>
+        <span className="sol-pic">
+          <SolutionArt kind={CATEGORY_ART[c.id] || (list[0] && list[0].kind) || 'panel'} />
+          <span className="sol-col-where">{WHERE_SHORT[c.where] || ''}</span>
+          {chosen ? <span className="sol-chosen"><Icon name="check" size={13} sw={2.6} />{`${chosen} chosen`}</span> : null}
+        </span>
+        <span className="sol-col-body">
+          <span className="sol-col-name">{c.name}</span>
+          <span className="sol-col-sub">{c.purpose}</span>
+          {finishes ? <span className="sol-col-fin">{finishes}</span> : null}
+          <span className="sol-col-foot"><span>{nOf(list.length, 'product')}</span><span className="sol-go">View products<Icon name="arrowR" size={14} sw={2.2} /></span></span>
+        </span>
+      </button>
+    </li>
+  );
+}
+
+// The search box writes screen state (data-uibind), not project data.
+function SearchBox({ value }: { value: string }) {
+  return <input id="cat-q" type="text" data-uibind="catalog.query" defaultValue={value} placeholder="Search by name, range, thickness or weight" autoComplete="off" aria-label="Search all products" />;
+}
+
+function ProductPage({ ctx, sol }: { ctx: Ctx; sol: any }) {
+  const p = ctx.project, S = SOL(), c = ctx.state.ui.catalog;
+  const mine = chosenIn(p, sol), active = mine.find((it: any) => it.id === p.treatment.active) || mine[0] || null;
+  const shown = active ? active.product : (sol.products.find((x: any) => x.id === c.variant) || sol.products[0]);
+  const a = D.assessment(p) as any, pred = D.prediction(p) as any, nrc = nrcText(sol), gap = missingFor(p, shown);
+  // Versions (thickness, weight, size): chips, or a list when there are many.
+  const versions = sol.products.length < 2 ? null : sol.products.length > 8
+    ? <SelectInput id="sol-version" label="Version" changeAction="solVariant" value={shown.id} options={sol.products.map((x: any) => ({ value: x.id, label: S.variantLabel(sol, x) }))} />
+    : (
+      <div className="sol-versions" role="group" aria-label="Version">
+        <span className="as-k">Version</span>
+        <div className="chips">{sol.products.map((x: any) => { const no = missingFor(p, x).length > 0; return <button type="button" key={x.id} className={no ? 'chip is-nodata' : 'chip'} data-action="solVariant" data-value={x.id} aria-pressed={x.id === shown.id} title={no ? 'Its test has no value in a band this room is judged on' : undefined}>{S.variantLabel(sol, x)}{no ? ' · no test data here' : ''}</button>; })}</div>
+      </div>
+    );
+  // The facts row, as in a catalogue: all from the data.
+  const cat = S.CATEGORIES.find((x: any) => x.id === sol.category), thick = shown.thickness && isNum(shown.thickness.mm) ? shown.thickness.mm : null;
+  const specs: [string, string][] = [
+    ['Finish', sol.finishes.join(' / ') || 'Not stated'],
+    ['Thickness', mmText(sol.thickness) || 'Not stated'],
+    ['Tested NRC', nrc ? nrc.replace('Tested NRC ', '') : 'Not stated'],
+    ['Mounting', nOf(sol.mountings, 'tested way')],
+  ];
+  return (
+    <div className="sol-product">
+      <div className="sol-hero">
+        <figure className="sol-stage">
+          <SolutionArt kind={sol.kind} mm={thick} variant="hero" />
+          <figcaption>{`Drawing for illustration${sol.products.length > 1 ? `, shown at ${S.variantLabel(sol, shown)}` : ''}. Thicker versions are drawn deeper.`}</figcaption>
+        </figure>
+        <div className="sol-hero-t">
+          <span className="sol-eyebrow">{`${cat ? cat.name : 'Product'} · ${sol.range} range`}{active ? <span className="sol-chosen"><Icon name="check" size={13} sw={2.6} />In your selection</span> : null}</span>
+          <h3 className="sol-title is-big">{sol.name}<span className="sol-title-2">{S.whereText(sol)}</span></h3>
+          <dl className="sol-specs">{specs.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
+          {versions}
+          <p className="small muted">{`Sizes: ${shown.size.raw || 'not stated in the source'}`}</p>
+          {gap.length ? <Note tone="warn">{`This version's test has no absorption value at ${fmt.hzList(gap)}, which this room is judged on, so its effect cannot be predicted here. Choose another version${sol.products.length > 1 ? '' : ' or another product'}.`}</Note> : null}
+        </div>
+      </div>
+      {active ? <>
+        <div className="grid split"><ProductDetails sel={active} refBand={DEMO.REFERENCE_BAND} /><AmountCard p={p} sel={active} pred={pred} a={a} /></div>
+        <div className="sol-actions">
+          <Btn action="removeItem" value={active.id} variant="ghost" icon="trash">Remove from my selection</Btn>
+          <Btn action="solHome" icon="check">Done: choose another product</Btn>
+        </div>
+      </> : (
+        <div className="sol-add">
+          <div className="sol-add-t"><b>Not in your selection yet</b><span className="small muted">Add it, and the app picks how it is mounted and works out how much your room needs. You can change both.</span></div>
+          <Btn action="solAdd" value={shown.id} variant="primary" icon="plus" reason={gap.length ? 'This version has no test data for a band this room is judged on. Choose another version.' : undefined}>Add to my selection</Btn>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Explorer({ ctx }: { ctx: Ctx }) {
+  const p = ctx.project, c = ctx.state.ui.catalog, S = SOL(), src = CAT.getSource();
+  const view = c.view || 'home', cat = S.CATEGORIES.find((x: any) => x.id === c.cat) || null, sol = c.group ? S.get(c.group) : null;
+  let body;
+  if (view === 'product' && sol) body = <ProductPage ctx={ctx} sol={sol} />;
+  else if (view === 'category' && cat) {
+    body = <>
+      <div className="sol-head"><span className="sol-mini is-head" aria-hidden="true"><SolutionArt kind={CATEGORY_ART[cat.id] || 'panel'} variant="mini" /></span><div><span className="sol-eyebrow">{`${WHERE_SHORT[cat.where] || ''} · ${nOf(S.byCategory(cat.id).length, 'product')}`}</span><h3 className="sol-title">{cat.name}</h3><p className="small muted">{cat.purpose}</p></div></div>
+      <ul className="sol-grid">{S.byCategory(cat.id).map((s: any) => <SolutionCard key={s.key} p={p} sol={s} />)}</ul>
+    </>;
+  } else {
+    const q = String(c.query || '').trim(), found: any[] | null = q ? S.search(q) : null;
+    body = <>
+      <label className="search sol-search" htmlFor="cat-q"><Icon name="search" size={16} sw={2} /><SearchBox value={c.query} /></label>
+      {found
+        ? (found.length ? <><p className="small muted">{`${found.length} product${found.length === 1 ? '' : 's'} found`}</p><ul className="sol-grid">{found.map((s: any) => <SolutionCard key={s.key} p={p} sol={s} />)}</ul></>
+          : <div className="cat-empty">No products match. Try fewer words, or choose a category.</div>)
+        : <ul className="sol-cats">{S.CATEGORIES.map((x: any) => <CategoryCard key={x.id} p={p} c={x} />)}</ul>}
       <ExtLink tone="brand" glyph="panels" href={am.brand.links.catalogue} title="Discover acoustic products"
         text="Explore acoustic products, finishes and applications to discover potential solutions for your room."
         label="Explore UniVicoustic Product Catalogue"
-        note="Opens the UniVicoustic website in a new tab; this project stays as it is. To use a product here, choose it below: the prediction uses only the tested data in this list." />
-      <div className="cat-filters">
-        <label className="search" htmlFor="cat-q"><Icon name="search" size={16} sw={2} /><SearchBox value={c.query} /></label>
-        <div className="chips">{['All', ...CAT.getCategories()].map((v: string) => <Chip key={v} action="catCategory" value={v} current={c.category} label={v === 'All' ? 'All categories' : v} />)}</div>
-        <div className="chips">{SURFACES.map(([v, l]) => <Chip key={v} action="catSurface" value={v} current={c.surface} label={l} />)}</div>
+        note="Opens the UniVicoustic website in a new tab; this project stays as it is. To use a product here, choose it above: the prediction uses only the tested data in this list." />
+    </>;
+  }
+  return (
+    <section className="card sol" id="solutions" aria-label="Acoustic solutions">
+      <div className="sol-top">
+        <nav className="sol-crumbs" aria-label="Where you are in the products">
+          {view === 'home' ? <span aria-current="page">All solutions</span> : <button type="button" data-action="solHome"><Icon name="chevL" size={15} sw={2.2} />All solutions</button>}
+          {cat && view !== 'home' ? <><Icon name="chevR" size={14} sw={2} />{view === 'category' ? <span aria-current="page">{cat.name}</span> : <button type="button" data-action="solCategory" data-value={cat.id}>{cat.name}</button>}</> : null}
+          {sol && view === 'product' ? <><Icon name="chevR" size={14} sw={2} /><span aria-current="page">{sol.name}</span></> : null}
+        </nav>
+        <span className="small muted">{`${S.all().length} products, tested data from ${src.file}`}</span>
       </div>
-      <div className="cat-count">{list.length === src.counts.products ? `${list.length} products` : `${list.length} of ${src.counts.products} products`}</div>
-      {list.length ? (
-        <ul className="cat-list">
-          {list.map(p => {
-            const s = CAT.getSummary(p.id);
-            return (
-              <li key={p.id}>
-                <button type="button" className="cat-row" data-action="pickProduct" data-value={p.id} aria-pressed={!adding && !!sel && sel.product.id === p.id}>
-                  <span className="cat-main"><span className="cat-name">{p.name}</span><span className="cat-meta">{variantText(p)}</span></span>
-                  <span className="cat-side"><span className="cat-nrc">{nrcRange(s)}</span><span className="cat-cfg">{`${s.configurationCount} tested configuration${s.configurationCount === 1 ? '' : 's'}`}</span></span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      ) : <div className="cat-empty">No products match. Try fewer words or another category.</div>}
-    </Card>
+      {body}
+    </section>
   );
-}
-// The catalogue search box writes screen state (data-uibind), not project data.
-function SearchBox({ value }: { value: string }) {
-  return <input id="cat-q" type="text" data-uibind="catalog.query" defaultValue={value} placeholder="Search name, GSM, thickness, mounting or certificate" autoComplete="off" />;
 }
 
 /* ---------- selected product, its configurations, and the chosen configuration's α(f) ---------- */
-function ProductCard({ sel, refBand }: { sel: any; refBand: number }) {
+function ProductDetails({ sel, refBand }: { sel: any; refBand: number }) {
   const p = sel.product, c = sel.configuration, cfgs: any[] = CAT.getAcousticConfigurations(p.id), src = CAT.getSource();
   const columns = CAT.getColumns();
   const noteFor = (defs: any[], key: string) => (defs.find(d => d.key === key) || { notes: [] }).notes;
@@ -103,40 +217,50 @@ function ProductCard({ sel, refBand }: { sel: any; refBand: number }) {
       </div>
     );
   } else {
-    detail = <Note tone="warn">{`This product was tested in ${cfgs.length} configurations. Choose the one that matches how it will be installed; each has its own absorption data.`}</Note>;
+    detail = <Note tone="warn">{`This product was tested in ${cfgs.length} configurations, and none has absorption data for every band this room is judged in. Choose the one that matches how it will be installed.`}</Note>;
   }
+  // The mounting the app recommends for this room (AM.derive.recommendConfig): chosen for the user, can be changed.
+  const rec = sel.recommendedConfig, cfgList = (
+    <ul className="cfg-list">
+      {cfgs.map(x => {
+        const warn = x.flags.filter((f: any) => f.severity === 'warning').length, chips = configChips(x);
+        return (
+          <li key={x.id}>
+            <button type="button" className="cfg" data-action="pickConfig" data-value={x.id} aria-pressed={!!c && c.id === x.id}>
+              <span className="cfg-radio" aria-hidden="true" />
+              <span className="cfg-main"><span className="cfg-label">{x.label}{x.id === rec ? <span className="cfg-rec">Recommended for this room</span> : null}</span>{chips.length ? <span className="cfg-chips">{chips.map((t, i) => <span className="chip-sm" key={i}>{t}</span>)}</span> : null}<span className="cfg-cert">{x.test.certificate || 'No certificate number'}</span></span>
+              <span className="cfg-side">
+                <span className="cfg-nrc">{`NRC ${x.ratings.nrc != null ? x.ratings.nrc.toFixed(2) : '—'}`}</span>
+                <span className="cfg-sub">{[x.ratings.nrcClass.grade && `Class ${x.ratings.nrcClass.grade}`, x.ratings.alphaW != null && `αw ${x.ratings.alphaW.toFixed(2)}`].filter(Boolean).join(' · ')}</span>
+                {warn ? <span className="cfg-warn"><Icon name="alert" size={12} sw={2.2} />{`${warn} to check`}</span> : null}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
   const noted = (x: any, defs: any[]) => <>{x.value || '—'}{[...x.notes, ...noteFor(defs, x.key)].map((n: string, i: number) => <KvNote key={i}>{n}</KvNote>)}</>;
   return (
-    <Card icon="panels" title={p.name} sub={variantText(p)} cls="card-product"
-      right={<><Btn action="removeItem" value={sel.id} variant="ghost" size="sm">Remove</Btn><Btn action="browse" size="sm">Change product</Btn></>}>
-      <Kv rows={[
-        ['Thickness', p.thickness.mm != null ? <>{`${trimNum(p.thickness.mm)} mm`}{p.thicknessTolerance.raw ? <span className="muted">{` (${p.thicknessTolerance.raw} mm)`}</span> : null}</> : p.thickness.raw || '—'],
-        ['GSM', p.gsm.raw || '—'],
-        ['Sizes', p.size.options.length ? <>{p.size.options.map((o: any, i: number) => <span key={i}>{i ? <br /> : null}{o.label}{isNum(o.areaM2) ? <>{' '}<span className="muted">{ui.panelArea(o.areaM2)}</span></> : null}</span>)}</> : '—'],
-        ['Application', p.application.raw || 'Not stated'],
-      ]} />
-      <div>
-        <SubH>{`Tested configurations (${cfgs.length})`}</SubH>
-        <ul className="cfg-list">
-          {cfgs.map(x => {
-            const warn = x.flags.filter((f: any) => f.severity === 'warning').length, chips = configChips(x);
-            return (
-              <li key={x.id}>
-                <button type="button" className="cfg" data-action="pickConfig" data-value={x.id} aria-pressed={!!c && c.id === x.id}>
-                  <span className="cfg-radio" aria-hidden="true" />
-                  <span className="cfg-main"><span className="cfg-label">{x.label}</span>{chips.length ? <span className="cfg-chips">{chips.map((t, i) => <span className="chip-sm" key={i}>{t}</span>)}</span> : null}<span className="cfg-cert">{x.test.certificate || 'No certificate number'}</span></span>
-                  <span className="cfg-side">
-                    <span className="cfg-nrc">{`NRC ${x.ratings.nrc != null ? x.ratings.nrc.toFixed(2) : '—'}`}</span>
-                    <span className="cfg-sub">{[x.ratings.nrcClass.grade && `Class ${x.ratings.nrcClass.grade}`, x.ratings.alphaW != null && `αw ${x.ratings.alphaW.toFixed(2)}`].filter(Boolean).join(' · ')}</span>
-                    {warn ? <span className="cfg-warn"><Icon name="alert" size={12} sw={2.2} />{`${warn} to check`}</span> : null}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-      {detail}
+    <Card icon="panels" title="How it is mounted" sub={variantText(p)} cls="card-product">
+      {c ? (
+        <div className="auto-mount">
+          <span className="small muted">Mounting</span>
+          <b>{c.label}</b>
+          {c.id === rec ? <Pill tone="good" text="Recommended for this room" icon="seal" /> : <Pill tone="neutral" text="Chosen by you" />}
+          {configChips(c).length ? <span className="cfg-chips">{configChips(c).map((t, i) => <span className="chip-sm" key={i}>{t}</span>)}</span> : null}
+        </div>
+      ) : null}
+      {c && cfgs.length > 1 ? <More summary={`Change how it is mounted (${cfgs.length} tested ways)`}>{cfgList}</More> : c ? null : cfgList}
+      <More summary="Show the test data">
+        <Kv rows={[
+          ['Thickness', p.thickness.mm != null ? <>{`${trimNum(p.thickness.mm)} mm`}{p.thicknessTolerance.raw ? <span className="muted">{` (${p.thicknessTolerance.raw} mm)`}</span> : null}</> : p.thickness.raw || '—'],
+          ['GSM', p.gsm.raw || '—'],
+          ['Sizes', p.size.options.length ? <>{p.size.options.map((o: any, i: number) => <span key={i}>{i ? <br /> : null}{o.label}{isNum(o.areaM2) ? <>{' '}<span className="muted">{ui.panelArea(o.areaM2)}</span></> : null}</span>)}</> : '—'],
+          ['Application', p.application.raw || 'Not stated'],
+        ]} />
+        {detail}
+      </More>
       <More summary="More product data from the source">
         <Kv rows={[
           ...p.fire.map((x: any) => [`Fire · ${x.standard}`, noted(x, columns.fire)]),
@@ -158,14 +282,31 @@ function PlanCard({ p, plan, pred, a, sel }: { p: Project; plan: any; pred: any;
   const eff = h && plan.areaM2 > 0 ? h.addedA / plan.areaM2 : null;
   const counted = plan.complete.length === n ? `All ${n} product${plural}` : `${plan.complete.length} of ${n} products (the rest need a configuration)`;
   return (
-    <Card icon="list" title="Treatment plan" sub={`${n} product${plural}. Each keeps its own configuration, amount and absorption data.`} cls="card-plan"
-      right={<Btn action="addProduct" size="sm" icon="plus">Add another product</Btn>}>
+    <Card icon="list" title="Your selection" sub={`${n} product${plural}. The app chooses how each is mounted and how much is needed; open one to change it.`} cls="card-plan" id="treat-summary"
+      right={<Btn action="addProduct" size="sm" icon="plus">Add a product</Btn>}>
       {pred ? (
         <div className="plan-total">
-          <span>{'Combined: '}<b>{ui.planText(plan.complete)}</b>{' adds '}<b>{fmt.m2(h.addedA)}</b>{` of absorption at ${fmt.hz(f)}, and absorption in every band`}</span>
-          <span className="plan-rt"><span className="small muted">{`Average ${SHORT}`}</span>{` ${fmt.s(pred.measured)} `}<Icon name="arrowR" size={15} sw={2} />{' '}<b className="plan-pred" data-watch="plan-pred">{fmt.s(pred.predicted)}</b><PredPill status={pred.predictedStatus || acoustics.classify(pred.predicted, a.target)} /></span>
+          <span>{n > 1 ? 'All products together' : 'With this product'}</span>
+          <span className="plan-rt"><span className="small muted">{`Echo time, average ${SHORT}`}</span>{` ${fmt.s(pred.measured)} `}<Icon name="arrowR" size={15} sw={2} />{' '}<b className="plan-pred" data-watch="plan-pred">{fmt.s(pred.predicted)}</b><ResultPill v={pred.verdict} st={pred.predictedStatus || acoustics.classify(pred.predicted, a.target)} /></span>
         </div>
       ) : <Note tone="info">{D.planProblem(p) || 'Choose a tested configuration for each product to see the combined result.'}</Note>}
+      {/* Each product in one line: what, how mounted, how much, where. */}
+      <ul className="plan-list">
+        {items.map(it => (
+          <li className={it.id === sel.id ? 'is-active' : undefined} key={it.id}>
+            <span className="sol-mini" aria-hidden="true">{solOf(it) ? <SolutionArt kind={solOf(it).kind} mm={it.product.thickness.mm} variant="mini" /> : null}</span>
+            <span className="plan-what"><b>{it.product.name}</b><span className="small muted">{[solOf(it) && solOf(it).products.length > 1 ? SOL().variantLabel(solOf(it), it.product) : null, it.complete ? amountWords(p, it) : 'Choose how it is mounted'].filter(Boolean).join(' · ')}</span></span>
+            <span className="plan-act">
+              <Btn action="editItem" value={it.id} variant="ghost" size="sm" pressed={it.id === sel.id}>Edit</Btn>
+              <button type="button" className="iconbtn" data-action="removeItem" data-value={it.id} aria-label={`Remove ${it.product.name} from the plan`}><Icon name="x" size={16} sw={2} /></button>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <CoverageWarning cov={D.coverage(p)} />
+      <div className="sol-results"><Btn action="continue" variant="primary" iconAfter="arrowR">View results</Btn><span className="small muted">Shows the echo time after treatment, band by band, against the target.</span></div>
+      <More summary="Show the calculation">
+      {pred ? <p className="small">{`${ui.planText(plan.complete)} adds ${fmt.m2(h.addedA)} of absorption at ${fmt.hz(h.f)}, and absorption in every band.`}</p> : null}
       <TableWrap>
         <table className="tbl pl-tbl">
           <thead><tr><th /><th>Product · configuration · placement</th><th>Quantity · panel size</th><th className="r">Area</th><th className="r"><span className="nocase">α</span>{` at ${fmt.hz(f)}`}</th><th className="r">{`Added at ${fmt.hz(f)}`}</th><th className="r">Predicted average</th><th /></tr></thead>
@@ -182,8 +323,8 @@ function PlanCard({ p, plan, pred, a, sel }: { p: Project; plan: any; pred: any;
                     <KvNote>{it.placement}</KvNote>
                   </td>
                   <td className="pl-qty" data-label="Quantity · panel size">{it.mode === 'units'
-                    ? <><QtyStepper q={it.quantity} max={ui.MAX_PANELS} sel={it} keyName="plan" /><KvNote>{`of ${it.size.label} · ${ui.panelArea(it.size.areaM2)} each`}</KvNote></>
-                    : <><AreaIn sel={it} keyName="plan" /><KvNote>area entered</KvNote></>}</td>
+                    ? <>{`${it.quantity} × ${it.size.label}`}<KvNote>{`${ui.panelArea(it.size.areaM2)} each`}</KvNote></>
+                    : <>{fmt.m2(it.areaM2)}<KvNote>{amountWords(p, it)}</KvNote></>}</td>
                   <td className="r" data-label="Area">{fmt.m2(it.areaM2)}</td>
                   <td className="r" data-label={`α at ${fmt.hz(f)}`}>{isNum(al) ? al.toFixed(2) : '—'}</td>
                   <td className="r" data-label={`Added at ${fmt.hz(f)}`}>{x && isNum(x.addedA) ? fmt.m2(x.addedA) : '—'}</td>
@@ -208,7 +349,6 @@ function PlanCard({ p, plan, pred, a, sel }: { p: Project; plan: any; pred: any;
           </tfoot>
         </table>
       </TableWrap>
-      <CoverageWarning cov={D.coverage(p)} />
       {pred ? <>
         {/* Frequency-dependent data: each item's α and added absorption, the combined total, and the predicted room. */}
         <SubH>Absorption by frequency · individual and combined</SubH>
@@ -230,37 +370,84 @@ function PlanCard({ p, plan, pred, a, sel }: { p: Project; plan: any; pred: any;
             </tbody>
           </table>
         </TableWrap>
-        <p className="small">{`Average RT60 over ${RA.describe(pred.measuredAverage)}, ${SHORT}: measured ${fmt.s(pred.measured)}, predicted ${fmt.s(pred.predicted)} with all products. This average is what the target is compared with.`}</p>
+        <p className="small">{`Average RT60 over ${RA.describe(pred.measuredAverage)}, ${SHORT}: measured ${fmt.s(pred.measured)}, predicted ${fmt.s(pred.predicted)} with all products. This average is a summary: the verdict judges every band on its own.`}</p>
         <p className="small muted">Each product adds its own area × its own octave-band α in every band (the mean of its tested one-third-octave values in that octave, at most 1.00). Where Room Setup says what finish it covers, that finish's own absorption on the same area is replaced, not counted twice: area × (α − finish α). The plan adds them up: RT60 = 0.161 × V ÷ (A₀ + ΣΔA). A band where any product has no tested α is not predicted.</p>
       </> : null}
+      </More>
     </Card>
   );
 }
 
-/* ---------- the amount of the item being edited ---------- */
-function AmountCard({ p, sel, pred, a, need }: { p: Project; sel: any; pred: any; a: any; need: number }) {
-  const title = `Quantity · #${sel.no}`, sub = 'This product’s amount in the plan. The product database is not changed.';
-  if (!sel.complete) return <Card title={title} sub={sub}><Note>Choose a tested configuration first.</Note></Card>;
-  const x = pred && pred.items.find((i: any) => i.id === sel.id), cov = D.coverage(p, sel.placement)[0], goal = need > 0.05 ? D.treatmentForTarget(p, sel) : null;
-  const under = SURF.coveredBy(p.room, sel.placement), f0 = DEMO.REFERENCE_BAND;
+/* ---------- the amount of the item being edited: set by the app, the result first ---------- */
+const whereText = (pl: string) => `on ${whereWords(pl)}`;
+/* The amount in the room: the share of the free surface there that this product covers (and the plan's other products
+   there, in grey), drawn on a sketch of a room. It follows the slider as it moves. */
+function RoomSketch({ p, sel, cov }: { p: Project; sel: any; cov: any }) {
+  const sol = solOf(sel);
+  if (!sol || !cov || !(cov.surfaceM2 > 0)) return null;
+  const share = Math.min(1, Math.max(0, sel.areaM2 / cov.surfaceM2)), others = Math.max(0, Math.min(1 - share, (cov.areaM2 - sel.areaM2) / cov.surfaceM2));
+  const pct = (x: number) => `${x > 0 && x < 0.995 ? 'about ' : ''}${Math.round(x * 100)} %`;
+  return (
+    <figure className="rp-wrap">
+      <RoomPreview kind={sol.kind} placement={sel.placement} share={share} others={others} />
+      <figcaption>
+        <span className="rp-key" aria-hidden="true" />{`${amountWords(p, sel).replace(/^\w/, ch => ch.toUpperCase())}.`}
+        {others > 0.0005 ? <> <span className="rp-key is-other" aria-hidden="true" />{`Your other products there: ${pct(others)}.`}</> : null}
+        {' A sketch of how much is covered, not of where each piece goes.'}
+      </figcaption>
+    </figure>
+  );
+}
+
+function AmountCard({ p, sel, pred, a }: { p: Project; sel: any; pred: any; a: any }) {
+  const title = 'How much to put up', sub = 'The app sets it for this room. Move the bar to see what more or less would do.';
+  if (!sel.complete) return <Card title={title} sub={sub}><Note>Choose how it is mounted first.</Note></Card>;
+  const amt = D.autoAmount(p, sel) as any, auto = D.isAutoAmount(p, sel), multi = D.treatmentPlan(p).complete.length > 1;
+  const x = pred && pred.items.find((i: any) => i.id === sel.id), cov = D.coverage(p, sel.placement)[0], goal = amt ? amt.goal : null;
+  const under = SURF.coveredBy(p.room, sel.placement), f0 = pred && pred.headline ? pred.headline.f : DEMO.REFERENCE_BAND, SHORT = D.policy(p).short;
   const covers = under.known
-    ? `It covers the finish of ${under.names.join(', ')} (α ${under.alpha[f0].toFixed(2)} at ${fmt.hz(f0)}, from Room Setup), whose own absorption on this area is replaced, not counted twice.`
-    : `The finish there is not complete in Room Setup (${under.why || 'not set'}), so its own absorption is not subtracted: the prediction may overstate the effect a little. Set the surfaces in Room Setup to include it.`;
-  const sizeOptions = [...sel.sizes.map((o: any) => ({ value: String(o.index), label: `${o.label} · ${ui.panelArea(o.areaM2)} each` })), { value: 'area', label: 'Enter the treatment area directly' }];
+    ? `It covers the finish of ${under.names.join(', ')} (α ${under.alpha[DEMO.REFERENCE_BAND].toFixed(2)} at ${fmt.hz(DEMO.REFERENCE_BAND)}, from Room Setup), whose own absorption on this area is replaced, not counted twice.`
+    : `The finish there is not complete in Room Setup (${under.why || 'not set'}), so its own absorption is not subtracted: the prediction may overstate the effect a little.`;
+  const sizeOptions = sel.sizes.map((o: any) => ({ value: String(o.index), label: o.label }));
+  const v = pred && pred.verdict, st = pred ? pred.predictedStatus : null;
+  // The result in everyday words: meets the target, or what would still be wrong and what would help.
+  const verdict = !pred ? null
+    : st === 'within' ? <p className="auto-say is-good"><Icon name="seal" size={16} sw={2.2} />{multi ? 'With the whole plan the room meets the target in every band.' : 'The room meets the target in every band.'}</p>
+      : st === 'below' && a.status === 'below' ? <p className="auto-say">The room was already below the target, so it would become drier still. Treatment is not recommended.</p>
+        : v ? <p className="auto-say">{`Not fully there: ${soundsText(v.above.map((r: any) => r.f), v.below.map((r: any) => r.f)) || "the room's mean echo time is outside the range"}. ${st === 'below' ? 'Use less of it.' : soundsAdvice(v.above.map((r: any) => r.f), v.below.map((r: any) => r.f))}`}</p> : null;
+  const amountNote = !amt ? null
+    : !amt.needed && amt.areaM2 === 0 ? 'The room already meets the target, so the app suggests none. Move the bar to see what some would do.'
+      : amt.areaM2 === 0 && D.treatmentPlan(p).complete.length > 1 ? 'With your other products the room needs none of this one, so the app suggests none. Move the bar to use some anyway, or remove it.'
+      : amt.capped ? `The room needs more than fits ${whereText(sel.placement)}, so the app suggests covering all the free space there.`
+        : amt.needed && !goal ? 'Even a lot of this product does not reach the target here, so the app suggests covering all the free space.' : null;
   return (
     <Card title={title} sub={sub} cls="card-amount">
-      {sel.sizes.length
-        ? <SelectInput id={`treat-size-${sel.id}`} label="Panel size" bind={`${sel.path}.size`} value={sel.mode === 'area' ? 'area' : String(sel.size.index)} options={sizeOptions} />
-        : <Note tone="info">The source gives no panel area for this product, so enter the treatment area directly.</Note>}
-      <AmountControl sel={sel} keyName="edit" />
-      <Kv rows={[
-        ['Treatment area', fmt.m2(sel.areaM2), 'is-strong'],
-        cov && [`Free surface on ${/^Wall \d$/.test(cov.label) ? cov.label : cov.label.toLowerCase()}`, fmt.m2(cov.surfaceM2)],
-        cov && [`Coverage${cov.count > 1 ? ` (${cov.count} products)` : ''}`, fmt.pct(cov.fraction, 1)],
-        [`Added absorption at ${fmt.hz(f0)}`, x && isNum(x.addedA) ? fmt.m2(x.addedA) : '—'],
-      ]} />
-      {need > 0.05 ? (goal ? <AmountGoal goal={goal} sel={sel} targetRT={a.target.preferred} /> : D.planProblem(p) ? null : <GoalUnreachable sel={sel} targetRT={a.target.preferred} />) : null}
-      <SelectInput id={`place-${sel.id}`} label="Placement" bind={`${sel.path}.placement`} value={sel.placement} options={SURF.placementsFor(p.room).map((pl: any) => ({ value: pl.value, label: pl.label }))} hint={`Where it goes. ${covers}`} />
+      <div className="auto-amount">
+        <RoomSketch p={p} sel={sel} cov={cov} />
+        <AmountSlider p={p} sel={sel} keyName="edit" />
+        <div className="auto-use">{auto ? <Pill tone="neutral" text="Set by the app" icon="seal" /> : <><Pill tone="neutral" text="Set by you" /><Btn action="useAutoAmount" value={sel.id} size="sm" cls="btn-wrap">Go back to the app's amount</Btn></>}</div>
+        {amountNote ? <p className="small muted">{amountNote}</p> : null}
+        {pred ? <div className="auto-result"><span className="small muted">{`Echo time, average ${SHORT}`}</span><span className="auto-rt">{fmt.s(pred.measured)}<Icon name="arrowR" size={16} sw={2} /><b className="plan-pred" data-watch="amount-pred">{fmt.s(pred.predicted)}</b></span><ResultPill v={v} st={st} /></div>
+          : <Note tone="info">{D.planProblem(p) || 'The result appears once the plan is complete.'}</Note>}
+        {verdict}
+      </div>
+      <More summary="More options: panel size, where it goes">
+        <div className="stack-sm">
+          {sel.sizes.length > 1
+            ? <SelectInput id={`treat-size-${sel.id}`} label="Panel size" changeAction="setSize" data={{ 'data-key': sel.id }} value={sel.mode === 'area' ? '' : String(sel.size.index)} options={sizeOptions} placeholder="Choose a panel size" /> : null}
+          <SelectInput id={`place-${sel.id}`} label="Where it goes" changeAction="setPlacement" data={{ "data-key": sel.id }} value={sel.placement} options={SURF.placementsFor(p.room).map((pl: any) => ({ value: pl.value, label: pl.label }))} />
+        </div>
+      </More>
+      <More summary="Show the calculation">
+        <Kv rows={[
+          ['Treatment area', fmt.m2(sel.areaM2), 'is-strong'],
+          cov && [`Free surface on ${/^Wall \d$/.test(cov.label) ? cov.label : cov.label.toLowerCase()}`, fmt.m2(cov.surfaceM2)],
+          cov && [`Coverage${cov.count > 1 ? ` (${cov.count} products)` : ''}`, fmt.pct(cov.fraction, 1)],
+          [`Added absorption at ${fmt.hz(f0)}`, x && isNum(x.addedA) ? fmt.m2(x.addedA) : '—'],
+          goal ? ['The app’s amount', goal.meetsBands ? `${fmt.m2(goal.areaM2)}: the least that keeps every band ${D.policy(p).judgedShort} within its limits` : `${fmt.m2(goal.areaM2)}: brings the average to ${fmt.s(TGT.aim(a.target))}; ${fmt.hzList(goal.above)}${goal.above.length && goal.below.length ? ' above, ' : goal.above.length ? ' above' : ''}${goal.below.length ? `${fmt.hzList(goal.below)} below` : ''} their limits`] : null,
+        ]} />
+        <p className="small muted">{covers}</p>
+      </More>
     </Card>
   );
 }
@@ -273,34 +460,34 @@ export function TreatmentScreen({ ctx }: { ctx: Ctx }) {
   // Sabine's equivalent absorption for the average RT60: what reaching the target needs, and what the plan adds.
   const need = D.absorptionGap(p) || 0, SHORT = a.policy.short;
   const added = pred ? acoustics.absorptionFromRT(g.V, pred.predicted) - acoustics.absorptionFromRT(g.V, pred.measured) : 0, share = need > 0 ? added / need : 0;
-  const cat = ctx.state.ui.catalog, browsing = !sel || cat.browsing, adding = !!sel && cat.adding;
   const removed = ctx.state.ui.removed as { no: number; name: string } | null | undefined;
   return (
     <>
-      {need > 0.05 ? (
-        <Card icon="gauge" title="Absorption needed" sub={`Simplified Sabine estimate from the average RT60, ${SHORT}`} cls="card-need">
+      {/* Chosen by the verdict (every judged band), not by the average alone. */}
+      {a.status === 'above' && need > 0.05 ? (
+        <Card icon="gauge" title="The goal" sub={`Echo time, average ${SHORT}`} cls="card-need">
           <div className="need">
-            <div className="need-v"><span className="stat-v">{need.toFixed(1)}<small>m²</small></span><span className="small muted">{`more absorption to bring the average RT60 from ${fmt.s(a.rt)} to the preferred ${fmt.s(a.target.preferred)}`}</span></div>
+            <div className="need-v"><span className="stat-v">{TGT.aim(a.target).toFixed(2)}<small>s</small></span><span className="small muted">{`${a.target.preferred != null ? `the preferred echo time (range ${TGT.rangeText(a.target)})` : `the ${fmt.s(a.target.max)} limit`}, from ${fmt.s(a.rt)} now`}</span></div>
             <div>
               <div className={share >= 1 ? 'meter good' : 'meter'}><i style={{ width: `${Math.min(1, Math.max(0, share)) * 100}%` }} /></div>
               <div className="need-cap">{pred
-                ? <><span>{`${plan.complete.length > 1 ? 'This plan' : 'This selection'} adds the equivalent of `}<b>{`${added.toFixed(1)} m²`}</b></span><span>{`${fmt.pct(share)} of what is needed`}</span></>
-                : <span>Choose a product and configuration to see how much of this it covers.</span>}</div>
+                ? <><span>{plan.complete.length > 1 ? 'These products get the room' : 'This product gets the room'}</span><span>{`${fmt.pct(Math.min(1, share))} of the way`}</span></>
+                : <span>{plan.items.length ? D.planProblem(p) || 'Complete the plan to see how far it gets.' : 'Choose a product: the app works out how it is mounted and how much is needed.'}</span>}</div>
             </div>
           </div>
+          <More summary="Show the calculation"><p className="small muted">{`Simplified Sabine estimate from the average RT60: about ${need.toFixed(1)} m² more absorption brings it from ${fmt.s(a.rt)} to ${fmt.s(TGT.aim(a.target))}${pred ? `; the plan adds the equivalent of ${added.toFixed(1)} m²` : ''}. The amount the app suggests is worked out band by band, so every band is checked, not only this average.`}</p></More>
         </Card>
-      ) : a.status === 'below'
-        ? <Note tone="warn">The room's average RT60 is below the target range. Adding absorption would make it drier still, so treatment is not recommended. You can continue without it.</Note>
-        : <Note tone="good">The room's average RT60 already meets the target. Treatment is optional: continue without it, or choose a product to explore.</Note>}
+      ) : a.status === 'above'
+        // The average is at the aim already, but a band rings longer than its limit.
+        ? <Note tone="warn">{a.verdict.above.length
+          ? `The average over ${SHORT} is already at the target, but ${fmt.hzList(a.verdict.above.map((r: any) => r.f))} ring${a.verdict.above.length > 1 ? '' : 's'} longer than allowed. Choose a product that absorbs most in ${a.verdict.above.length > 1 ? 'those bands' : 'that band'}; the amount suggested below meets every band where one can.`
+          : `The average over ${SHORT} is already at the target, but the room does not meet it in every band it is judged in (see Acoustic Assessment). The amount suggested below meets every band where one can.`}</Note>
+        : a.status === 'below'
+          ? <Note tone="warn">The room is below the target range. Adding absorption would make it drier still, so treatment is not recommended. You can continue without it.</Note>
+          : <Note tone="good">The room already meets the target in every band it is judged in. Treatment is optional: continue without it, or choose a product to explore.</Note>}
       {removed ? <div className="undo-bar" role="status"><Icon name="trash" size={15} sw={1.9} /><span>{`Removed #${removed.no} ${removed.name} from the plan.`}</span><Btn action="undoRemove" size="sm">Undo</Btn></div> : null}
       {plan.items.length ? <PlanCard p={p} plan={plan} pred={pred} a={a} sel={sel} /> : null}
-      {browsing ? <>
-        {sel ? <div className="section-label">{adding ? `Add product #${plan.items.length + 1}` : `Change the product of #${sel.no}`}</div> : null}
-        <Browser ctx={ctx} sel={sel} adding={adding} />
-      </> : <>
-        <div className="section-label" id="treat-editor">{`Editing #${sel.no} · ${sel.product.name}`}</div>
-        <div className="grid split"><ProductCard sel={sel} refBand={DEMO.REFERENCE_BAND} /><AmountCard p={p} sel={sel} pred={pred} a={a} need={need} /></div>
-      </>}
+      <Explorer ctx={ctx} />
     </>
   );
 }

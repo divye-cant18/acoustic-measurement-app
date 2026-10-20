@@ -10,11 +10,14 @@
      A4 through the Processing step: valid takes at P1 and P2 are both kept; a new take at P1 replaces only P1 (kept as
         superseded); an invalid take at P2 is kept as the latest attempt with its reason, never as a value, and the earlier
         valid P2 stays; the session needs two valid positions before Results continues; the next position is offered
-     A5 the verdict policy by room category: meeting room (DIN 18041 A, 250 Hz–2 kHz, wider limits at 125 Hz and 4 kHz),
-        office (DIN 18041 B), listening room (EBU, 250 Hz–4 kHz), dwelling (500 Hz–2 kHz, interpretation), no criterion,
-        classroom with the ANSI limit, a custom target
-     A6 an average inside the range does not pass the room when a judged band is outside it; band warnings are reported
-        apart from the verdict; a judged band not measured leaves the verdict incomplete; too few bands: not assessed
+     A5 the verdict policy by room category (js/data/targets.js): meeting room (DIN 18041 A1–A4: 250 Hz–2 kHz against the
+        target range, 125 Hz and 4 kHz against the standard's own limits, all judged), office (NBC 2016: an upper limit at
+        500 Hz only), listening room (EBU Tech 3276: 250 Hz–4 kHz and its mask at 125 Hz), a dwelling and a room without a
+        criterion (no recommendation: the app's default bands, for the project's own target only), a classroom (DIN 18041
+        A3 alone), a custom target
+     A6 an average inside the range does not pass the room when a judged band is outside it; the edge bands decide the
+        verdict against their own limits; a judged band not measured leaves the verdict incomplete; an upper-limit target
+        is never "below"; too few bands: not assessed
      A7 the PDF and the report form's record agree with the room: positions, each position's band values, the room's band
         values, the verdict and its summary; the record's 1000 Hz value is the room's, not the latest take's
      A8 the report stays locked unless the server confirms this project's receipt, on every download; a receipt stored in
@@ -203,80 +206,98 @@
     }
 
     /* ===== A5 the verdict policy by room category ===== */
+    // Changed 2026-10-19 (standards-based targets): DIN 18041 judges every octave band from 125 Hz to 4 kHz, 125 Hz and
+    // 4 kHz against 0.65–1.45 × and 0.65–1.2 × T_soll (BNB 3.1.4), not as warnings at 0.6–1.4 ×; group B rooms and
+    // dwellings get no RT60 target; the ANSI/ASA S12.60-2010 classroom limit is no longer applied.
     status('Policies…');
     {
-      const room = (type, use, extra) => Object.assign({ type, use, L: 8, W: 6, H: 3 }, extra || {});
+      const IND = { 'Meeting room': 'Corporate offices and meeting rooms', 'Conference room': 'Corporate offices and meeting rooms', 'Private office': 'Corporate offices and meeting rooms',
+        'Control room': 'Recording and music studios', 'Living room': 'Residential spaces', Classroom: 'Education and training facilities' };
+      const room = (type, use, extra) => Object.assign({ industry: IND[type], type, use, L: 8, W: 6, H: 3 }, extra || {});
       const pol = (r, t) => EV.policyFor(r, t || null);
       const meet = pol(room('Meeting room', 'Meetings and presentations')), hyb = pol(room('Conference room', 'Video calls and hybrid meetings'));
       const office = pol(room('Private office', 'Focused desk work')), listen = pol(room('Control room', 'Mixing and critical listening'));
       const home = pol(room('Living room', 'Living and relaxing')), none = pol({}), cls = pol(room('Classroom', 'Teaching'));
-      check('A5 Meeting and conference rooms (DIN 18041 A3, and A4 for hybrid meetings) are judged band by band from 250 Hz to 2 kHz, the range DIN 18041 sets; 125 Hz and 4 kHz have their own wider limits (not 500–2000 Hz)',
-        meet.id === 'din-a' && json(meet.primary) === json([250, 500, 1000, 2000]) && json(Object.keys(meet.secondary).map(Number)) === json([125, 4000]) && hyb.id === 'din-a' && meet.label === 'Speech range, 250 Hz–2 kHz' && /DIN 18041 places meeting/.test(AM.targetData.USES['Meetings and presentations'].why),
-        `${meet.label}; secondary ${Object.keys(meet.secondary).join(', ')}; hybrid ${hyb.criterion}`);
-      check('A5 Offices (DIN 18041 B) 250 Hz–2 kHz, no limits elsewhere; listening rooms (EBU Tech 3276) 250 Hz–4 kHz; a dwelling (a reference value with no bands) and a room without a criterion 500 Hz–2 kHz, marked as an interpretation; a classroom DIN 18041 A',
-        office.id === 'din-b' && json(office.primary) === json([250, 500, 1000, 2000]) && !Object.keys(office.secondary).length && listen.id === 'listening' && json(listen.primary) === json([250, 500, 1000, 2000, 4000])
-          && home.id === 'fixed' && home.interpretation && json(home.primary) === json([500, 1000, 2000]) && none.id === 'default' && none.interpretation && cls.id === 'din-a',
-        [office, listen, home, none, cls].map(x => `${x.id}: ${x.short}`).join(' · '));
-      // Limits: 250–2000 Hz the target range; 125 Hz 0.75 × min to 7/6 × max; 4000 Hz 0.75 × min to max (DIN 18041 A,
-      // 0.6–1.4 × T and 0.6–1.2 × T with the range at 0.8–1.2 × T). Target 0.50 (0.40–0.60): 125 Hz 0.30–0.70, 4 kHz 0.30–0.60.
-      const t = { preferred: 0.5, min: 0.4, max: 0.6 };
-      const L = f => EV.limits(f, t, meet);
-      check('A5 DIN 18041 group A limits per band for a 0.40–0.60 s target: 250 Hz–2 kHz 0.40–0.60 s (judged); 125 Hz 0.30–0.70 s and 4 kHz 0.30–0.60 s (own limits, band warnings only)',
-        json([125, 250, 1000, 4000].map(f => [L(f).role, L(f).min, L(f).max])) === json([['secondary', 0.3, 0.7], ['primary', 0.4, 0.6], ['primary', 0.4, 0.6], ['secondary', 0.3, 0.6]]) && EV.limits(125, t, listen).role === 'info',
-        json([125, 250, 1000, 4000].map(f => [f, L(f).min, L(f).max])));
-      // The classroom limit (ANSI/ASA S12.60): its 500, 1000 and 2000 Hz bands are judged bands, so the narrowed maximum
-      // applies to each of them.
+      check('A5 Meeting and conference rooms (DIN 18041 A3, and A4 for video calls) are judged in every band from 125 Hz to 4 kHz: 250 Hz–2 kHz against the target range, 125 Hz and 4 kHz against the standard\'s own limits',
+        meet.id === 'din-a' && json(meet.primary) === json([250, 500, 1000, 2000]) && json(meet.judged) === json(B) && json(Object.keys(meet.edge).map(Number)) === json([125, 4000]) && hyb.id === 'din-a'
+          && meet.label === 'Speech range, 250 Hz–2 kHz' && meet.judgedShort === '125 Hz–4 kHz' && /DIN 18041 names meeting/.test(AM.services.target.category('Meeting room', 'Meetings and presentations').why),
+        `${meet.label}; judged ${meet.judgedShort}; hybrid ${hyb.criterion}`);
+      check('A5 Offices (NBC 2016) are judged at 500 Hz only; listening rooms (EBU Tech 3276) 250 Hz–4 kHz and 125 Hz; a dwelling and a room without a criterion have no recommendation (the app\'s default bands, said to be its convention); a classroom DIN 18041 A',
+        office.id === 'nbc-500' && json(office.primary) === json([500]) && json(office.judged) === json([500]) && listen.id === 'ebu' && json(listen.primary) === json([250, 500, 1000, 2000, 4000]) && json(listen.judged) === json(B)
+          && home.id === 'default' && !home.criterion && home.interpretation && json(home.primary) === json([500, 1000, 2000]) && none.id === 'default' && cls.id === 'din-a',
+        [office, listen, home, none, cls].map(x => `${x.id}: ${x.judgedShort}`).join(' · '));
+      // Limits for T_soll = 0.60 s (target 0.48–0.72 s): 125 Hz 0.65 × 0.6 = 0.39 to 1.45 × 0.6 = 0.87; 4 kHz 0.39 to 1.2 × 0.6 = 0.72.
+      // EBU, around the room's MEASURED Tm (here 0.25 s): 125 Hz from Tm − 0.05 = 0.20 to Tm + 0.30 − 0.25 × lg(125/63)/lg(200/63)
+      // = 0.25 + 0.152 = 0.40; without a measured Tm a band has no limits.
+      // NBC: 500 Hz at most 0.75 s, no lower limit; 1 kHz not judged.
+      const t = { preferred: 0.6, min: 0.48, max: 0.72 }, L = f => EV.limits(f, t, meet);
+      const te = { preferred: 0.25, min: 0.2, max: 0.4 }, tn = { form: 'max', preferred: null, min: null, max: 0.75 };
+      check('A5 Band limits: DIN 18041 for T_soll 0.60 s, 250 Hz–2 kHz 0.48–0.72 s, 125 Hz 0.39–0.87 s, 4 kHz 0.39–0.72 s (all judged); EBU 125 Hz 0.20–0.40 s around Tm 0.25 s; NBC 500 Hz at most 0.75 s',
+        json([125, 250, 1000, 4000].map(f => [L(f).role, L(f).min, L(f).max])) === json([['edge', 0.39, 0.87], ['primary', 0.48, 0.72], ['primary', 0.48, 0.72], ['edge', 0.39, 0.72]])
+          && json(EV.limits(125, te, listen, 0.25)) === json({ role: 'edge', min: 0.2, max: 0.4 }) && EV.limits(125, te, listen).min === null && json(EV.limits(500, tn, office)) === json({ role: 'primary', min: null, max: 0.75 }) && EV.limits(1000, tn, office).role === 'info',
+        json([125, 250, 1000, 4000].map(f => [f, L(f).min, L(f).max])) + ` · EBU 125 ${json(EV.limits(125, te, listen, 0.25))}`);
+      // 9 × 7 × 3.2 = 201.6 m³: 0.32 × lg 201.6 − 0.17 = 0.32 × 2.30449 − 0.17 = 0.56744 s → 0.57 (0.45–0.68); nothing narrows it.
       const rec = AM.services.target.recommend(room('Classroom', 'Teaching', { L: 9, W: 7, H: 3.2 }));
-      check('A5 A classroom keeps the ANSI/ASA S12.60 limit: the target maximum is at most 0.60 s (≤ 283 m³), and 500, 1000 and 2000 Hz are among the bands judged against it',
-        rec.max <= 0.6 && [500, 1000, 2000].every(f => cls.primary.includes(f)), `max ${rec.max} s; ${rec.basisLabel}`);
+      check('A5 A classroom\'s target is DIN 18041 A3\'s own, 0.57 s (0.45–0.68 s) for 201.6 m³: no other standard\'s limit is added (ANSI/ASA S12.60-2010 is superseded)',
+        rec.preferred === 0.57 && rec.min === 0.45 && rec.max === 0.68 && rec.sources.length === 1 && rec.reference.id === 'din18041', `${rec.preferred} (${rec.min}–${rec.max}); ${rec.basisLabel}`);
       const custom = pol(room('Meeting room', 'Meetings and presentations'), { preferred: 0.7, min: 0.6, max: 0.8, source: 'custom' });
       check('A5 A custom target keeps the bands of the room\'s criterion and says it was set by hand', custom.id === 'din-a' && custom.custom, custom.label);
     }
 
-    /* ===== A6 the verdict: masked averages, band warnings, missing bands ===== */
+    /* ===== A6 the verdict: masked averages, edge bands, missing bands, upper limits ===== */
     status('Verdict…');
     {
-      const t = { preferred: 0.5, min: 0.4, max: 0.6 }, pol = EV.policyFor({ type: 'Meeting room', use: 'Meetings and presentations', L: 8, W: 6, H: 3 }, t);
-      const judge = vals => { const rows = EV.bandRows(Object.fromEntries(B.map((f, i) => [f, vals[i]])), t, pol); const res = { valid: true, bands: B.map((f, i) => band(f, vals[i])) }; const v = EV.verdict(rows, RA.ofBands(res, pol.primary), t, pol); return { rows, v, ex: EV.explain(v, rows, t, pol), sm: RA.ofBands(res, pol.primary) }; };
-      // 250 Hz 0.66 above 0.60; the other judged bands 0.50, 0.48, 0.52: average (0.66 + 0.50 + 0.48 + 0.52) ÷ 4 = 0.54,
+      const t = { preferred: 0.6, min: 0.48, max: 0.72 }, pol = EV.policyFor({ industry: 'Corporate offices and meeting rooms', type: 'Meeting room', use: 'Meetings and presentations', L: 8, W: 6, H: 3 }, t);
+      const judgeWith = (tt, pp) => vals => { const rows = EV.bandRows(Object.fromEntries(B.map((f, i) => [f, vals[i]])), tt, pp); const res = { valid: true, bands: B.map((f, i) => band(f, vals[i])) }; const v = EV.verdict(rows, RA.ofBands(res, pp.primary), tt, pp); return { rows, v, ex: EV.explain(v, rows, tt, pp), sm: RA.ofBands(res, pp.primary) }; };
+      const judge = judgeWith(t, pol);
+      // 250 Hz 0.80 above 0.72; the other range bands 0.58, 0.56, 0.62: average (0.80 + 0.58 + 0.56 + 0.62) ÷ 4 = 0.64,
       // inside the range. The room does NOT meet the target.
-      const m = judge([0.55, 0.66, 0.50, 0.48, 0.52, 0.45]);
-      check('A6 An average inside the range (2.16 ÷ 4 = 0.54 s) does not pass the room when a judged band is outside it (250 Hz 0.66 s > 0.60 s): verdict "above", masked, and the explanation says every band has to be in range',
-        close(m.sm.value, 2.16 / 4, 1e-12) && m.v.summaryStatus === 'within' && m.v.status === 'above' && m.v.masked && json(m.v.above.map(r => r.f)) === json([250]) && m.ex.headline === 'Does not meet the target' && /every band has to be/.test(m.ex.lines.join(' ')) && /250 Hz \(0\.66 s\)/.test(m.ex.lines.join(' ')),
+      const m = judge([0.65, 0.80, 0.58, 0.56, 0.62, 0.55]);
+      check('A6 An average inside the range (2.56 ÷ 4 = 0.64 s) does not pass the room when a judged band is outside it (250 Hz 0.80 s > 0.72 s): verdict "above", masked, and the explanation says every judged band has to be',
+        close(m.sm.value, 2.56 / 4, 1e-12) && m.v.summaryStatus === 'within' && m.v.status === 'above' && m.v.masked && json(m.v.above.map(r => r.f)) === json([250]) && m.ex.headline === 'Does not meet the target' && /every judged band has to be/.test(m.ex.lines.join(' ')) && /250 Hz \(0\.80 s\)/.test(m.ex.lines.join(' ')),
         `${m.ex.headline}: ${m.ex.lines.join(' ')}`);
-      // 125 Hz 0.75 above its own limit (0.70), the judged bands within: verdict "within", one band warning, apart.
-      const w = judge([0.75, 0.55, 0.50, 0.48, 0.52, 0.45]);
-      check('A6 125 Hz 0.75 s above its own limit (0.70 s) with every judged band inside: the verdict is "Meets the target", and the band is a separate warning that does not change it',
-        w.v.status === 'within' && w.v.complete && json(w.v.warnings.map(r => r.f)) === json([125]) && w.ex.headline === 'Meets the target' && w.ex.warnings.length === 1 && /125 Hz rings longer than its own limit/.test(w.ex.warnings[0]) && /does not change the verdict/.test(w.ex.warnings[0]),
-        w.ex.warnings[0]);
-      // 4 kHz 0.28 below its own limit (0.30): a warning; 4 kHz 0.32 is within its wider limit although below the range.
-      const w2 = judge([0.55, 0.55, 0.50, 0.48, 0.52, 0.28]), w3 = judge([0.55, 0.55, 0.50, 0.48, 0.52, 0.32]);
-      check('A6 4 kHz below its own lower limit (0.28 < 0.30 s) is a band warning; 0.32 s is inside its wider limit (no warning) although below the 0.40 s range', json(w2.v.warnings.map(r => r.f)) === json([4000]) && w2.rows.find(r => r.f === 4000).status === 'below' && !w3.v.warnings.length && w3.rows.find(r => r.f === 4000).status === 'within', 'ok');
-      // A judged band not measured: incomplete, never a full pass.
-      const g = judge([0.55, null, 0.50, 0.48, 0.52, 0.45]);
-      check('A6 250 Hz (judged) not measured: "Meets the target where measured", incomplete, naming 250 Hz; the average of the other three judged bands', g.v.status === 'within' && !g.v.complete && json(g.v.missing) === json([250]) && g.ex.headline === 'Meets the target where measured' && close(g.sm.value, 1.5 / 3, 1e-12),
-        `${g.ex.headline}: ${g.ex.lines.join(' ')}`);
-      // Too few judged bands (1 of 4): not assessed, no status.
-      const f = judge([0.55, null, null, 0.48, null, 0.45]);
-      check('A6 Only 1 of the 4 judged bands measured: not assessed (no status), with the reason', !f.v.available && f.v.status === null && f.ex.headline === 'Not assessed' && /at least 2 of the 4 bands/.test(f.v.reason), f.v.reason);
-      // Drier than the target in a judged band, none above: "below", treatment not recommended.
-      const d = judge([0.45, 0.42, 0.38, 0.41, 0.44, 0.40]);
-      check('A6 A judged band below the range and none above: "Drier than the target"', d.v.status === 'below' && d.ex.headline === 'Drier than the target' && json(d.v.below.map(r => r.f)) === json([500]), d.ex.lines.join(' '));
+      // 125 Hz 0.90 above its own limit (0.87) with 250 Hz–2 kHz inside: the room does not meet the target (DIN 18041 judges 125 Hz).
+      const e = judge([0.90, 0.62, 0.58, 0.56, 0.62, 0.55]), e2 = judge([0.85, 0.62, 0.58, 0.56, 0.62, 0.55]);
+      check('A6 125 Hz 0.90 s above its own limit (0.87 s) decides the verdict: "Does not meet the target", naming 125 Hz and its limit; 0.85 s is within it although above the 0.72 s range',
+        e.v.status === 'above' && json(e.v.above.map(r => r.f)) === json([125]) && /125 Hz \(0\.90 s, limit 0\.39–0\.87 s\)/.test(e.ex.lines.join(' ')) && !e.v.warnings.length && e2.v.status === 'within' && e2.rows.find(r => r.f === 125).status === 'within',
+        `${e.ex.lines.join(' ')} · 0.85 s: ${e2.v.status}`);
+      // 4 kHz 0.36 below its own lower limit (0.39): "below"; 0.42 is within its own limit although below the 0.48 s range.
+      const w2 = judge([0.65, 0.62, 0.58, 0.56, 0.62, 0.36]), w3 = judge([0.65, 0.62, 0.58, 0.56, 0.62, 0.42]);
+      check('A6 4 kHz below its own lower limit (0.36 < 0.39 s) makes the room "Drier than the target"; 0.42 s is inside its own limit although below the 0.48 s range',
+        w2.v.status === 'below' && json(w2.v.below.map(r => r.f)) === json([4000]) && w3.v.status === 'within' && w3.rows.find(r => r.f === 4000).status === 'within', `${w2.ex.headline}; 0.42 s: ${w3.v.status}`);
+      // A judged band not measured: incomplete, never a full pass (a range band and an edge band).
+      const g = judge([0.65, null, 0.58, 0.56, 0.62, 0.55]), g2 = judge([null, 0.62, 0.58, 0.56, 0.62, 0.55]);
+      check('A6 250 Hz (judged) not measured: "Meets the target where measured", naming 250 Hz, with the average of the other three range bands; 125 Hz not measured: also incomplete (it is judged)',
+        g.v.status === 'within' && !g.v.complete && json(g.v.missing) === json([250]) && g.ex.headline === 'Meets the target where measured' && close(g.sm.value, 1.76 / 3, 1e-12)
+          && !g2.v.complete && json(g2.v.missing) === json([125]) && g2.ex.headline === 'Meets the target where measured',
+        `${g.ex.headline}: ${g.ex.lines.join(' ')} · ${g2.ex.lines.join(' ')}`);
+      // Too few range bands (1 of 4): not assessed, no status.
+      const f = judge([0.6, null, null, 0.56, null, 0.55]);
+      check('A6 Only 1 of the 4 range bands measured: not assessed (no status), with the reason', !f.v.available && f.v.status === null && f.ex.headline === 'Not assessed' && /at least 2 of the 4 bands/.test(f.v.reason), f.v.reason);
+      // Drier than the target in a range band, none above: "below", treatment not recommended.
+      const d = judge([0.55, 0.50, 0.46, 0.50, 0.53, 0.50]);
+      check('A6 A range band below the range and none above: "Drier than the target"', d.v.status === 'below' && d.ex.headline === 'Drier than the target' && json(d.v.below.map(r => r.f)) === json([500]), d.ex.lines.join(' '));
+      // NBC 2016 upper limit (0.75 s at 500 Hz): judged at 500 Hz only, and never "below".
+      const tn = { form: 'max', preferred: null, min: null, max: 0.75 }, pn = EV.policyFor({ industry: 'Corporate offices and meeting rooms', type: 'Private office', use: 'Focused desk work', L: 5, W: 4, H: 3 }, tn);
+      const nb = judgeWith(tn, pn), n1 = nb([1.2, 0.9, 0.70, 0.95, 0.9, 0.8]), n2 = nb([0.5, 0.5, 0.80, 0.5, 0.5, 0.5]), n3 = nb([0.3, 0.2, 0.15, 0.2, 0.2, 0.2]);
+      check('A6 An upper-limit target (NBC 2016, 0.75 s at 500 Hz): 0.70 s at 500 Hz meets it whatever the other bands; 0.80 s does not; 0.15 s is within it, never "below"',
+        n1.v.status === 'within' && n1.v.complete && n2.v.status === 'above' && n3.v.status === 'within' && n1.rows.filter(r => r.role !== 'info').map(r => r.f).join() === '500' && /500 Hz band rings for at most 0\.75 s/.test(n1.ex.lines.join(' ')),
+        `${n1.ex.lines.join(' ')} · ${n2.ex.headline} · ${n3.ex.headline}`);
     }
-    // The same rule in the app, on the project: Assessment shows the verdict apart from the band warnings.
+    // The same rule in the app, on the project: Assessment shows the verdict over every judged band.
     {
       p.target = { source: 'custom', basis: 'Test', preferred: 0.55, min: 0.45, max: 0.62 };
       p.completed = W.STAGES.map(s => s.id);
       S.emit();
       const a = D.assessment(p), at = textOf(W.get('assessment').view(ctx()).body);
-      const above = a.bands.filter(b => b.role === 'primary' && b.status === 'above').map(b => b.f), warn = a.bands.filter(b => b.role === 'secondary' && ['above', 'below'].includes(b.status)).map(b => b.f);
-      check('A6 On the project (two positions): the verdict follows the judged bands of the room averaged over the positions, the summary is their average, and Assessment shows the verdict, then any band warnings in their own card',
-        a.available && a.positions.valid === 2 && !a.provisional && a.status === (above.length ? 'above' : 'within') && close(a.rt, [250, 500, 1000, 2000].reduce((x, f2) => x + D.room(p).bands.find(b => b.f === f2).rt60, 0) / 4, 1e-12)
-          && /Result against the target/.test(at) && (warn.length ? /Band warnings/.test(at) : !/Band warnings/.test(at)) && !bad(at),
-        `verdict ${a.status} (above: ${above.join(', ') || 'none'}; warnings: ${warn.join(', ') || 'none'}); summary ${a.rt.toFixed(3)} s`);
+      const judged = a.bands.filter(b => b.role === 'primary' || b.role === 'edge'), above = judged.filter(b => b.status === 'above').map(b => b.f), below = judged.filter(b => b.status === 'below').map(b => b.f);
+      check('A6 On the project (two positions): the verdict follows every judged band of the room averaged over the positions, the summary is the average of its range bands, and Assessment shows the verdict',
+        a.available && a.positions.valid === 2 && !a.provisional && a.status === (above.length ? 'above' : below.length ? 'below' : 'within') && close(a.rt, a.policy.primary.reduce((x, f2) => x + D.room(p).bands.find(b => b.f === f2).rt60, 0) / a.policy.primary.length, 1e-12)
+          && /Result against the target/.test(at) && !bad(at),
+        `${a.policy.id}: verdict ${a.status} (above: ${above.join(', ') || 'none'}; below: ${below.join(', ') || 'none'}); summary ${a.rt.toFixed(3)} s`);
       const groups = D.soundGroups(p), low = groups.find(g2 => g2.id === 'low');
-      const lowRows = a.bands.filter(b => [125, 250].includes(b.f)).map(b => b.status);
-      check('A6 The plain "low sounds" status follows its bands\' own limits (any band above its limit: too echoey)', low.status === (lowRows.includes('above') ? 'above' : lowRows.includes('below') ? 'below' : 'within'), `${low.status} from ${lowRows.join(', ')}`);
+      const lowRows = a.bands.filter(b => [125, 250].includes(b.f) && b.status && b.status !== 'insufficient').map(b => b.status);
+      check('A6 The plain "low sounds" status follows its bands\' own limits (any band above its limit: too echoey)', low.status === (lowRows.includes('above') ? 'above' : lowRows.includes('below') ? 'below' : lowRows.length ? 'within' : 'none'), `${low.status} from ${lowRows.join(', ')}`);
     }
 
     /* ===== A7 the PDF and the record agree with the room ===== */
@@ -349,6 +370,27 @@
         m && m.processing.positions && m.processing.positions.P1 && m.processing.positions.P1.recordingId === old.processing.result.recordingId && m.review.includes('results') && m.review.includes('assessment')
           && /measured at one position/.test(m.legacyNote || '') && D.positions(m).count === 1 && D.assessment(m).provisional,
         m ? `positions ${Object.keys(m.processing.positions).join(', ')}; review ${m.review.join(', ')}` : 'not loaded');
+    }
+    // A project processed before RT60 was reported from T20 (20 October 2026): its bands used T30 where 45 dB was usable.
+    // Each band is brought over to the T20 its take kept, never re-estimated, so positions are never averaged across methods.
+    {
+      const old = copy(p), t20s = [0.60, 0.55, 0.57, 0.48, 0.45, 0.41];
+      Object.assign(old, { id: `${window.LEGACY_ID}-t30`, createdAt: '2026-10-11T09:00:00.000Z', updatedAt: '2026-10-11T09:00:00.000Z' });
+      old.room.name = 'Measured with T30 first';
+      Object.keys(old.processing.positions).forEach(pos => { const r = old.processing.positions[pos]; delete r.rtMethod; r.bands.forEach((b, i) => { if (b.rt60 != null) Object.assign(b, { path: 'T30', t30: b.rt60, t20: t20s[i] }); }); r.headline.method = 'T30'; });
+      old.processing.result = copy(old.processing.positions.P2);
+      old.completed = W.STAGES.map(s => s.id);
+      old.review = [];
+      const KEY = 'acoustic-measurement-prototype', idx = JSON.parse(localStorage.getItem(KEY) || '{"v":2,"ids":[]}');
+      localStorage.setItem(`${KEY}:p:${old.id}`, JSON.stringify(old));
+      idx.ids = (idx.ids || []).concat([old.id]);
+      localStorage.setItem(KEY, JSON.stringify(idx));
+      window.dispatchEvent(new StorageEvent('storage', { key: KEY }));
+      const m = S.state.projects.find(x => x.id === old.id), r1 = m && m.processing.positions.P1, room = m && D.room(m);
+      check('A10 A project processed with T30 first: every band is brought over to the T20 its take kept (at every position), the headline follows, the room average is over T20 only, and Results and the steps after it are marked for review',
+        m && r1.bands.every((b, i) => b.rt60 == null || (b.path === 'T20' && b.rt60 === t20s[i] && b.converted)) && r1.headline.method === 'T20' && r1.rtMethod === 'T20'
+          && room.bands.every((b, i) => b.rt60 == null || Math.abs(b.rt60 - t20s[i]) < 1e-12) && ['results', 'assessment', 'final'].every(id => m.review.includes(id)),
+        m ? `${r1.bands.map(b => `${b.f}: ${b.rt60} ${b.path}`).join(' · ')}; review ${m.review.join(', ')}` : 'not loaded');
     }
     status('Part A done.');
   }

@@ -38,6 +38,8 @@
     const prev = (before.find(e => e.id === pos) || {}).result || null;
     const changed = result.valid && !before.some(e => e.result.recordingId === result.recordingId) && before.length > 0;
     S.update(pp => {
+      // This take has now been processed: Processing is up to date again (a new take flagged it, AM.live).
+      pp.review = pp.review.filter(id => id !== 'processing');
       if (result.valid) {
         // Results measured before positions were kept: the current take is the only one, at its own position.
         const map = pp.processing.positions || (pp.processing.positions = {});

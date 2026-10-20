@@ -38,6 +38,16 @@
       const c = db(f), lo = db(b.lo), hi = db(b.hi), oct = Math.max(db(b.lo / 2), db(b.hi * 2));
       check(`${f} Hz band filter shape`, Math.abs(c) < 0.3 && Math.abs(lo + 3) < 0.3 && Math.abs(hi + 3) < 0.3 && oct < -30, `centre ${c.toFixed(2)} dB, edges ${lo.toFixed(2)} / ${hi.toFixed(2)} dB, one octave outside ${oct.toFixed(1)} dB`);
     });
+    // IEC 61260-1:2014 specifies base-10 octaves only: midband fm = 1000·10^(0.3k), edges fm·10^(∓0.15).
+    // 125 Hz: 1000·10^(−0.9) = 125.893 Hz; 4000 Hz: 1000·10^(0.6) = 3981.07 Hz; edges of 125 Hz: 89.125 and 177.828 Hz.
+    {
+      const b125 = DSP.octaveBand(125, fs), b4k = DSP.octaveBand(4000, fs), b1k = DSP.octaveBand(1000, fs);
+      const db = (b, x) => 20 * Math.log10(DSP.magnitude(b.sections, x, fs));
+      const ok = Math.abs(b125.fm - 125.8925) < 1e-3 && Math.abs(b4k.fm - 3981.072) < 1e-2 && b1k.fm === 1000
+        && Math.abs(b125.lo - 89.1251) < 1e-3 && Math.abs(b125.hi - 177.8279) < 1e-3 && Math.abs(db(b125, b125.fm)) < 0.3 && b125.f === 125;
+      check('Octave bands on the IEC 61260-1:2014 base-10 midband frequencies (125.89 … 3981.1 Hz), named by their nominal ones', ok,
+        `125: fm ${b125.fm.toFixed(4)}, edges ${b125.lo.toFixed(4)}–${b125.hi.toFixed(4)} Hz, ${db(b125, b125.fm).toFixed(3)} dB at fm · 4000: fm ${b4k.fm.toFixed(3)} · 1000 Hz band at 2000 Hz centre ${db(b1k, DSP.midband(2000)).toFixed(1)} dB`);
+    }
 
     const plan = AN.sweepPlan(fs), sweep = AN.makeSweep(plan);
     const evaluate = (rec, noise) => { const a = AN.analyseTake(rec, plan, sweep); const take = { id: 't', takenAt: '', status: a.status, reason: a.reason, levels: a.levels, plan, sampleRate: fs, analysis: a, warnings: [] }; return { a, r: PROC.evaluate(take, { noise }) }; };
@@ -64,8 +74,12 @@
       const per = r.bands.map((b, k) => `${b.f}: ${b.rt60 == null ? '—' : b.rt60.toFixed(3)} ${b.path || b.reason} / room ${own[k] == null ? '—' : own[k].toFixed(3)}`).join(' · ');
       check('Sweep, RT60 0.80 s everywhere: take captured', a.status === 'captured', a.reason || `latency ${a.latencySec} s`);
       check('Sweep, RT60 0.80 s everywhere: every band within 2 % of the room\'s own decay', r.bands.every((b, k) => near(b.rt60, own[k], 0.02)), per);
-      check('Sweep, RT60 0.80 s everywhere: 500 Hz–4 kHz within 5 % of 0.80 s', r.bands.filter(b => b.f >= 500).every(b => near(b.rt60, 0.8, 0.05)), per);
-      check('Sweep, RT60 0.80 s everywhere: T30 or better at 1000 Hz', r.headline && r.headline.method !== 'T20', r.headline && `${r.headline.method}, ${r.bands.find(b => b.f === 1000).decayRangeDb} dB usable`);
+      // Against the nominal 0.80 s, the tolerance of the range reported (T20: 8 %, as tests/validation uses): one synthetic
+      // decay's own T20 strays from its nominal RT more than its T30 does (this room's 2 kHz band: T20 0.842 s).
+      check('Sweep, RT60 0.80 s everywhere: 500 Hz–4 kHz within 8 % of 0.80 s (T20)', r.bands.filter(b => b.f >= 500).every(b => b.path === 'T20' && near(b.rt60, 0.8, 0.08)), per);
+      const k1 = r.bands.find(b => b.f === 1000);
+      check('Sweep, RT60 0.80 s everywhere: T20 at 1000 Hz, with the T30 check worked out and the decay straight (C within ±10 %), so high confidence', r.headline && r.headline.method === 'T20' && k1.t30 != null && Math.abs(k1.curvature) <= 10 && k1.confidence === 'High',
+        r.headline && `${r.headline.method}, T30 ${k1.t30} s, C ${k1.curvature} %, ${k1.decayRangeDb} dB usable, ${k1.confidence}`);
     }
     // Sweep method, a different RT60 per band
     {
@@ -223,9 +237,10 @@
     }
 
     /* RT60 deep audit: a curved (double-slope) decay, independence from the background level, gaps in the recording. */
-    // A room with a fast early decay and a slower late one (0.25 s, then 0.8 s 14 dB lower). ISO 3382-2 evaluates T30 on
-    // the whole curve from −5 dB. Before the direct-sound cap, the early decay was taken for the device's direct sound
-    // and the evaluation started in the late decay (+15…+37 % here).
+    // A room with a fast early decay and a slower late one (0.25 s, then 0.8 s 14 dB lower). The app reports T20 (ISO
+    // 3382-2's preferred range, from −5 dB on the whole curve) and works out T30 as the check that flags the curvature.
+    // Before the direct-sound cap, the early decay was taken for the device's direct sound and the evaluation started in
+    // the late decay (+15…+37 % here).
     {
       const early = FIX.roomIR({ fs, seconds: 2.5, rt: 0.25, seed: 5 }), late = FIX.roomIR({ fs, seconds: 2.5, rt: 0.8, seed: 505 });
       const room = early.map((v, i) => v + late[i] * Math.pow(10, -14 / 20));
@@ -233,21 +248,24 @@
       const gap = Math.round(0.002 * fs), dev = new Float64Array(room.length + gap);
       dev[0] = Math.sqrt(e * 100); for (let i = 0; i < room.length; i++) dev[gap + i] += room[i];
       const pk = dev[0]; for (let i = 0; i < dev.length; i++) dev[i] /= pk;
-      for (const [label, ir, tol] of [['no direct sound', room, 0.02], ['one device, direct sound 20 dB', dev, 0.05]]) {
+      // With the device's direct sound 20 dB above the decay, the evaluation starts below it: T20 then reads up to 5.2 %
+      // short of the room's own T20 in this curved decay (2 kHz), inside the 8 % this suite allows T20 (the T30 it reported
+      // before read within 5 % of the room's own T30).
+      for (const [label, ir, tol] of [['no direct sound', room, 0.02], ['one device, direct sound 20 dB', dev, 0.08]]) {
         const r = runTake(FIX.recordSweep({ plan, sweep, ir, peakDbfs: -10, noiseDbfs: -75 }));
         const own = r.bands.map(b => (b.path ? ownDecay(room, b.f, b.path) : null));
-        check(`Double-slope decay, ${label}: every band's T30 within ${tol * 100} % of the room's own (ISO 3382-2) and flagged as curved`,
-          r.bands.every((b, k) => b.path === 'T30' && near(b.rt60, own[k], tol) && b.notes.some(n => /curved/.test(n)) && b.confidence !== 'High'),
+        check(`Double-slope decay, ${label}: every band's T20 within ${tol * 100} % of the room's own (ISO 3382-2), with the T30 check worked out and the decay flagged as curved`,
+          r.bands.every((b, k) => b.path === 'T20' && b.t30 != null && near(b.rt60, own[k], tol) && b.notes.some(n => /curved/.test(n)) && b.confidence !== 'High'),
           r.bands.map((b, k) => `${b.f}: ${b.rt60 == null ? '—' : b.rt60.toFixed(3)} ${b.path || ''} / room ${own[k] == null ? '—' : own[k].toFixed(3)}, C ${b.curvature} %`).join(' · '));
       }
     }
-    // The same room in a noisier and a much quieter moment: the same evaluation range (T30), so the same value. A 60 dB fit
+    // The same room in a noisier and a much quieter moment: the same evaluation range (T20), so the same value. A 60 dB fit
     // (the earlier T60 path, used from 75 dB usable) read this room's 125 Hz band 0.79–0.80 s instead of 0.72 s.
     {
       const ir = FIX.roomIR({ fs, seconds: 3, rt: 0.8, seed: 11 });
       const [a, b] = [-55, -95].map(noiseDbfs => runTake(FIX.recordSweep({ plan, sweep, ir, noiseDbfs })));
-      check('Background −55 vs −95 dBFS: T30 in both, every band within 1 % (RT60 does not depend on how quiet the room was)',
-        a.bands.every((x, k) => x.path === 'T30' && b.bands[k].path === 'T30' && near(b.bands[k].rt60, x.rt60, 0.01)),
+      check('Background −55 vs −95 dBFS: T20 in both, every band within 1 % (RT60 does not depend on how quiet the room was)',
+        a.bands.every((x, k) => x.path === 'T20' && b.bands[k].path === 'T20' && near(b.bands[k].rt60, x.rt60, 0.01)),
         a.bands.map((x, k) => `${x.f}: ${x.rt60} ${x.path} (${Math.round(x.decayRangeDb)} dB) / ${b.bands[k].rt60} ${b.bands[k].path} (${Math.round(b.bands[k].decayRangeDb)} dB, 60 dB fit ${b.bands[k].t60})`).join(' · '));
     }
     // A gap in the recording during the sweep (the browser fills audio it failed to deliver with zeros, one 128-sample

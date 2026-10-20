@@ -77,7 +77,9 @@
   function notePermission(p, e) {
     if (!isOpen(p)) return;
     const code = e ? (e.code || 'error') : 'granted';
-    if (code === 'cancelled' || code === 'stopped' || code === 'suspended') return;
+    // Not about access: a cancelled or interrupted recording (the page was hidden or left) says nothing about the
+    // permission, which stays as it was.
+    if (code === 'cancelled' || code === 'stopped' || code === 'suspended' || code === 'interrupted') return;
     if (p.setup.permission !== code) S().update(pp => { pp.setup.permission = code; });
   }
 
@@ -211,7 +213,9 @@
     if (e && e.code === 'cancelled') return;
     notePermission(p, e);
     if (e && e.code === 'stopped') Object.assign(state.mic, { status: 'stopped', code: 'stopped', message: e.message });
-    if (isOpen(p)) S().update(pp => { pp.measurement.failed = { reason: (e && e.message) || 'The measurement failed.', code: e && e.code, takenAt: new Date().toISOString(), position: pp.setup.position || null }; });
+    // The level the take was started at (the setting may have been changed since only when no take was running).
+    const levelDb = state.take && state.take.pid === p.id ? state.take.levelDb : AM.analysis.sweepLevel(p.setup.sweepLevelDb);
+    if (isOpen(p)) S().update(pp => { pp.measurement.failed = { reason: (e && e.message) || 'The measurement failed.', code: e && e.code, takenAt: new Date().toISOString(), position: pp.setup.position || null, levelDb }; });
   }
   function cancelTake(silent) { if (state.take) { state.take.ctl.cancel(); if (!silent) later('Measurement cancelled. No recording was stored.'); } }
 

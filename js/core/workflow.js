@@ -84,8 +84,18 @@
      material never puts the target, the assessment or any measurement step up for review. The room's name is a label
      and the furnishing a note (it does not change the target: services/target.js): correcting either puts nothing up
      for review. */
+  // The room's other descriptive details (reference, purpose, occupancy, notes, the lists and the industry's questions)
+  // describe the room for the report: none of them changes the target or a measurement. Adding or removing a wall or a
+  // ceiling section changes the surfaces, so it reaches the predictions only.
   // Where the NEXT take is made: each take records its own position, so choosing another one changes no finished step.
-  const NARROW = { 'room.surfaces': ['treatment', 'prediction', 'final'], 'room.name': [], 'room.furnishing': [], 'setup.position': [] };
+  // The room-preparation checklist is what is done before a take: ticking it changes nothing measured.
+  const SURFACE_USERS = ['treatment', 'prediction', 'final'];
+  const NARROW = {
+    'room.surfaces': SURFACE_USERS, 'room.wallKeys': SURFACE_USERS, 'room.ceilingKeys': SURFACE_USERS,
+    'room.name': [], 'room.furnishing': [], 'room.reference': [], 'room.purpose': [], 'room.occupancy': [], 'room.acousticNotes': [],
+    'room.furnishings': [], 'room.problems': [], 'room.outcomes': [], 'room.context': [],
+    'setup.position': [], 'setup.prep': [],
+  };
   function affects(path) {
     const k = Object.keys(NARROW).find(x => path === x || path.startsWith(x + '.'));
     return k ? NARROW[k] : null;

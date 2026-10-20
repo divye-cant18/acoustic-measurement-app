@@ -138,7 +138,7 @@
 
     {
       const d = oneDevice(48000, 0.5, 211);
-      await section('Background noise level', 'One device, RT 0.50 s. The louder the background, the less decay is usable: T30 from 45 dB, T20 from 35 dB, below that no value. Never a wrong value.',
+      await section('Background noise level', 'One device, RT 0.50 s. The louder the background, the less decay is usable: T20 from 35 dB (with the T30 check from 45 dB), below that no value. Never a wrong value.',
         () => [-85, -75, -65, -58, -52, -46].map(nz => () => runCase(`Background ${nz} dBFS (pink)`, { rec: deviceTake(s48, d.ir, { noiseDbfs: nz, seed: 400 - nz }), s: s48, room: d.room, nominal: 0.5, expect: 'either', before: true })));
     }
 
@@ -157,7 +157,7 @@
     {
       const early = FIX.roomIR({ fs: 48000, seconds: 2.5, rt: 0.25, seed: 5 }), late = FIX.roomIR({ fs: 48000, seconds: 2.5, rt: 0.8, seed: 505 });
       const room = early.map((v, i) => v + late[i] * Math.pow(10, -14 / 20));
-      await section('Curved (double-slope) decay', 'A fast early decay (0.25 s) and a slower late one (0.80 s, 14 dB lower), as in a room with an absorbent ceiling or coupled spaces. ISO 3382-2 evaluates T30 on the whole curve from −5 dB and flags the curvature C = T30/T20 − 1. Before: the early decay was taken for the device\'s direct sound and the late decay read alone.',
+      await section('Curved (double-slope) decay', 'A fast early decay (0.25 s) and a slower late one (0.80 s, 14 dB lower), as in a room with an absorbent ceiling or coupled spaces. The app reports T20 on the whole curve from −5 dB (the range ISO 3382-2 prefers) and flags the curvature C = T30/T20 − 1. Before: the early decay was taken for the device\'s direct sound and the late decay read alone.',
         () => [['no direct sound', room], ['one device, direct sound 20 dB', withDirect(room, 48000, 20)]].map(([what, ir]) => () => runCase(`Double slope, ${what}`, { rec: FIX.recordSweep({ plan: s48.plan, sweep: s48.sweep, ir, peakDbfs: -10, noiseDbfs: -75 }), s: s48, room, before: true })));
     }
 
@@ -227,7 +227,7 @@
     const valid = rows.filter(r => r.result.valid), invalid = rows.filter(r => !r.result.valid);
     add('Headline = the 1000 Hz band\'s value and method, in every valid result', valid.every(r => { const ref = r.result.bands.find(b => b.f === REF); return r.result.headline.f === REF && r.result.headline.rt60 === ref.rt60 && r.result.headline.method === ref.path; }), `${valid.length} valid results`);
     add('No headline and status invalid whenever the 1000 Hz band has no value', invalid.every(r => r.result.headline == null && r.result.status === 'invalid' && !!r.result.reason), `${invalid.length} invalid results`);
-    add('Every band value comes from T30 or T20, with enough usable decay, a straight decay and B·T ≥ 4', rows.every(r => r.result.bands.every(b => b.rt60 == null || ((b.path === 'T30' && b.decayRangeDb >= D.required.T30) || (b.path === 'T20' && b.decayRangeDb >= D.required.T20)) && b.xi <= D.xi.fail && b.rt60 * b.bandwidth >= D.minBT)), `${rows.reduce((s, r) => s + r.result.bands.filter(b => b.rt60 != null).length, 0)} band values`);
+    add('Every band value comes from T20, with enough usable decay, a straight decay and B·T ≥ 4; T30 only as the check, from 45 dB', rows.every(r => r.result.bands.every(b => b.rt60 == null || (b.path === 'T20' && b.decayRangeDb >= D.required.T20 && b.rt60 === b.t20 && (b.t30 == null || b.decayRangeDb >= D.required.T30) && b.xi <= D.xi.fail && b.rt60 * b.bandwidth >= D.minBT))), `${rows.reduce((s, r) => s + r.result.bands.filter(b => b.rt60 != null).length, 0)} band values`);
     add('Every band without a value says why', rows.every(r => r.result.bands.every(b => b.rt60 != null || !!b.reason)), '');
     // The same result as the app's screens and report read it (AM.derive), with a target and no treatment.
     const sample = valid.slice(0, 12);

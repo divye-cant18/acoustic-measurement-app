@@ -71,10 +71,20 @@
         D.INDUSTRIES.every(i => i.types[i.types.length - 1] === 'Other') && json(D.roomTypesFor('Other / custom industry')) === json(['Other']), D.INDUSTRIES.map(i => i.types.length).join(', '));
       const studio = D.roomTypesFor('Recording and music studios');
       check('Room types follow the industry: studios offer studios, not classrooms', studio.includes('Recording studio') && studio.includes('Rehearsal room') && !studio.includes('Classroom'), studio.join(', '));
-      const types = [...new Set(D.INDUSTRIES.flatMap(i => i.types))];
-      const bad = types.filter(t => { const uses = TS.usesFor(t); return !uses.length || uses.some(u => !TD.USES[u] || !TD.CRITERIA[TD.USES[u].criterion]); });
-      check('Every room type of every industry has main activities, and each follows a criterion in the data (none invented)', !bad.length, bad.length ? bad.join(', ') : `${types.length} room types`);
-      check('"Other" offers every main activity', json(TS.usesFor('Other')) === json(Object.keys(TD.USES)), `${TS.usesFor('Other').length} activities`);
+      // Standards-based targets (2026-10-19): every room type the app knows has its categories in js/data/targets.js; each
+      // category follows a verified criterion in the data or says why it has none; only types with a verified category are
+      // offered (with "Other"), and "Other" has no activity and no criterion.
+      const types = [...new Set(D.INDUSTRIES.flatMap(i => i.types))].filter(t => t !== 'Other');
+      const bad = types.filter(t => { const cs = TD.CATEGORIES[t] || []; return !cs.length || cs.some(([u, rule]) => !TD.USES[u] || (rule.criterion ? !TD.CRITERIA[rule.criterion] : !rule.reason)); });
+      check('Every room type of every industry has its main activities, each with a criterion in the data or the reason it has none (none invented)', !bad.length, bad.length ? bad.join(', ') : `${types.length} room types`);
+      const offered = [...new Set(D.INDUSTRIES.flatMap(i => TS.offeredTypes(i.name)))].filter(t => t !== 'Other'), notOffered = types.filter(t => !offered.includes(t));
+      // Every room type is offered (2026-10-20): those with a verified criterion first, the others grouped as having no
+      // verified RT60 target; "Other" last, with no activity.
+      const res = TS.typeGroups('Residential spaces');
+      check('Every room type is offered: those with a verified criterion first, the rest grouped as having no verified RT60 target (homes: the home studio, then living room, bedroom, home theatre and "Other"); "Other" offers no activity',
+        offered.every(t => TS.usesFor(t).length) && notOffered.every(t => !TS.usesFor(t).length) && !TS.usesFor('Other').length
+          && json(res.target) === json(['Home studio']) && json(res.none) === json(['Living room', 'Bedroom', 'Home theatre', 'Other']),
+        `${offered.length} with a target; without: ${notOffered.join(', ')}`);
       const moved = [['Corporate / Office', 'Conference room', 'Corporate offices and meeting rooms'], ['Media & Entertainment', 'Cinema', 'Auditoriums and performance spaces'],
         ['Media & Entertainment', 'Recording studio', 'Recording and music studios'], ['Public & Worship', 'Exhibition hall', 'Industrial and commercial facilities'],
         ['Public & Worship', 'Place of worship', 'Auditoriums and performance spaces'], ['Education', 'Classroom', 'Education and training facilities']];
@@ -103,8 +113,8 @@
       check('The studio questions apply now (role in the studio, how sound is listened to)', json(model.questionsFor(p().room).map(q => q.id)) === json(['studioRole', 'monitoring']), model.questionsFor(p().room).map(q => q.id).join(', '));
       S.set('room.context.studioRole', 'Control or mixing room');
       act.setType(ctx(), 'Other');
-      check('Room type "Other": every activity offered, the activity kept (it is one of them), the studio answer kept (same industry)',
-        p().room.type === 'Other' && TS.usesFor('Other').includes(p().room.use) && p().room.context.studioRole === 'Control or mixing room', `${p().room.use}; ${json(p().room.context)}`);
+      check('Room type "Other": no main activity is asked (it has no criterion), the studio answer kept (same industry)',
+        p().room.type === 'Other' && p().room.use === '' && p().room.context.studioRole === 'Control or mixing room', `"${p().room.use}"; ${json(p().room.context)}`);
       check('"Other" needs its name before the step can be finished', !W.get('room').canContinue(p()).ok && /Name the room type/.test(W.get('room').canContinue(p()).reason), W.get('room').canContinue(p()).reason);
       S.set('room.typeOther', 'Podcast booth');
       check('Named: the step can be finished', W.get('room').canContinue(p()).ok, json(W.get('room').canContinue(p())));
@@ -155,6 +165,74 @@
       check('Unticked again: Wall 2 has no equipment, and nothing else on it changed', !p().room.surfaces.wall2.equipment.length && p().room.surfaces.wall2.material === D.demoRoom().surfaces.wall2.material, json(p().room.surfaces.wall2.equipment));
       act.toggleEquipment(ctx(), 'floor|ac');
       check('Equipment is for walls: ticking it on the floor does nothing', !(p().room.surfaces.floor.equipment || []).length, json(p().room.surfaces.floor.equipment));
+    }
+
+    /* ===== 2b. what a surface is, in everyday words (js/data/room-form.js SURFACE_TYPES) ===== */
+    status('Everyday types…');
+    {
+      const kinds = ['wall', 'floor', 'ceiling'];
+      // Every type stands for a construction and finish that fit each other, and its typical sound data, where it has
+      // any, is a library entry for that kind of surface that describes them (no value of its own).
+      const bad = kinds.flatMap(k => RF.SURFACE_TYPES[k].filter(t => {
+        if (!RF.FINISHES.some(f => f.id === t.finish && f.kinds.includes(k))) return true;
+        if (t.construction && !(RF.FITS[k][t.construction] || []).includes(t.finish)) return true;
+        if (!t.material) return false;
+        const m = SF.material(t.material);
+        return !m || !m.surfaces.includes(k) || !SF.materialFits(t.material, k, t.construction, t.finish);
+      }).map(t => `${k}:${t.id}`));
+      const noData = kinds.flatMap(k => RF.SURFACE_TYPES[k].filter(t => !t.material).map(t => `${k}:${t.id}`));
+      check('Every everyday type has a construction and finish that fit, and typical sound data from a library entry that describes it; only these have none: mirror, metal sheet and "Something else"',
+        !bad.length && json(noData) === json(['wall:mirror', 'wall:metal-sheet', 'wall:other', 'floor:other', 'ceiling:other']), bad.join(', ') || `no data: ${noData.join(', ')}`);
+      const types = [...new Set(D.INDUSTRIES.flatMap(i => i.types))].filter(t => t !== 'Other');
+      const missing = types.filter(t => { const l = RF.ROOM_MATERIALS[t]; return !l || kinds.some(k => !l[k] || !l[k].length || l[k].some(id => !SF.typeOf(k, id))); });
+      check('Every room type has its own list of the walls, floors and ceilings common in it, each a type in the list', !missing.length, missing.join(', ') || `${types.length} room types`);
+      const lobby = SF.typesFor('floor', { type: 'Hotel lobby', industry: 'Hospitality and restaurants' }), mine = SF.typesFor('wall', { type: 'Other', industry: 'Industrial and commercial facilities' });
+      check('The common types come first: a hotel lobby\'s floors start with marble, granite or Kota stone; a room type the user names uses its industry\'s list; "Something else" is always last',
+        lobby.common[0].id === 'stone' && /hotel lobby/.test(lobby.label) && mine.common[0].id === 'block-bare' && mine.label === 'Common in this industry' && lobby.rest[lobby.rest.length - 1].id === 'other' && !lobby.common.some(t => t.id === 'other'),
+        `${lobby.label}: ${lobby.common.map(t => t.id).join(', ')} · ${mine.label}: ${mine.common[0].id}`);
+      // Choosing a type: its construction, finish and typical entry; the same type again keeps an exact entry chosen for it.
+      act.setSurfaceType(ctx(), 'wall3|gypsum-partition');
+      const w3 = () => p().room.surfaces.wall3;
+      check('"Gypsum board partition" on Wall 3: plasterboard, painted, and the typical entry (Hall, gypsum wallboard on studs)',
+        w3().type === 'gypsum-partition' && w3().construction === 'plasterboard' && w3().finish === 'painted' && w3().material === 'hall-gypsum-wallboard-1-2-in-on-studs', json(w3()).slice(0, 200));
+      act.surfaceMaterial(ctx(), PLASTERBOARD, { dataset: { key: 'wall3', part: 'finish' } });
+      act.setSurfaceType(ctx(), 'wall3|gypsum-partition');
+      check('An exact entry of the same type (2 × 13 mm plasterboard) keeps the type, and choosing the type again does not replace it', w3().type === 'gypsum-partition' && w3().material === PLASTERBOARD, `${w3().type}; ${w3().material}`);
+      act.setSurfaceType(ctx(), 'wall3|mirror');
+      check('Another type replaces it: a mirror wall has no library data, so none is set (never a borrowed value)', w3().type === 'mirror' && w3().construction === 'glass' && w3().finish === 'mirror' && w3().material === '' && SF.surfaceModel(p().room, 'wall3').parts.find(x => x.role === 'finish').alpha == null,
+        json(w3()).slice(0, 200));
+      act.setSurfaceType(ctx(), 'wall3|other');
+      S.set('room.surfaces.wall3.finishOther', { name: 'Jute wall covering', notes: '' });
+      check('"Something else": its name is asked, it has no sound data, and it is listed for review with the report form', w3().type === 'other' && w3().finish === 'other' && !w3().material && SF.typeText(w3(), 'wall') === 'Jute wall covering' && SF.customMaterials(p().room).some(c => c.name === 'Jute wall covering'),
+        json(SF.customMaterials(p().room)));
+      // A surface saved before types existed is recognised, not rewritten.
+      const old = { construction: 'plasterboard', finish: 'painted', material: PLASTERBOARD };
+      const rec = SF.typeOfSurface(old, 'wall');
+      check('A wall saved before types existed (plasterboard, painted) is recognised as a gypsum board partition, and nothing is written to it', rec && rec.type.id === 'gypsum-partition' && rec.inferred && !('type' in old), rec ? rec.type.id : 'none');
+      // Sound in words, from the sourced α, mean over 250 Hz–2 kHz: painted plaster (0.02 × 4) 0.02: hard; plywood panelling
+      // (0.22 + 0.17 + 0.09 + 0.10) ÷ 4 = 0.145: a little; cork board (0.05 + 0.17 + 0.52 + 0.50) ÷ 4 = 0.31: some;
+      // fabric-wrapped panel 25 mm (0.27 + 0.80 + 1.00 + 1.00, the last two limited to 1.00) ÷ 4 = 0.7675: a lot.
+      const lv = id => SF.soundRating(id).level, mean = id => SF.soundRating(id).mean;
+      check('Sound in plain words from the sourced data (mean 250 Hz–2 kHz, worked out here): painted plaster 0.02 hard; plywood panelling 0.145 a little; cork board 0.31 some; a 25 mm fabric-wrapped panel 0.7675 a lot',
+        lv('aua-painted-plaster-on-masonry') === 0 && Math.abs(mean('as-plywood-panelling-3-8-in') - 0.145) < 1e-9 && lv('as-plywood-panelling-3-8-in') === 1 && Math.abs(mean('aua-cork-board-25-mm-on-solid-backing') - 0.31) < 1e-9 && lv('aua-cork-board-25-mm-on-solid-backing') === 2
+          && Math.abs(mean('mfr-fabric-wrapped-fibreglass-panel-25-mm-type-a') - 0.7675) < 1e-9 && lv('mfr-fabric-wrapped-fibreglass-panel-25-mm-type-a') === 3 && SF.soundRating('') === null,
+        ['aua-painted-plaster-on-masonry', 'as-plywood-panelling-3-8-in', 'aua-cork-board-25-mm-on-solid-backing', 'mfr-fabric-wrapped-fibreglass-panel-25-mm-type-a'].map(id => `${mean(id).toFixed(4)} → ${SF.soundRating(id).word}`).join(' · '));
+      // Doors, windows and coverings in everyday words.
+      act.addOpening(ctx(), 'wall4|door');
+      const door = () => p().room.surfaces.wall4.openings[p().room.surfaces.wall4.openings.length - 1];
+      check('A new door starts as a wooden door with its typical data', door().type === 'wood-door' && door().material === 'pra-solid-wooden-door', json(door()));
+      act.setOpeningType(ctx(), `wall4|${door().id}|glass-door`);
+      check('Changed to a glass door: its typical data follows', door().type === 'glass-door' && door().material === 'hall-heavy-plate-glass', json(door()));
+      act.removeOpening(ctx(), `wall4|${door().id}`);
+      act.setCoverType(ctx(), 'wall4|curtains');
+      check('Curtains covering part of Wall 4: typical curtain data and half of the wall to start', p().room.surfaces.wall4.cover.type === 'curtains' && p().room.surfaces.wall4.cover.material === 'aua-curtains-hung-in-folds-against-solid-wall' && p().room.surfaces.wall4.cover.pct === 50, json(p().room.surfaces.wall4.cover));
+      act.removeCover(ctx(), 'wall4');
+      // Library entries read by their own words, not parts of words: "unglazed", "unpainted" and "no carpet".
+      const cls = id => SF.classOf(SF.material(id), id.includes('floor') ? 'floor' : 'wall').f;
+      check('Library entries are read by whole words: unglazed brick and unpainted block are bare, a raised floor with no carpet is uncovered',
+        json(cls('as-brick-unglazed')) === json(['exposed']) && json(cls('hall-concrete-block-unpainted')) === json(['exposed']) && json(cls('aua-raised-access-floor-no-carpet')) === json(['exposed']) && json(cls('as-brick-unglazed-painted')) === json(['painted']),
+        ['as-brick-unglazed', 'hall-concrete-block-unpainted', 'aua-raised-access-floor-no-carpet', 'as-brick-unglazed-painted'].map(cls).join(' · '));
+      S.set('room.surfaces.wall3', copy(D.demoRoom().surfaces.wall3));
     }
 
     /* ===== 3. walls and ceiling sections ===== */
@@ -322,12 +400,13 @@
       await sleep(80);
       const w6 = app.querySelector('#surf-card-wall6');
       check('"Add a wall" on the screen: Wall 6 appears, open, with its length field', p().room.wallKeys.includes('wall6') && w6 && w6.open && !!app.querySelector('#surf-wall6-len'), json(p().room.wallKeys));
-      const con = app.querySelector('#surf-wall6-con');
-      con.value = 'glass';
-      con.dispatchEvent(new Event('change', { bubbles: true }));
+      app.querySelector('#surf-wall6-type-glass').click();
       await sleep(60);
-      const fin = app.querySelector('#surf-wall6-fin'), opts = [...fin.options].filter(o => o.value).map(o => o.value);
-      check('Choosing "glass" in the construction select narrows the finish select to what glass can carry', p().room.surfaces.wall6.construction === 'glass' && json(opts.sort()) === json(RF.FITS.wall.glass.slice().sort()), opts.join(', '));
+      const w6c = app.querySelector('#surf-card-wall6'), plain = [...w6c.querySelector('.surf-b').childNodes].filter(n => !(n.classList && n.classList.contains('surf-exact'))).map(n => n.textContent).join(' ');
+      check('"What is this wall?" on the screen: one click on "Glass wall or glass partition" records it with its typical data, says how much sound it absorbs in words, and shows no sizes in millimetres outside the optional exact type',
+        p().room.surfaces.wall6.type === 'glass' && p().room.surfaces.wall6.material === 'hall-heavy-plate-glass' && app.querySelector('#surf-wall6-type-glass').getAttribute('aria-pressed') === 'true'
+          && /Hard: reflects almost all sound/.test(w6c.querySelector('.surf-sound').textContent) && /typical values/.test(w6c.querySelector('.surf-sound').textContent) && !/\d\s?mm\b/.test(plain) && !app.querySelector('#surf-wall6-con'),
+        `${p().room.surfaces.wall6.type}; ${w6c.querySelector('.surf-sound').textContent}`);
       app.querySelector('#surf-wall6-eq-ac').click();
       await sleep(60);
       check('Ticking "Air conditioner" on Wall 6: recorded and shown as ticked; no size, position or clearance fields',

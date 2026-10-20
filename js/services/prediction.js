@@ -18,7 +18,8 @@
      areaForAverage({ V, S, bands, item, others, targetRT, over }) -> m² of one product | null
          the amount at which the predicted AVERAGE RT60 (AM.services.rt60Average.ofPrediction) over the bands `over`
          (the bands the measured average used; default all six) reaches targetRT; item and others as in treatment.items
-     The prediction's headline row is the reference band's (1000 Hz); the room-wide predicted value is the average of
+     The prediction's headline row is the reference band's (1000 Hz; the first predicted band when a product has no
+     tested α there); the room-wide predicted value is the average of
      the predicted bands, AM.services.rt60Average.ofPrediction(prediction.bands) (AM.derive.prediction).
 
    Model. The measured RT60 gives the room's equivalent absorption area, A0 = 0.161·V / RT (the relation ISO 354 uses to
@@ -61,15 +62,21 @@
       const addedA = parts.reduce((s, x) => s + x.addedA, 0);
       const totalA = existingA + addedA;
       const meanBefore = S > 0 ? existingA / S : null, meanAfter = S > 0 ? totalA / S : null;
+      // Eyring's relation, calibrated to the same measured RT60 (for the check below): the room's mean coefficient from
+      // the measured RT60, ᾱ0 = 1 − e^(−A0/S), plus the treatment's ΔA/S, then RT60 = 0.161·V / (−S·ln(1 − ᾱ)).
+      const a0 = S > 0 ? 1 - Math.exp(-existingA / S) : null, a1 = a0 != null ? a0 + addedA / S : null;
+      const eyring = a1 != null && a1 > 0 && a1 < 1 ? (A.SABINE * V) / (-S * Math.log(1 - a1)) : null;
       // The absorption the covered finishes take away (their library α × the area covered) is part of the measured A0,
       // so it cannot be more than A0. If it is, their library values do not fit this room at this band, and the
       // subtraction would leave a negative or near-zero absorption (an RT60 of minutes, or below zero): no prediction.
       const removedA = parts.reduce((s, x) => s + (x.coveredKnown ? x.areaM2 * x.coveredAlpha : 0), 0);
       const contradicts = removedA > existingA || !(totalA > 0);
       return { f: b.f, measured: b.rt60, alpha, items: parts, existingA, addedA, totalA, removedA, coveredExceedsMeasured: contradicts,
-        predicted: contradicts ? null : A.rtFromAbsorption(V, totalA), missingAlpha: false, meanAlphaBefore: meanBefore, meanAlphaAfter: meanAfter };
+        predicted: contradicts ? null : A.rtFromAbsorption(V, totalA), eyring: contradicts ? null : eyring, missingAlpha: false, meanAlphaBefore: meanBefore, meanAlphaAfter: meanAfter };
     });
-    const headline = rows.find(r => r.f === referenceBand) || null;
+    // The band the calculation is written out at: the reference band, or, where a product has no tested α there (a
+    // target judged at other bands can still be predicted), the first band that has a prediction.
+    const headline = rows.find(r => r.f === referenceBand && r.predicted != null) || rows.find(r => r.predicted != null) || rows.find(r => r.f === referenceBand) || null;
     return { model: 'Simplified Sabine', areaM2: area, bands: rows, headline, checks: checks(rows, headline) };
   }
 
@@ -87,7 +94,7 @@
     if (high.length) {
       const h = high.find(r => headline && r.f === headline.f) || high[0];
       out.push({ id: 'high-absorption', bands: high.map(r => r.f),
-        text: `With the treatment the room's average absorption coefficient reaches ${fmtA(h.meanAlphaAfter)} at ${h.f} Hz. Sabine's relation overstates RT60 above about ${SABINE_LIMIT}, so the real result is likely a little shorter than predicted${high.length > 1 ? ` (also at ${high.filter(r => r !== h).map(r => `${r.f} Hz`).join(', ')})` : ''}.` });
+        text: `With the treatment the room's average absorption coefficient reaches ${fmtA(h.meanAlphaAfter)} at ${h.f} Hz. Sabine's relation overstates RT60 above about ${SABINE_LIMIT}, so the real result is likely shorter than predicted${h.eyring != null && h.predicted != null ? `: at ${h.f} Hz Sabine gives ${h.predicted.toFixed(2)} s and Eyring's relation, calibrated to the same measurement, ${h.eyring.toFixed(2)} s (${Math.round(100 * (1 - h.eyring / h.predicted))} % shorter)` : ''}${high.length > 1 ? ` (also above ${SABINE_LIMIT} at ${high.filter(r => r !== h).map(r => `${r.f} Hz`).join(', ')})` : ''}. The prediction keeps Sabine's value.` });
     }
     return out;
   }

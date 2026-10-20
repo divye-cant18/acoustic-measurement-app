@@ -127,10 +127,10 @@
       tables.noiseLadder = { ownT20: +own.T20.toFixed(3), ownT30: +own.T30.toFixed(3), rows };
       const vals = rows.filter(r => r.rt60 != null), us = rows.map(r => r.usable1kDb).filter(v => v != null);
       const byPath = m => vals.filter(r => r.method === m).map(r => r.rt60), drift = v => (v.length > 1 ? 100 * (Math.max(...v) / Math.min(...v) - 1) : 0);
-      check('A3 Background from −85 to −30 dBFS: every value given stays within ±5 % of the room\'s own decay over the same range, the usable decay falls as the noise rises, and the method steps T30 → T20 → no value instead of producing a biased number',
-        vals.length >= 6 && vals.every(r => Math.abs(r.errPct) <= 5) && us.every((v, i) => i === 0 || v <= us[i - 1] + 1) && byPath('T20').length && byPath('T30').length && rows.some(r => !r.valid),
+      check('A3 Background from −85 to −30 dBFS: every value given stays within ±5 % of the room\'s own decay over the same range, the usable decay falls as the noise rises, and every value is T20 until too little decay is left, then no value instead of a biased number',
+        vals.length >= 6 && vals.every(r => Math.abs(r.errPct) <= 5) && us.every((v, i) => i === 0 || v <= us[i - 1] + 1) && vals.every(r => r.method === 'T20') && rows.some(r => !r.valid),
         `own T30 ${f3(own.T30)}, own T20 ${f3(own.T20)} · ` + rows.map(r => `${r.noiseDbfs}: ${r.usable1kDb == null ? '—' : Math.round(r.usable1kDb)} dB, ${r.method || 'no value'} ${f3(r.rt60)}${r.errPct != null ? ` (${r.errPct} %)` : ''}`).join(' · '));
-      check('A3 Within one method the value hardly moves with the noise (T30 and T20 each within 3 % from the quietest to the noisiest level that still allows them): background noise does not drag the result',
+      check('A3 The value hardly moves with the noise (T20 within 3 % from the quietest to the noisiest level that still allows it): background noise does not drag the result',
         drift(byPath('T30')) <= 3 && drift(byPath('T20')) <= 3, `T30 ${byPath('T30').map(f3).join(', ')} (${drift(byPath('T30')).toFixed(1)} %) · T20 ${byPath('T20').map(f3).join(', ')} (${drift(byPath('T20')).toFixed(1)} %)`);
     }
 
@@ -269,8 +269,8 @@
       tables.sweepLevel = { own: +truth.toFixed(3), rows };
       const rts = rows.map(r => r.rt60), steps = rows.slice(1).map((r, i) => r.sweepDbfs - rows[i].sweepDbfs);
       const methods = rows.map(r => r.method);
-      // The level can change the method (T20 at a low level, T30 at a high one), which is a different range of the same
-      // decay; within one method the value must not move.
+      // The level changes how much decay is usable, not the method (T20 throughout, T30 only as the check): the value
+      // must not move.
       const same = m => rows.filter(r => r.method === m).map(r => r.rt60), spread = v => (v.length > 1 ? Math.max(...v) / Math.min(...v) - 1 : 0);
       check('A11 Sweep level −6, −3, 0, +3 dB: the recorded sweep rises 3 dB per step and the usable decay with it, while RT60 within one method stays within 2 % (the level does not force the value)',
         rts.every(v => v != null) && spread(same('T30')) <= 0.02 && spread(same('T20')) <= 0.02 && steps.every(s => Math.abs(s - 3) <= 0.3) && rows[3].usable1kDb > rows[0].usable1kDb,

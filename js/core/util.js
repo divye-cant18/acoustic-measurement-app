@@ -8,10 +8,17 @@ window.AM = window.AM || { services: {} };
 
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const isNum = x => typeof x === 'number' && isFinite(x);
+  /* A number typed by the user: the whole entry has to be a number ("12abc" or "2 x 3" is not). A decimal comma is
+     accepted ("2,5"); a comma before exactly three digits ("1,250") could be a thousands separator, so it is not taken
+     as either, and the field says to enter a number. */
+  const NUMBER = /^[+-]?(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/i;
   const num = v => {
     if (v == null || v === '') return null;
-    const n = typeof v === 'number' ? v : parseFloat(String(v).trim().replace(',', '.'));
-    return isFinite(n) ? n : null;
+    if (typeof v === 'number') return isFinite(v) ? v : null;
+    const s = String(v).trim();
+    if (!s || (s.match(/,/g) || []).length > 1 || (s.includes(',') && (s.includes('.') || /,\d{3}$/.test(s)))) return null;
+    const t = s.replace(',', '.');
+    return NUMBER.test(t) && isFinite(Number(t)) ? Number(t) : null;
   };
   const int = v => { const n = num(v); return n == null ? null : Math.round(n); };
   const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
@@ -35,6 +42,10 @@ window.AM = window.AM || { services: {} };
     dbfs: (x, d = 1) => { if (!isNum(x)) return '—'; const v = +x.toFixed(d); return `${Math.abs(v).toFixed(d)} dB ${v > 0 ? 'above' : 'below'} max`; },
     hz: f => f + ' Hz',
     hzShort: f => f >= 1000 ? (f / 1000) + 'k' : String(f),
+    // "a", "a and b", "a, b and c".
+    list: xs => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`),
+    // Octave bands as a list: "125 Hz and 250 Hz".
+    hzList: fs => fmt.list(fs.map(f => f + ' Hz')),
     pct: (x, d = 0) => isNum(x) ? (x * 100).toFixed(d) + '%' : '—',
     dims: r => r && [r.L, r.W, r.H].every(isNum) ? `${trimNum(r.L)} × ${trimNum(r.W)} × ${trimNum(r.H)} m` : '—',
     // "today, 14:32", "yesterday, 09:10", or the date.

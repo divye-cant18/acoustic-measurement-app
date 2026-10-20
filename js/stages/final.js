@@ -15,7 +15,8 @@
     }
     const problem = AM.derive.treatmentItems(p).length ? AM.derive.planProblem(p) : null;
     if (problem) return { ok: false, reason: problem };
-    return AM.derive.prediction(p) || AM.derive.noTreatment(p) ? { ok: true } : { ok: false, reason: 'The summary needs every earlier step.' };
+    const why = AM.derive.predictionMissing(p);
+    return why ? { ok: false, reason: why } : { ok: true };
   }
 
   W.define('final', {

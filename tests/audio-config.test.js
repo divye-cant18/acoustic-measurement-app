@@ -201,8 +201,8 @@
         const worst = Math.max(...ref.bands.map(b => { const x = bad.bands.find(y => y.f === b.f); return b.rt60 && x && x.rt60 ? 100 * (x.rt60 / b.rt60 - 1) : -Infinity; }));
         harm = av(ref) && av(bad) ? { avg: 100 * (av(bad) / av(ref) - 1), worst } : null;
       } finally { AN.CRITERIA.take.clicks.db = saved; }
-      check('A2 One render block (128 samples) lost or repeated at 0.9–4.5 s into the sweep, in a typical room, a quiet room and a phone-like take: each take rejected for the click it leaves, with the reason; uncaught, one of them read a band more than 50 % long and the six-band average more than 25 % long (about 36 %)',
-        caught.every(g => g.ok) && harm != null && harm.worst > 50 && harm.avg > 25, `${caught.map(g => `${g.k}: ${g.ok ? `click ${g.db} dB` : `NOT rejected (${(g.r || 'captured').slice(0, 40)})`}`).join(' · ')} · uncaught at 2.7 s: ${harm == null ? 'no average' : `average +${harm.avg.toFixed(0)} %, worst band +${harm.worst.toFixed(0)} %`}`);
+      check('A2 One render block (128 samples) lost or repeated at 0.9–4.5 s into the sweep, in a typical room, a quiet room and a phone-like take: each take rejected for the click it leaves, with the reason; uncaught, one of them read a band more than 50 % long and the six-band average more than 15 % long (T20: about 18 %; with T30 first it was about 36 %)',
+        caught.every(g => g.ok) && harm != null && harm.worst > 50 && harm.avg > 15, `${caught.map(g => `${g.k}: ${g.ok ? `click ${g.db} dB` : `NOT rejected (${(g.r || 'captured').slice(0, 40)})`}`).join(' · ')} · uncaught at 2.7 s: ${harm == null ? 'no average' : `average +${harm.avg.toFixed(0)} %, worst band +${harm.worst.toFixed(0)} %`}`);
     }
     {
       const zero = analyse({ post: (x, rate, plan) => { const y = Float32Array.from(x); const at = Math.round((plan.preRoll + 2.5) * rate); y.fill(0, at, at + 256); return y; } });
@@ -279,6 +279,21 @@
     {
       const b = PROC.decideBand({ f: 1000, supported: true, decayRangeDb: 34.6, fits: {}, headDb: 0, bandwidth: 707 });
       check('A3 Threshold text is not hidden by rounding: 34.6 dB reads "Only 34.6 dB … T20 needs 35 dB", not "Only 35 dB"', /Only 34\.6 dB/.test(b.reason) && !/Only 35 dB/.test(b.reason), b.reason);
+    }
+    {
+      // RT60 is T20 (ISO 3382-2's preferred range); T30 is worked out from 45 dB usable, as the straightness check.
+      // The measurement-chain audit's double-slope room: T20 0.677 s, T30 0.801 s. With T30 chosen from 45 dB it read
+      // 0.801 s at 45.7 dB usable and 0.677 s at 44.6 dB; now both read 0.677 s, and the curvature is said where it is seen.
+      const fits = (t20, r20, t30, r30) => ({ T20: { T: t20, r2: r20 }, T30: { T: t30, r2: r30 } });
+      const dec = (db, f) => PROC.decideBand({ f: 1000, supported: true, decayRangeDb: db, fits: f, headDb: 0, bandwidth: 707 });
+      const curved = fits(0.677, 0.9995, 0.801, 0.995), at457 = dec(45.7, curved), at446 = dec(44.6, curved);
+      check('A3 T20 is the RT60 whatever the background: the double-slope room reads 0.677 s at 45.7 and at 44.6 dB usable; with 45 dB the T30 check (0.801 s, C +18.3 %) flags the curved decay and keeps the confidence medium',
+        at457.path === 'T20' && at457.rt60 === 0.677 && at446.rt60 === 0.677 && at457.t30 === 0.801 && at446.t30 === null && at457.curvature === 18.3 && at457.notes.some(n => /curved/.test(n)) && at457.confidence === 'Medium',
+        `${at457.rt60} ${at457.path} (T30 ${at457.t30}, C ${at457.curvature} %) / ${at446.rt60} ${at446.path} (T30 ${at446.t30})`);
+      const straight = fits(0.70, 0.9990, 0.71, 0.9985), s50 = dec(50, straight), s40 = dec(40, straight);
+      check('A3 Confidence: a straight decay confirmed by the T30 check (50 dB usable) is Good / High; with 40 dB there is no room for the check, so the same T20 is Fair / Medium',
+        s50.rt60 === 0.7 && s50.quality === 'Good' && s50.confidence === 'High' && s40.rt60 === 0.7 && s40.t30 === null && s40.quality === 'Fair' && s40.confidence === 'Medium',
+        `${s50.quality}/${s50.confidence} · ${s40.quality}/${s40.confidence}`);
     }
 
     /* ---------- A4 headline: fixed bands ---------- */

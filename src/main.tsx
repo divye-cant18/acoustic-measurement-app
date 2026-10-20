@@ -70,12 +70,19 @@ function restoreFocus(f: Focus | null) {
   n.focus({ preventScroll: true });
   if (f.text && f.s != null) { try { n.setSelectionRange(f.s, f.e); } catch { /* ignore */ } }
 }
-// The control a click came from, found again (by id, else by its action and value).
+// The control a click came from: the element itself while it is still on the page and visible, else found again (by id,
+// else by its action and value, the first visible match), else the menu button that leads back to it on a phone.
+const visible = (el: Element | null): el is HTMLElement => !!el && (el as HTMLElement).isConnected && el.getClientRects().length > 0;
 function findControl(d: typeof clicks.last): HTMLElement | null {
   if (!d) return null;
-  if (d.id && document.getElementById(d.id)) return document.getElementById(d.id);
+  if (visible(d.el || null)) return d.el as HTMLElement;
+  const byId = d.id ? document.getElementById(d.id) : null;
+  if (visible(byId)) return byId;
   const v = d.value != null ? `[data-value="${CSS.escape(d.value)}"]` : '';
-  return $app.querySelector(`[data-action="${CSS.escape(d.action)}"]${v}`);
+  const match = Array.from(document.querySelectorAll(`[data-action="${CSS.escape(d.action)}"]${v}`)).find(visible);
+  if (match) return match as HTMLElement;
+  const menu = $app.querySelector('[data-action="openNav"]');
+  return visible(menu) ? menu : null;
 }
 
 /* ---------- motion: only what actually changed is marked ----------
@@ -126,7 +133,10 @@ function renderOnce() {
   am.charts.hydrate($app);
   lastStage = stage.id;
   $tip.hidden = true; $tip._el = null;
-  // Mobile workflow drawer: focus moves into it when it opens and back to the menu button when it closes.
+  // Mobile workflow drawer: the page behind it cannot be reached while it is open (keyboard focus stays in it); focus
+  // moves into it when it opens and back to the menu button when it closes.
+  const $main = $app.querySelector('main');
+  if ($main) $main.toggleAttribute('inert', !!st.ui.navOpen && window.matchMedia('(max-width: 900px)').matches);
   if (!!st.ui.navOpen !== lastNav) {
     lastNav = !!st.ui.navOpen;
     if (window.matchMedia('(max-width: 900px)').matches) {

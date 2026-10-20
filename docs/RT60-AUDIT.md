@@ -1,5 +1,8 @@
 # RT60 calculation audit
 
+> The target rows below describe the targets before 19 October 2026 (ANSI classroom limit, occupancy conversion,
+> group B). Targets now come only from verified criteria: docs/TARGET-CRITERIA.md.
+
 > Superseded in part by docs/RT60-DEEP-AUDIT.md (12 October 2026). The 60 dB (T60) path described below was removed:
 > RT60 now comes from T30 or T20 only. The direct-sound separation is capped at the first 5 ms. Takes with gaps, and
 > bands whose decay is cut off, are rejected.

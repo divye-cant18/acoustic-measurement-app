@@ -15,6 +15,9 @@
      Ceiling      room.ceilingKeys: the ceiling, and any further sections (a raft, a bulkhead, a different finish), each
                   with its own area; the ceiling keeps what the sections leave of length × width.
    Each surface in the project, room.surfaces[key]:
+     type         what it is in everyday words (js/data/room-form.js SURFACE_TYPES, e.g. 'painted-plaster'), '' while
+                  not chosen; choosing one sets the construction, the finish and its typical library entry. A surface
+                  saved before types existed has none: its type is recognised from its construction and finish
      material     the acoustic data: a library entry (js/data/materials.js), '' while not chosen
      construction what it is built from (js/data/room-form.js CONSTRUCTIONS), '' while not chosen; 'other' with
                   constructionOther { name, notes } typed by the user
@@ -163,6 +166,58 @@
     return nameFor(finishOf(cfg.finish), kind);
   }
 
+  /* ---------- what a surface is, in everyday words (js/data/room-form.js SURFACE_TYPES) ---------- */
+  const typesOf = kind => (RF.SURFACE_TYPES || {})[kind] || [];
+  const typeOf = (kind, id) => typesOf(kind).find(t => t.id === id) || null;
+  // The types for a kind of surface, those most often met in the room's type (or its industry) first: { common, rest,
+  // label }. "Something else" always comes last.
+  function typesFor(kind, room) {
+    const all = typesOf(kind), r = room || {};
+    const list = ((RF.ROOM_MATERIALS || {})[r.type] || (RF.INDUSTRY_MATERIALS || {})[r.industry] || {})[kind] || [];
+    const common = list.map(id => all.find(t => t.id === id)).filter(t => t && t.id !== 'other');
+    const rest = all.filter(t => !common.includes(t));
+    const by = (RF.ROOM_MATERIALS || {})[r.type] ? `a${/^[aeiou]/i.test(r.type) ? 'n' : ''} ${String(r.type).toLowerCase()}` : r.industry && (RF.INDUSTRY_MATERIALS || {})[r.industry] ? 'this industry' : '';
+    return { common, rest, label: by ? `Common in ${by}` : '' };
+  }
+  // A surface's type: the one chosen, or, for a surface saved before types existed, the one with its construction and
+  // finish (and its library entry, where two types share them). { type, inferred } or null.
+  function typeOfSurface(cfg, kind) {
+    if (!cfg) return null;
+    if (cfg.type) { const t = typeOf(kind, cfg.type); return t ? { type: t, inferred: false } : null; }
+    if (cfg.finish === 'other') return { type: typeOf(kind, 'other'), inferred: true };
+    if (!cfg.finish) return null;
+    const same = typesOf(kind).filter(t => t.id !== 'other' && (t.construction || '') === (cfg.construction || '') && t.finish === cfg.finish);
+    const t = same.find(x => x.material && x.material === cfg.material) || same[0];
+    return t ? { type: t, inferred: true } : null;
+  }
+  // What the surface is, in words: its type's name; for "Something else", what the user typed (with a construction typed
+  // in an earlier version, both); '' without a type.
+  function typeText(cfg, kind) {
+    const x = typeOfSurface(cfg, kind);
+    if (!x) return '';
+    if (x.type.id !== 'other') return x.type.name;
+    const named = String((cfg.finishOther && cfg.finishOther.name) || '').trim();
+    return cfg.construction ? buildText(cfg, kind) : named || 'Something else';
+  }
+  /* How much sound a material absorbs, in plain words, from its sourced α: the mean over the octave bands 250 Hz–2 kHz
+     (at least three of them given). The bands of words are the app's own convention for describing it, not a rating
+     from a standard: under 0.10 hard, under 0.30 a little, under 0.60 some, from 0.60 a lot. null without data. */
+  const SOUND_WORDS = ['Hard: reflects almost all sound', 'Absorbs a little sound', 'Absorbs some sound', 'Absorbs a lot of sound'];
+  function soundRating(id) {
+    const m = material(id);
+    if (!m) return null;
+    const a = alphaOf(id), vals = [250, 500, 1000, 2000].map(f => a.values[f]).filter(v => v != null);
+    if (vals.length < 3) return null;
+    const mean = vals.reduce((x, v) => x + v, 0) / vals.length, level = mean < 0.1 ? 0 : mean < 0.3 ? 1 : mean < 0.6 ? 2 : 3;
+    return { level, word: SOUND_WORDS[level], mean };
+  }
+  // Doors and windows in everyday words (RF.OPENING_TYPES), and an opening's type: chosen, or recognised by its entry.
+  const openingTypesFor = kind => (RF.OPENING_TYPES || {})[kind] || [];
+  const openingTypeOf = o => (o ? openingTypesFor(o.kind).find(t => (o.type ? t.id === o.type : t.material && t.material === o.material)) || null : null);
+  // The types that can cover part of a surface (RF.COVER_TYPES), and a cover's type: chosen, or recognised by its entry.
+  const coverTypesFor = kind => ((RF.COVER_TYPES || {})[kind] || []).map(id => typeOf(kind, id)).filter(Boolean);
+  const coverTypeOf = (cover, kind) => (cover ? coverTypesFor(kind).find(t => (cover.type ? t.id === cover.type : t.material && t.material === cover.material)) || null : null);
+
   /* ---------- equipment ---------- */
   // The kinds of equipment ticked on a wall, in the list's order: [{ type, label }] ("other" with what it is, if given).
   function equipmentOf(cfg) {
@@ -211,6 +266,7 @@
       const a = cfg.areaM2, fl = floorArea(room);
       if (isNum(a) && a <= 0) out.problems.push(`The area of ${def.name} must be more than 0 m².`);
       if (isNum(a) && a > 0) gross = fl != null ? Math.min(a, fl) : a;
+      if (isNum(a) && fl != null && a > fl + 1e-9) out.problems.push(`${def.name} is larger than the floor (${a} of ${fl.toFixed(1)} m²): it is counted as ${fl.toFixed(1)} m².`);
       else if (sizeOk(room)) out.problems.push(`Enter the area of ${def.name}.`);
     } else if (def.kind === 'ceiling') {
       const fl = floorArea(room);
@@ -227,6 +283,7 @@
     let open = 0;
     ops.forEach(o => {
       const a = openingArea(o);
+      if (isNum(o.count) && o.count < 1) out.problems.push(`${OPENINGS[o.kind] || 'An opening'} on ${def.name}: enter how many, 1 or more.`);
       if (a == null) { out.problems.push(`${OPENINGS[o.kind] || 'An opening'} on ${def.name} needs a width and a height.`); return; }
       const use = Math.min(a, gross - open);
       if (use < a) out.problems.push(`The openings on ${def.name} add up to more than the wall (${(open + a).toFixed(1)} of ${gross.toFixed(1)} m²); only the wall's area is counted.`);
@@ -315,7 +372,7 @@
   }
   const listText = xs => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0] || '');
   // Is a surface described: a library material, or at least what it is built from or its finish.
-  const describedCfg = cfg => !!(cfg.material || cfg.construction || cfg.finish);
+  const describedCfg = cfg => !!(cfg.type || cfg.material || cfg.construction || cfg.finish);
   // "Concrete or reinforced concrete, painted" from the construction and finish chosen (or typed).
   function buildText(cfg, kind) {
     const c = cfg.construction ? constructionText(cfg, kind) : '', f = cfg.finish ? finishText(cfg, kind) : '';
@@ -326,11 +383,14 @@
     return surfacesOf(room).map(s => {
       const m = surfaceModel(room, s.key), fin = m.parts.find(p => p.role === 'finish'), cov = m.parts.find(p => p.role === 'cover');
       const ops = m.parts.filter(p => ['door', 'window', 'opening'].includes(p.role));
-      const cfg = surfaceOf(room, s.key), built = buildText(cfg, s.kind);
-      // The library entry says what the surface is; without one, what it is built from and its finish.
-      const what = cfg.material ? (fin ? partText(fin) : partText({ materialId: cfg.material, material: material(cfg.material) })) : built || 'not chosen';
+      const cfg = surfaceOf(room, s.key), built = buildText(cfg, s.kind), tx = typeOfSurface(cfg, s.kind), tt = typeText(cfg, s.kind);
+      // Its type says what the surface is (with the exact library entry when one other than the type's typical one was
+      // chosen); without a type, the library entry, or what it is built from and its finish.
+      const exact = tx && cfg.material && cfg.material !== tx.type.material ? partText({ materialId: cfg.material, material: material(cfg.material) }) : '';
+      const what = tt ? (exact ? `${tt} (${exact})` : tt)
+        : cfg.material ? (fin ? partText(fin) : partText({ materialId: cfg.material, material: material(cfg.material) })) : built || 'not chosen';
       const extra = [
-        cov ? `, ${Math.round(100 * cov.areaM2 / (m.solidM2 || 1))} % ${partText(cov)}` : '',
+        cov ? `, ${Math.round(100 * cov.areaM2 / (m.solidM2 || 1))} % ${(t => (t && t.id !== 'other' ? t.name.toLowerCase() : partText(cov)))(coverTypeOf(cfg.cover, s.kind))}` : '',
         ops.length ? `, ${ops.length} opening${ops.length > 1 ? 's' : ''}` : '',
         m.equipment.length ? `, with ${listText(m.equipment.map(e => e.label.toLowerCase()))}` : '',
       ].join('');
@@ -374,6 +434,7 @@
     SURFACES, OPENINGS, PLACEMENTS, CLASSES: DATA.CLASSES || {}, WALL_LIMITS, blankSurface, blankSurfaces, surfaceDef, surfacesOf, wallKeysOf, ceilingKeysOf, nextKey,
     placementsFor, placementKeys, material, materialsFor, familyOf, categoryOf, alphaOf, sourceOf, classOf, openingArea, wallDimError, surfaceModel, coveredBy,
     constructionsFor, finishesFor, finishFits, materialFits, constructionOf, finishOf, constructionText, finishText, equipmentOf,
+    typesOf, typeOf, typesFor, typeOfSurface, typeText, soundRating, SOUND_WORDS, openingTypesFor, openingTypeOf, coverTypesFor, coverTypeOf,
     describe, finishes, totals, customMaterials, fromLegacy,
   };
 })(window.AM);

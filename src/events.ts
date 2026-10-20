@@ -8,13 +8,24 @@ import { tourActions } from './shell/Tour';
 const { num, int, clamp } = am.util;
 // When the step last changed. The action bar's buttons sit in the same place on every step, so the second click of a
 // double click on "Continue" would otherwise land on the next step's button and confirm a step nobody has seen.
-export const clicks = { stepChangedAt: 0, last: null as null | { action: string; value: string | null; id: string | null } };
+export const clicks = { stepChangedAt: 0, last: null as null | { action: string; value: string | null; id: string | null; el?: HTMLElement | null } };
 const STEP_CLICK_GUARD_MS = 450;
 
+const listOf = (el?: Element | null) => (el && el.closest('.hist-list') ? 'hl' : 'pc');
+const focusId = (id: string) => { const t = document.getElementById(id); if (t) t.focus({ preventScroll: true }); };
 const coerce = (v: string, type?: string): unknown => (type === 'num' ? num(v) : type === 'int' ? int(v) : type === 'bool' ? v === 'true' : v);
 // Treatment amounts are per item; the buttons carry the item id (data-item).
 const itemPath = (id: string | undefined) => { const p = S.state.project!, i = p.treatment.items.findIndex(x => x.id === id); return i < 0 ? null : `treatment.items.${i}`; };
-const setQuantity = (id: string | undefined, q: number) => { const path = itemPath(id); if (path) S.set(`${path}.quantity`, clamp(q, 0, ui.MAX_PANELS)); };
+/* An amount the user sets is theirs (amountBy 'user'): it stays as set, and the app works out its own products again
+   around it (the treatment stage's applyAutoPlan). */
+const replan = () => { const m = (W.get('treatment') as unknown as { model?: { applyAutoPlan?: () => void } }).model; if (m && m.applyAutoPlan) m.applyAutoPlan(); };
+const setItem = (id: string | undefined, patch: Record<string, unknown>) => {
+  const path = itemPath(id), raw = S.state.project!.treatment.items.find(x => x.id === id);
+  if (!path || !raw) return;
+  S.set(path, Object.assign({}, raw, patch));
+  replan();
+};
+const setQuantity = (id: string | undefined, q: number) => setItem(id, { quantity: clamp(q, 0, ui.MAX_PANELS), amountBy: 'user' });
 
 const GLOBAL: Record<string, ActionFn> = {
   nav: (_c, v) => S.go(v!),
@@ -37,14 +48,24 @@ const GLOBAL: Record<string, ActionFn> = {
   history: () => S.ui({ sheet: { kind: 'history' }, navOpen: false, confirm: null }),
   startNew: () => S.startProject('new'),
   openProject: (_c, id) => S.openProject(id!),
-  togglePin: (_c, id) => S.togglePin(id!),
-  askDelete: (_c, id) => S.ui({ confirm: `delete:${id}` }),
-  cancelDelete: () => S.ui({ confirm: null }),
+  // Pinning moves the card to the other section and deleting asks first: focus stays on the same project's control
+  // (cards on Home are "pc-…", rows of Measurement History "hl-…").
+  togglePin: (_c, id, el) => { S.togglePin(id!); focusId(`${listOf(el)}-pin-${id}`); },
+  askDelete: (_c, id, el) => { S.ui({ confirm: `delete:${id}` }); focusId(`${listOf(el)}-delyes-${id}`); },
+  cancelDelete: (_c, id, el) => { S.ui({ confirm: null }); if (id) focusId(`${listOf(el)}-del-${id}`); },
   doDelete: (_c, id) => S.deleteProject(id!),
   followUp: () => S.startFollowUp(),
   qty: (c, v, el) => { const it = c.project.treatment.items.find(x => x.id === el.dataset.item); if (it) setQuantity(it.id, (it.quantity || 0) + Number(v)); },
   setQty: (_c, v, el) => setQuantity(el.dataset.item, Number(v)),
-  setArea: (_c, v, el) => { const path = itemPath(el.dataset.item); if (path) S.set(`${path}.areaM2`, Math.max(0, Math.round(Number(v) * 10) / 10)); },
+  setArea: (_c, v, el) => setItem(el.dataset.item, { areaM2: Math.max(0, Math.round(Number(v) * 10) / 10), amountBy: 'user' }),
+  // Back to the amount the app suggests for an item (AM.derive.autoAmount), on Treatment or Predicted Result.
+  useAutoAmount: (_c, id) => setItem(id!, { amountBy: 'app' }),
+  /* The "how much" slider (src/ui/kit.tsx AmountSlider): whole panels, or, for a product sold without a panel size, a
+     share of the free surface where it goes (data-avail, m²), kept as the area that share is (to 0.1 m²). */
+  setAmount: (_c, v, el) => {
+    if (el.dataset.mode === 'units') { setQuantity(el.dataset.item, Math.round(Number(v))); return; }
+    setItem(el.dataset.item, { size: 'area', areaM2: Math.max(0, Math.round(Number(v) / 100 * Number(el.dataset.avail || 0) * 10) / 10), amountBy: 'user' });
+  },
   // Help on a step (its menu), and the tour of the screen (src/shell/Tour.tsx).
   toggleHelp: () => S.ui({ help: !S.state.ui.help }),
   ...tourActions,
@@ -69,7 +90,7 @@ export function wireEvents(app: HTMLElement, render: () => void) {
     // Any click but on the Help button itself closes the Help menu (a choice in it, then runs as usual). A panel opened
     // from the menu gives the focus back to the Help button when it closes.
     if (S.state.ui.help && !(e.target as Element).closest('.topbar-helpbtn')) {
-      if (el && el.closest('.help-menu')) clicks.last = { action: 'toggleHelp', value: null, id: null };
+      if (el && el.closest('.help-menu')) clicks.last = { action: 'toggleHelp', value: null, id: null, el: document.querySelector<HTMLElement>('.topbar-helpbtn') };
       S.ui({ help: false });
     }
     if (!el) return;
@@ -79,12 +100,19 @@ export function wireEvents(app: HTMLElement, render: () => void) {
     if (!fn) return;
     e.preventDefault();
     if (el.closest('.actionbar') && performance.now() - clicks.stepChangedAt < STEP_CLICK_GUARD_MS) return; // see stepChangedAt
-    if (app.contains(el) && !el.closest('.help-menu')) clicks.last = { action: name, value: el.dataset.value != null ? el.dataset.value : null, id: el.id || null };
+    // The control itself is kept too (also outside the page, e.g. the tour offer), so focus can return to exactly it.
+    if (!el.closest('.help-menu') && !el.closest('#sheet-root')) clicks.last = { action: name, value: el.dataset.value != null ? el.dataset.value : null, id: el.id || null, el };
     fn(makeCtx(), el.dataset.value, el, e);
   });
 
   document.addEventListener('input', e => {
     const el = e.target as HTMLInputElement;
+    // A slider whose action runs as it moves (the treatment amount): the result follows while it is dragged.
+    if (el.dataset && el.type === 'range' && el.dataset.inputAction) {
+      const stage = W.get(S.state.current), fn = (stage.actions && stage.actions[el.dataset.inputAction]) || GLOBAL[el.dataset.inputAction];
+      if (fn) fn(makeCtx(), el.value, el, e);
+      return;
+    }
     if (!el.dataset || el.type !== 'text') return;
     if (el.dataset.bind) {
       // A number field holding text that is not a number keeps the text and shows an error (ui.bad), until corrected.

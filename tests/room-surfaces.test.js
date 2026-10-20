@@ -276,8 +276,10 @@
         S.set('room.surfaces.wall2.openings.0.heightM', 2.1);
         const w2o = p.room.surfaces.wall2.openings, open = SF.material(added[2].material);
         const others = ['wall3', 'wall4', 'floor', 'ceiling'].every(k => json(p.room.surfaces[k]) === json(before[k]));
-        check('Covering and openings through the actions: Wall 1 50 % covered; on Wall 2 a door and a window left to choose (not assumed), an open doorway set by definition; the door sized 0.9 × 2.1 m; other surfaces unchanged',
-          p.room.surfaces.wall1.cover.material === 'test-soft' && p.room.surfaces.wall1.cover.pct === 50 && added[0].material === '' && added[1].material === '' && open && open.quality === 'definition'
+        // Changed 2026-10-20 (everyday types): a new door or window starts as its most common type, shown and changeable on
+        // the wall (a wooden door, an ordinary window), with that type's typical data; an opening's data is descriptive only.
+        check('Covering and openings through the actions: Wall 1 50 % covered; on Wall 2 a door and a window start as a wooden door and an ordinary window (shown, changeable), an open doorway set by definition; the door sized 0.9 × 2.1 m; other surfaces unchanged',
+          p.room.surfaces.wall1.cover.material === 'test-soft' && p.room.surfaces.wall1.cover.pct === 50 && added[0].type === 'wood-door' && added[0].material === 'pra-solid-wooden-door' && added[1].type === 'window' && added[1].material === 'hall-ordinary-window-glass' && open && open.quality === 'definition'
             && w2o.length === 3 && w2o[0].material === door.id && w2o[0].widthM === 0.9 && w2o[0].heightM === 2.1 && others,
           `added ${added.map(o => `${o.kind}: "${o.material}"`).join(', ')}`);
         act.removeOpening(ctx(), `wall2|${w2o[2].id}`);

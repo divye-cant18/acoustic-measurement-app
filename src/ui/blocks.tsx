@@ -55,26 +55,28 @@ export function SoundStatus({ status }: { status: SoundGroup['status'] }) {
   return x ? <Pill tone={x[0]} text={x[1]} icon={x[2]} /> : <Pill tone="neutral" text="Not measured" />;
 }
 /** Each group against the target range, on its own strip: too dull, just right or too echoey. */
-export function SoundStrips({ groups, t }: { groups: SoundGroup[]; t: { min: number; max: number } }) {
+export function SoundStrips({ groups, t }: { groups: SoundGroup[]; t: { min: number | null; max: number } }) {
+  // An upper-limit target has no lower limit: nothing is "too dull" against it.
+  const lo = t.min != null ? t.min : 0, goal = t.min != null ? `${t.min.toFixed(2)}–${fmt.s(t.max)}` : `at most ${fmt.s(t.max)}`;
   const top = Math.max(t.max * 1.6, ...groups.map(g => (g.value || 0) * 1.12));
   const at = (v: number) => `${(Math.max(0, Math.min(1, v / top)) * 100).toFixed(1)}%`;
   const mid = (a: number, b: number) => `${((a + b) / 2 / top * 100).toFixed(1)}%`;
   return (
     <div className="sound-strips">
-      <div className="ss-row ss-head"><span /><div className="ss-scale"><span style={{ left: mid(0, t.min) }}>Too dull</span><span style={{ left: mid(t.min, t.max) }}>Just right</span><span style={{ left: mid(t.max, top) }}>Too echoey</span></div><span /></div>
+      <div className="ss-row ss-head"><span /><div className="ss-scale">{t.min != null ? <span style={{ left: mid(0, lo) }}>Too dull</span> : null}<span style={{ left: mid(lo, t.max) }}>Just right</span><span style={{ left: mid(t.max, top) }}>Too echoey</span></div><span /></div>
       {groups.map(g => (
         <div className={cx('ss-row', g.id === 'voices' && 'is-main')} key={g.id}>
           <span className="ss-k">{g.label}</span>
-          <div className="ss-strip" title={`${g.label}: ${g.value != null ? fmt.s(g.value) : 'not measured'}; goal ${t.min.toFixed(2)}–${fmt.s(t.max)}`}>
-            <i className="ss-z is-off" style={{ left: 0, width: at(t.min) }} />
-            <i className="ss-z is-ok" style={{ left: at(t.min), width: `calc(${at(t.max)} - ${at(t.min)})` }} />
+          <div className="ss-strip" title={`${g.label}: ${g.value != null ? fmt.s(g.value) : 'not measured'}; goal ${goal}`}>
+            <i className="ss-z is-off" style={{ left: 0, width: at(lo) }} />
+            <i className="ss-z is-ok" style={{ left: at(lo), width: `calc(${at(t.max)} - ${at(lo)})` }} />
             <i className="ss-z is-off" style={{ left: at(t.max), right: 0 }} />
             {g.value != null ? <b className="ss-dot" style={{ left: at(g.value) }} /> : null}
           </div>
           <span className="ss-s"><SoundStatus status={g.status} /></span>
         </div>
       ))}
-      <p className="small muted">{`Goal ${t.min.toFixed(2)}–${fmt.s(t.max)} for this room.`}</p>
+      <p className="small muted">{`Goal ${goal} for this room.`}</p>
     </div>
   );
 }
@@ -98,16 +100,17 @@ export function MeasureCheck({ groups }: { groups: SoundGroup[] }) {
 }
 
 /* ---------- saved projects ---------- */
-export function DeleteConfirm({ s }: { s: Summary }) {
+// at: "pc" on a Home card, "hl" in Measurement History; the ids let focus stay on the same project's controls.
+export function DeleteConfirm({ s, at }: { s: Summary; at: string }) {
   return (
     <div className="del-confirm" role="group" aria-label={`Delete ${s.name}`}>
       <span>{`Delete “${s.name}”? Its room, measurement and treatment plan are removed from this device. This cannot be undone.`}</span>
-      <span className="hstack"><Btn action="doDelete" value={s.id} variant="danger" size="sm">Delete project</Btn><Btn action="cancelDelete" variant="ghost" size="sm">Cancel</Btn></span>
+      <span className="hstack"><Btn action="doDelete" value={s.id} variant="danger" size="sm" id={`${at}-delyes-${s.id}`}>Delete project</Btn><Btn action="cancelDelete" value={s.id} variant="ghost" size="sm">Cancel</Btn></span>
     </div>
   );
 }
-export const DeleteButton = ({ s }: { s: Summary }) => (
-  <button type="button" className="iconbtn del-btn" data-action="askDelete" data-value={s.id} aria-label={`Delete ${s.name}`} title="Delete project"><Icon name="trash" size={17} sw={1.9} /></button>
+export const DeleteButton = ({ s, at }: { s: Summary; at: string }) => (
+  <button type="button" className="iconbtn del-btn" id={`${at}-del-${s.id}`} data-action="askDelete" data-value={s.id} aria-label={`Delete ${s.name}`} title="Delete project"><Icon name="trash" size={17} sw={1.9} /></button>
 );
 
 const RESULT: Record<string, [string, string]> = { above: ['warn', 'Above target'], within: ['good', 'Within target'], below: ['warn', 'Below target'] };
@@ -117,28 +120,31 @@ export function ProjectCard({ s, activeId }: { s: Summary; activeId?: string | n
   const room = [[s.industry, s.type].filter(Boolean).join(' · ') || 'Room not described yet', s.geometry ? fmt.m3(s.geometry.V) : ''].filter(Boolean).join(' · ');
   const stat = (k: string, v: string, c = '') => <div className={cx('pc-stat', c)} key={k}><span className="pc-k">{k}</span><span className="pc-v">{v}</span></div>;
   // The status is the verdict (every judged band against the target); the figure is the average over those bands.
-  const result = s.status ? <Pill tone={RESULT[s.status][0]} text={RESULT[s.status][1]} /> : s.measured != null && s.summary == null ? <Pill tone="warn" text="Not assessed" icon="alert" /> : <Pill tone="neutral" text="Not measured yet" />;
+  // A room measured at fewer positions than it needs has no verdict yet (Assessment calls it provisional).
+  const result = s.status ? <Pill tone={RESULT[s.status][0]} text={RESULT[s.status][1]} />
+    : s.provisional ? <Pill tone="neutral" text={s.positions < s.positionsRequired ? `Provisional · ${s.positions} of ${s.positionsRequired} positions` : 'Provisional'} icon="pin" />
+      : s.measured != null ? <Pill tone="warn" text="Not assessed" icon="alert" /> : <Pill tone="neutral" text="Not measured yet" />;
   const treatment = !s.status ? ''
     : t.items ? `Treatment: ${t.items} product${t.items === 1 ? '' : 's'}${t.predictedStatus ? ` · predicted ${RESULT[t.predictedStatus][1].toLowerCase()}` : ''}`
       : t.required ? 'No treatment chosen yet' : 'No treatment needed';
-  const progress = s.review ? `${s.review} step${s.review > 1 ? 's' : ''} to review · ${s.reviewNext}` : s.next ? `${s.done} of ${s.total} steps · next: ${s.next}` : 'Complete';
+  const progress = s.review ? `${s.review} step${s.review > 1 ? 's' : ''} to review · next: ${s.reviewNext}` : s.next ? `${s.done} of ${s.total} steps · next: ${s.next}` : 'Complete';
   return (
     <article className={cx('pcard', s.pinned && 'is-pinned', open && 'is-open')} aria-label={s.name}>
       <header className="pc-h">
         <div className="pc-title"><button type="button" className="pc-name" data-action="openProject" data-value={s.id}>{s.name}</button>{open ? <Pill tone="neutral" text="Open now" /> : null}</div>
         <span className="pc-tools">
-          <DeleteButton s={s} />
-          <button type="button" className="pin-btn" data-action="togglePin" data-value={s.id} aria-pressed={s.pinned} aria-label={`${s.pinned ? 'Unpin' : 'Pin'} ${s.name}`} title={s.pinned ? 'Unpin project' : 'Pin project'}><Icon name="pushpin" size={17} sw={2} /></button>
+          <DeleteButton s={s} at="pc" />
+          <button type="button" className="pin-btn" id={`pc-pin-${s.id}`} data-action="togglePin" data-value={s.id} aria-pressed={s.pinned} aria-label={`Pin ${s.name}`} title={s.pinned ? 'Unpin project' : 'Pin project'}><Icon name="pushpin" size={17} sw={2} /></button>
         </span>
       </header>
       <div className="pc-room">{room}</div>
       <div className="pc-stats">
         {stat('Measured', s.summary != null ? fmt.s(s.summary) : '—')}
-        {stat('Target', s.target != null ? fmt.s(s.target) : '—')}
+        {stat('Target', s.targetText || '—')}
         {t.predicted != null ? stat('Predicted', fmt.s(t.predicted), 'is-pred') : null}
       </div>
       <div className="pc-status">{result}{treatment ? <span className="pc-treat">{treatment}</span> : null}</div>
-      {ui.confirmingDelete(s.id) ? <DeleteConfirm s={s} /> : (
+      {ui.confirmingDelete(s.id) ? <DeleteConfirm s={s} at="pc" /> : (
         <footer className="pc-f">
           <span className="pc-when">{`Updated ${fmt.ago(s.updatedAt)}${s.measuredAt ? ` · measured ${fmt.ago(s.measuredAt)}` : ''}`}<br />{progress}</span>
           <Btn action="openProject" value={s.id} size="sm" iconAfter="arrowR">Open project</Btn>
@@ -158,7 +164,7 @@ export function HistoryList({ items, activeId }: { items: Summary[]; activeId?: 
         const size = s.geometry ? `${fmt.dims(s.geometry)} · ${fmt.m3(s.geometry.V)}` : '';
         const open = s.id === activeId;
         const step = s.review ? `${s.review} step${s.review > 1 ? 's' : ''} to review · next: ${s.reviewNext}` : s.next ? `${s.done} of ${s.total} steps · next: ${s.next}` : 'Complete';
-        if (ui.confirmingDelete(s.id)) return <li className="hist-item" key={s.id}><DeleteConfirm s={s} /></li>;
+        if (ui.confirmingDelete(s.id)) return <li className="hist-item" key={s.id}><DeleteConfirm s={s} at="hl" /></li>;
         return (
           <li className="hist-item" key={s.id}>
             <button type="button" className={cx('hist-row', open && 'is-open')} data-action="openProject" data-value={s.id}>
@@ -175,7 +181,7 @@ export function HistoryList({ items, activeId }: { items: Summary[]; activeId?: 
                 <span className="progress"><i style={{ width: `${(s.done / s.total) * 100}%` }} /></span>
               </span>
             </button>
-            <DeleteButton s={s} />
+            <DeleteButton s={s} at="hl" />
           </li>
         );
       })}

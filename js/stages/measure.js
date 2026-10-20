@@ -32,6 +32,12 @@
     if (mic.output && mic.output.error) return `The selected sound output could not be used (${mic.output.error}). Choose another in Measurement Setup.`;
     const problem = LIVE.configProblem(p);
     if (problem) return problem;
+    // The room-preparation checklist of Measurement Setup (asked again after the device profile changes).
+    const prep = ((W.get('setup') || {}).model || {}).PREP || [], left = prep.filter(([k]) => !p.setup.prep[k]).length;
+    if (left) return `Finish the room preparation checklist in Measurement Setup (${prep.length - left} of ${prep.length} done).`;
+    // A take recorded at another position and not processed yet would be replaced by the new one: process it first.
+    const rec = p.measurement.recording;
+    if (rec && rec.status === 'captured' && !evaluated(p, rec) && AM.derive.positionOf(rec) !== p.setup.position) return `Process the take recorded at ${AM.derive.positionOf(rec)} first (Process recording), so it is not replaced.`;
     if (!p.setup.noise) return 'Measure the background noise first.';
     if (noiseElsewhere(p)) return `Measure the background noise at ${p.setup.position} first: the last check was made at ${p.setup.noise.position}.`;
     return null;
@@ -58,8 +64,10 @@
     // The position selected for the next take has no valid take yet (or its latest failed): measure it.
     const here = AM.derive.positions(p).rows.find(r => r.current);
     if (here && here.status !== 'valid' && !startBlocker(p)) return { label: here.status === 'invalid' || here.status === 'failed' ? `Retry ${here.id}` : `Measure ${here.id}`, action: 'startTake', rec: true };
-    if (AM.derive.measured(p) && !failedLatest(p)) return null;
-    return !startBlocker(p) ? { label: rec || AM.derive.measured(p) ? 'Measure again' : 'Start measurement', action: 'startTake', rec: true } : null;
+    // Nothing waiting to be processed: the step leads on to Processing, where the latest take's outcome is shown.
+    const onward = rec || AM.derive.measured(p) ? { label: 'Continue to Processing', action: 'continue' } : null;
+    if (AM.derive.measured(p) && !failedLatest(p)) return onward;
+    return !startBlocker(p) ? { label: rec || AM.derive.measured(p) ? 'Measure again' : 'Start measurement', action: 'startTake', rec: true } : onward;
   }
 
   /* ---------- live drawing ---------- */
@@ -152,9 +160,12 @@
       reconnectMic: ctx => LIVE.startMonitor(ctx.project, true),
       resumeMic: () => LIVE.resume(),
       // The instructional video opens over this step and closes back to it. Not during a take.
-      openGuide: ctx => { if (!takeFor(ctx.project)) S.ui({ sheet: { kind: 'guide', id: 'measure' } }); },
+      // A named video (the walkthrough from the Help menu) opens as itself; without a name, the measuring video.
+      openGuide: (ctx, id) => { if (!takeFor(ctx.project)) S.ui({ sheet: { kind: 'guide', id: id && AM.guides[id] ? id : 'measure' }, navOpen: false }); },
       closeGuide: () => {
+        const own = (S.state.ui.sheet || {}).id === 'measure';
         S.ui({ sheet: null });
+        if (!own) return;
         const b = document.querySelector('[data-action="startTake"]');
         if (b) { b.scrollIntoView({ block: 'center', behavior: 'smooth' }); b.focus({ preventScroll: true }); }
       },

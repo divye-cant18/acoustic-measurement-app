@@ -58,7 +58,7 @@ export function TakeChecks({ meta, snrDb }: { meta: any; snrDb: number | null | 
 function sameWarningsOnce(ws: string[]): string[] {
   const by = new Map<string, string[]>(), out: string[] = [];
   ws.forEach(w => { const m = /^(P\d+): ([\s\S]*)$/.exec(w); if (!m) { out.push(w); return; } if (!by.has(m[2])) by.set(m[2], []); by.get(m[2])!.push(m[1]); });
-  by.forEach((ps, text) => out.push(`${ps.join(' and ')}: ${text}`));
+  by.forEach((ps, text) => out.push(`${ps.length > 1 ? `${ps.slice(0, -1).join(', ')} and ${ps[ps.length - 1]}` : ps[0]}: ${text}`));
   return out;
 }
 
@@ -95,7 +95,7 @@ function Comparison({ p }: { p: Project }) {
         </table>
       </TableWrap>
       {spread != null && spread > 0.1 ? <Note tone="warn"><b>{`RT60 at ${f} differs by ${Math.round(spread * 100)} % between sweep levels at the same position.`}</b> With linear playback and recording, valid takes agree whatever the level. Distortion at the higher level or noise at the lower one may be affecting a take: compare their distortion and usable decay, and measure again.</Note> : null}
-      <p className="small muted">With linear playback and recording, valid takes at different sweep levels give similar RT60 at the same position: the level changes how far the room's decay rises above the background, not the decay itself. A higher level helps only while it adds usable decay without distortion, so the loudest is not automatically the best. Different positions differ for real and are averaged, not compared, here. Earlier takes are kept here, not overwritten.</p>
+      <p className="small muted">With linear playback and recording, valid takes at different sweep levels give similar RT60 at the same position: the level changes how far the room's decay rises above the background, not the decay itself. A higher level helps only while it adds usable decay without distortion, so the loudest is not automatically the best. Different positions differ for real and are averaged, not compared, here. Valid takes are kept here, not overwritten; a take that was not valid is listed until the next take replaces it.</p>
     </Card>
   );
 }
@@ -284,10 +284,10 @@ export function ResultsScreen({ ctx }: { ctx: Ctx }) {
         <div className="h2"><span className="h2-k">{`All bands, ${RA.SHORT}`}</span><HeroValue a={avg} cls="hero-v hero-v2" watch="avg-headline" /><span className="h2-s">{bandsNote(avg)}</span></div>
       </div>
       <div className="hero-pills">
-        <Pill tone={s.complete ? 'good' : 'warn'} text={`${s.count} of ${s.required} positions${s.complete ? '' : ' · incomplete'}`} icon={s.complete ? 'seal' : 'pin'} />
+        <Pill tone={s.complete ? 'good' : 'warn'} text={s.complete ? `${s.count} positions` : `${s.count} of ${s.required} positions · incomplete`} icon={s.complete ? 'seal' : 'pin'} />
         {sm.available ? null : <Pill tone="warn" text="No summary" icon="alert" />}
         {room.status === 'warning' ? <Pill tone="warn" text="With warnings" icon="alert" /> : <Pill tone="good" text="Valid" icon="seal" />}
-        <Pill tone="neutral" text={`${rh.quality} · ${rh.confidence.toLowerCase()} confidence at ${fmt.hzShort(rh.f)} Hz`} />
+        <Pill tone="neutral" text={`${rh.quality} · ${rh.confidence.toLowerCase()} confidence at ${fmt.hz(rh.f)}`} />
       </div>
       <p className="small muted">{sm.available
         ? `The first covers the bands this room's target is set for (${pol.criterion || "the app's default"}), and is compared with it in the next step${sm.partial ? `; ${sm.missing.map(x => fmt.hz(x.f)).join(' and ')} could not be measured at any position, so ${sm.missing.length > 1 ? 'they are' : 'it is'} left out` : ''}. The second covers every band. Each is the average of the positions, band by band; each position's own values are below.`
@@ -371,7 +371,8 @@ export function ResultsScreen({ ctx }: { ctx: Ctx }) {
               <Legend items={[['line', 'Decay curve (backward-integrated)'], ['faint', 'Band energy'], ['eval', `${sel.path || 'Evaluation'} range`], ['dash', 'Fit, extended over 60 dB of decay'], ['dash-muted', 'Recording background noise']]} />
               <p className="chart-caption">{fit && sel.rt60 != null
                 ? <>{`${sel.path} at ${fmt.hz(sel.f)}: the fitted decay falls from −${+Math.abs(fit.from).toFixed(1)} dB at ${fit.t1.toFixed(2)} s to −${+Math.abs(fit.to).toFixed(1)} dB at ${fit.t2.toFixed(2)} s. ${(fit.t2 - fit.t1).toFixed(3)} s × ${mult} = `}<b>{fmt.s(sel.rt60)}</b>{` (r² ${fit.r2.toFixed(4)}).${sel.headDb > direct ? ` The device's direct sound lies ${sel.headDb.toFixed(1)} dB above the start of the room's decay here, so the range starts below it.` : ''}`}</>
-                : `No RT60 at ${fmt.hz(sel.f)}: ${sel.reason || 'not enough usable decay'}`}</p>
+                : sel.rt60 != null ? `${sel.path} at ${fmt.hz(sel.f)}: ${fmt.s(sel.rt60)}, the T20 this take measured (it was processed before RT60 was reported from T20, so its own fit was not kept).`
+                  : `No RT60 at ${fmt.hz(sel.f)}: ${sel.reason || 'not enough usable decay'}`}</p>
               <TechH title={`Latest take (${here}) band by band`} />
               <TableWrap>
                 <table className="tbl">

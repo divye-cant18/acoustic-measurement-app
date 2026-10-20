@@ -6,11 +6,20 @@
   const W = AM.workflow, A = AM.acoustics;
   const { isNum } = AM.util;
 
-  const geometry = p => (p ? A.geometry(p.room) : null);
+  // The room's geometry, once every dimension is entered and within Room Setup's limits (its dimError); null before, so
+  // no screen shows a volume Room Setup does not accept.
+  const geometry = p => {
+    if (!p) return null;
+    const m = (W.get('room') || {}).model;
+    return m && ['L', 'W', 'H'].some(k => m.dimError(k, p.room[k])) ? null : A.geometry(p.room);
+  };
+  // The project's target when it is complete: a range (preferred, min, max) or an upper limit only (form 'max').
   const target = p => {
     const t = p && p.target;
-    return t && [t.preferred, t.min, t.max].every(isNum) ? t : null;
+    return t && AM.services.target.complete(t) ? t : null;
   };
+  // The value a treatment aims at: the preferred value, or the upper limit of an upper-limit target.
+  const aim = t => AM.services.target.aim(t);
   // The latest valid take: what Processing, the take list, the decay curves and the diagnostics show. Not the room's
   // values, which come from every measured position (room).
   const measured = p => {
@@ -113,6 +122,8 @@
     return {
       id: t.id, index, no: index + 1, path: `treatment.items.${index}`, placement: t.placement || 'Walls', rawAreaM2: t.areaM2,
       product, configuration, complete: !!configuration, mode, sizes, size, quantity: qty, areaM2, alpha: bandsAlpha.values, missingBands: bandsAlpha.missing,
+      amountBy: t.amountBy === 'app' ? 'app' : 'user', // who set the amount: the app (autoPlan) or the user
+      recommendedConfig: t.recommendedConfig || null, // the mounting the app recommended when the product was chosen
       alphaThirds: bandsAlpha.thirds, alphaCapped: bandsAlpha.capped,
     };
   }
@@ -137,14 +148,21 @@
     const plan = treatmentPlan(p);
     const open = plan.incomplete[0];
     if (open) return `Choose a tested configuration for #${open.no} ${open.product.name}, or remove it.`;
-    const empty = plan.complete.find(i => !(i.areaM2 > 0));
-    if (empty) return `Set ${empty.mode === 'units' ? 'how many panels of' : 'the area of'} #${empty.no} ${empty.product.name}, or remove it.`;
+    // A product tested without a value in a band the room is judged in cannot be predicted: said before its amount.
     const used = summaryBands(p);
     const gap = plan.items.find(i => used.some(f => i.missingBands.includes(f)));
-    if (gap) return `#${gap.no} ${gap.product.name}: this configuration has no usable α at ${bandList(used.filter(f => gap.missingBands.includes(f)))} Hz in the source, and the prediction needs every band the room is judged in (${policy(p).short}).`;
+    if (gap) return `#${gap.no} ${gap.product.name}: this version's test has no absorption value at ${bandList(used.filter(f => gap.missingBands.includes(f)))} Hz, which this room is judged on (${policy(p).short}), so its effect cannot be predicted. Choose another version or mounting, or another product.`;
+    // An amount of none is a problem only when the user set it: the app may find that the others are enough (autoPlan).
+    const empty = plan.complete.find(i => !(i.areaM2 > 0)) && plan.complete.every(i => !(i.areaM2 > 0)) ? plan.complete[0] : plan.complete.find(i => !(i.areaM2 > 0) && i.amountBy === 'user');
+    if (empty) return `Set ${empty.mode === 'units' ? 'how many panels of' : 'the area of'} #${empty.no} ${empty.product.name}, or remove it.`;
     // The covered finishes' library absorption does not fit the measured room in a band the average needs (prediction.js).
     const raw = predictionRaw(p), clash = raw && raw.checks.find(c => c.id === 'covered-exceeds-measured' && c.bands.some(f => used.includes(f)));
-    if (clash) return clash.text;
+    if (clash) {
+      // More treatment than the surface it goes on: the amount is the cause, not the finishes.
+      const over = coverage(p).find(c => c.fraction > 1 + 1e-9);
+      if (over) return `The treatment on ${/^Wall \d$/.test(over.label) ? over.label : `the ${over.label.toLowerCase()}`} (${AM.util.fmt.m2(over.areaM2)}) is more than its free surface (${AM.util.fmt.m2(over.surfaceM2)}), so it cannot be predicted. Reduce the amount or change the placement.`;
+      return clash.text;
+    }
     return null;
   }
 
@@ -192,6 +210,14 @@
     });
     return out;
   }
+  // Why there is no prediction, as a sentence for the user (null when there is one, or when none is needed).
+  function predictionMissing(p) {
+    if (prediction(p) || noTreatment(p)) return null;
+    if (!room(p)) return 'The prediction needs a valid measurement. Measure the room in Acoustic Measurement.';
+    if (!target(p)) return 'The prediction needs a target. Set it in Target / Ideal RT60.';
+    if (!treatmentItems(p).length) return 'Choose a product in Treatment: the room needs treatment, and the prediction is made from the products chosen there.';
+    return planProblem(p) || 'The prediction needs a complete treatment plan. Check it in Treatment.';
+  }
   // A prediction exists once the user has reached Treatment.
   const predictionStarted = (p, current) => !!p && (W.isDone(p, 'treatment') || current === 'treatment');
 
@@ -223,11 +249,15 @@
       mid, midStatus: mid.available ? A.classify(mid.value, t) : null,
       above: bands.filter(b => b.status === 'above').length,
       ref: { f: r.referenceBand, rt: r.headline.rt60, method: r.headline.method, confidence: r.headline.confidence },
-      positions: { valid: r.count, required: r.minimum, complete: r.complete }, provisional: !r.complete,
+      positions: { valid: r.count, required: r.minimum, complete: r.complete },
+      // Provisional while fewer positions than the session needs were measured, or while a judged band rests on fewer of
+      // them (ISO 3382-2's survey method needs two source-microphone combinations for every result).
+      thinBands: bands.filter(b => (b.role === 'primary' || b.role === 'edge') && b.rt != null && b.n < r.minimum).map(b => b.f),
     };
+    out.provisional = !r.complete || out.thinBands.length > 0;
     // blocked: a short sentence for the step's action bar (which bands are missing).
     if (!summary.available) return Object.assign(out, { rt: null, diff: null, status: null, summaryStatus: null, blocked: `No result for the ${pol.label.toLowerCase()}: only ${summary.total - summary.missing.length} of ${summary.total} of its bands were measured reliably. Measure again.` });
-    return Object.assign(out, { rt: summary.value, diff: summary.value - t.preferred, status: verdict.status, summaryStatus: verdict.summaryStatus });
+    return Object.assign(out, { rt: summary.value, diff: summary.value - aim(t), status: verdict.status, summaryStatus: verdict.summaryStatus });
   }
 
   /* The six bands in three groups anyone recognises, for Results and Assessment: low sounds (125 and 250 Hz), voices
@@ -260,25 +290,178 @@
     });
   }
 
-  // Sabine's equivalent absorption that would bring the room's summary RT60 to the preferred target. null without it.
+  // Sabine's equivalent absorption that would bring the room's summary RT60 to the target's aim (the preferred value, or
+  // the upper limit of an upper-limit target). null without it.
   function absorptionGap(p) {
     const a = assessment(p), g = geometry(p);
-    return a && a.available && g ? AM.services.prediction.absorptionNeeded(g.V, a.rt, a.target.preferred) : null;
+    return a && a.available && g ? AM.services.prediction.absorptionNeeded(g.V, a.rt, aim(a.target)) : null;
   }
 
   /* Amount of one item (default: the one being edited) at which the predicted summary RT60 (the average over the bands
-     the room is judged in) reaches the preferred target, with the other items of the plan as they are
+     the room is judged in) reaches the target's aim (preferred, or the upper limit), with the other items of the plan as they are
      (prediction.areaForAverage: the same model and bands as the prediction). null when there is no summary or no amount
      reaches the target. The predicted verdict (prediction().verdict) still judges every band on its own. */
+  /* The amount must meet the target as the verdict judges it: every judged band within its own limits, not only the
+     average. So: the amount that brings the average to the aim (areaForAverage), when every band is within its limits
+     there; otherwise the smallest amount at which they all are (a scan up to twice the room's surface, then bisection to
+     0.01 m²: each band's RT60 moves one way as the area grows, so the amounts that keep a band within its limits are one
+     interval, and so is their intersection). When no amount does, the average's amount with meetsBands false and the
+     bands that stay outside. { areaM2, units, meetsBands, above: [f], below: [f], itemId, withOthers } or null. */
   function treatmentForTarget(p, item) {
-    const r = room(p), t = target(p), g = geometry(p), sel = item || treatmentSelection(p);
-    if (!r || !t || !g || !sel || !sel.complete) return null;
+    const sel = item || treatmentSelection(p);
+    if (!sel || !sel.complete) return null;
+    return cached('goal', p, [sel.id, sel.configuration.id, sel.placement, sel.mode, sel.size && sel.size.index], () => goalFor(p, sel));
+  }
+  function goalFor(p, sel) {
+    const r = room(p), t = target(p), g = geometry(p);
+    if (!r || !t || !g) return null;
     const input = i => { const c = covered(p, i); return { areaM2: i.areaM2, alpha: i.alpha, coveredAlpha: c ? c.alpha : null }; };
     const others = treatmentPlan(p).complete.filter(i => i.id !== sel.id);
     if (!summaryRT60(p).available) return null;
-    const area = AM.services.prediction.areaForAverage({ V: g.V, S: g.total, bands: r.bands, item: input(sel), others: others.map(input), targetRT: t.preferred, over: summaryBands(p) });
-    if (area == null) return null;
-    return { areaM2: area, units: sel.size ? Math.ceil(area / sel.size.areaM2 - 1e-9) : null, itemId: sel.id, withOthers: others.some(i => i.areaM2 > 0) };
+    const P = AM.services.prediction, EV = AM.services.evaluation, RA = AM.services.rt60Average, pol = policy(p), over = summaryBands(p);
+    const verdictAt = x => {
+      const pr = P.predict({ V: g.V, S: g.total, bands: r.bands, treatment: { items: [...others.map(input), Object.assign(input(sel), { areaM2: x })] }, referenceBand: AM.demo.REFERENCE_BAND });
+      return EV.verdict(EV.bandRows(Object.fromEntries(pr.bands.map(b => [b.f, b.predicted])), t, pol), RA.ofPrediction(pr.bands, over), t, pol);
+    };
+    const ok = x => { const v = verdictAt(x); return v.available && v.status === 'within'; };
+    const avgArea = P.areaForAverage({ V: g.V, S: g.total, bands: r.bands, item: input(sel), others: others.map(input), targetRT: aim(t), over });
+    let area = avgArea != null && ok(avgArea) ? avgArea : null;
+    if (area == null && !ok(0)) {
+      const top = Math.max(1, 2 * g.total), n = 400;
+      let prev = 0;
+      for (let k = 1; k <= n && area == null; k++) { const x = top * k / n; if (ok(x)) area = x; else prev = x; }
+      if (area != null) { let a = prev; while (area - a > 0.01) { const m = (a + area) / 2; if (ok(m)) area = m; else a = m; } }
+    }
+    const units = x => (sel.size ? Math.ceil(x / sel.size.areaM2 - 1e-9) : null), base = { itemId: sel.id, withOthers: others.some(i => i.areaM2 > 0) };
+    if (area != null) return Object.assign({ areaM2: area, units: units(area), meetsBands: true, above: [], below: [] }, base);
+    if (avgArea == null) return null;
+    const v = verdictAt(avgArea);
+    return Object.assign({ areaM2: avgArea, units: units(avgArea), meetsBands: false, above: v.above.map(x => x.f), below: v.below.map(x => x.f) }, base);
+  }
+
+  /* ---------- automatic treatment: the mounting and the amount the app suggests ----------
+     The user chooses a product; the app chooses the tested mounting that does best in this room and the amount needed,
+     and both can be changed. Everything uses the same prediction and verdict as above (treatmentForTarget). */
+  /* The amounts the app suggests, for every product in the plan at once (so a mix of products is worked out together:
+     one that absorbs the low sounds and one the high ones). Products whose amount the user set stay as set; `also` (an
+     item id) is included as the app's even when the user set it (the suggestion shown beside the user's amount).
+     The best amounts are, in this order: the fewest judged bands outside their limits (and the room's Tm, for EBU); when
+     every band is within, the least material; otherwise the average closest to the aim. Each product stays within the
+     free surface where it goes, shared with the others placed there. Search: a grid over the amounts (every pair of
+     the app's products together when there are two or fewer, else one product at a time, a few rounds), then a finer
+     step around the best: whole panels, or 0.1 m².
+     Returns { [itemId]: { areaM2, quantity, capM2, capped } } for the app's products, and best: the score reached. */
+  // Results are kept for the same inputs (room, target, measured values, plan), so a screen drawn again is instant.
+  const planCache = new Map();
+  function cached(kind, p, extra, fn) {
+    // The measured room enters by its values, band by band (not by take ids, which a test or an import may lack).
+    const r = room(p), key = JSON.stringify([kind, extra, p.room, p.target, r ? r.bands.map(b => [b.f, b.rt60, b.n]) : null, p.treatment.items]);
+    if (planCache.has(key)) return planCache.get(key);
+    const v = fn();
+    planCache.set(key, v);
+    if (planCache.size > 40) planCache.delete(planCache.keys().next().value);
+    return v;
+  }
+  function autoPlan(p, also, quick) {
+    // A product without a tested value in a band the room is judged in cannot be predicted: it is left out of the search
+    // (planProblem says so), so the others are still worked out.
+    const used = summaryBands(p), predictable = it => !used.some(f => it.missingBands.includes(f));
+    const items = treatmentPlan(p).complete.filter(predictable), mine = also ? items.find(it => it.id === also) : null;
+    // The app's amount for one product the user set (shown beside theirs): that product alone, the others as they are.
+    const auto = mine && mine.amountBy === 'user' ? [mine] : items.filter(it => it.amountBy === 'app');
+    const key = auto.map(it => it.id).join(',');
+    return cached(quick ? 'plan-quick' : 'plan', p, key, () => searchPlan(p, items, auto, quick));
+  }
+  function searchPlan(p, items, auto, quick) {
+    const a = assessment(p), t = target(p), r = room(p), g = geometry(p);
+    if (!auto.length || !a || !a.available || !t || !r || !g) return {};
+    const P = AM.services.prediction, EV = AM.services.evaluation, RA = AM.services.rt60Average, pol = policy(p), over = summaryBands(p);
+    const SF = AM.services.surfaces, freeOf = pl => { const f = SF.coveredBy(p.room, pl).freeM2; return isNum(f) ? f : null; };
+    const am = Object.fromEntries(items.map(it => [it.id, auto.includes(it) ? 0 : it.areaM2]));
+    const inputs = () => items.map(i => { const c = covered(p, i); return { areaM2: am[i.id], alpha: i.alpha, coveredAlpha: c ? c.alpha : null }; });
+    const score = () => {
+      const pr = P.predict({ V: g.V, S: g.total, bands: r.bands, treatment: { items: inputs() }, referenceBand: AM.demo.REFERENCE_BAND });
+      const avg = RA.ofPrediction(pr.bands, over), total = Object.values(am).reduce((s, x) => s + x, 0);
+      if (!avg.available) return [99, 9, total];
+      const v = EV.verdict(EV.bandRows(Object.fromEntries(pr.bands.map(b => [b.f, b.predicted])), t, pol), avg, t, pol);
+      const out = v.available ? v.failing.length + (v.tmFails ? 1 : 0) : 99;
+      return out === 0 ? [0, 0, total] : [out, Math.abs(avg.value - aim(t)), total];
+    };
+    const better = (x, y) => (x[0] !== y[0] ? x[0] < y[0] : x[0] === 0 ? x[2] < y[2] - 1e-9 : Math.abs(x[1] - y[1]) > 1e-6 ? x[1] < y[1] : x[2] < y[2] - 1e-9);
+    // The most an item can take: the free surface where it goes, less what the other products there take now.
+    const capOf = it => { const f = freeOf(it.placement); return f == null ? Math.max(4 * g.total, 1) : Math.max(0, f - items.filter(o => o.id !== it.id && o.placement === it.placement).reduce((s, o) => s + am[o.id], 0)); };
+    const unit = it => (it.mode === 'units' ? it.size.areaM2 : 0.1);
+    const snap = (it, x) => { const u = unit(it), cap = capOf(it); const n = Math.floor(Math.min(x, cap) / u + 1e-9); return Math.max(0, n * u); };
+    const steps = (it, n) => { const cap = capOf(it), u = unit(it), k = Math.max(1, Math.ceil(cap / u / n)); const out = []; for (let x = 0; x <= cap + 1e-9; x += k * u) out.push(snap(it, x)); out.push(snap(it, cap)); return [...new Set(out)]; };
+    let best = score();
+    const tryAt = (it, x) => { const was = am[it.id]; am[it.id] = x; const s = score(); if (better(s, best)) { best = s; return true; } am[it.id] = was; return false; };
+    if (auto.length <= 2) {
+      // Every pair of amounts on a coarse grid, then each amount finely around the best.
+      const [A, B] = auto, n = quick ? 12 : B ? 20 : 40, gridA = steps(A, n), gridB = B ? steps(B, n) : [0];
+      let top = null;
+      for (const xa of gridA) for (const xb of gridB) {
+        am[A.id] = xa; if (B) am[B.id] = xb;
+        if (B && (am[B.id] > capOf(B) + 1e-9 || am[A.id] > capOf(A) + 1e-9)) continue;
+        const s = score();
+        if (!top || better(s, top.s)) top = { s, xa, xb };
+      }
+      am[A.id] = top.xa; if (B) am[B.id] = top.xb; best = top.s;
+    } else {
+      for (let round = 0; round < 4; round++) {
+        let moved = false;
+        for (const it of auto) for (const x of steps(it, quick ? 12 : 30)) moved = tryAt(it, x) || moved;
+        if (!moved) break;
+      }
+    }
+    for (let round = 0; round < (quick ? 0 : 3); round++) {
+      let moved = false;
+      for (const it of auto) {
+        const u = unit(it), coarse = Math.max(u, capOf(it) / (auto.length === 2 ? 20 : 40) + u);
+        for (let x = Math.max(0, am[it.id] - coarse); x <= am[it.id] + coarse + 1e-9; x += u) moved = tryAt(it, snap(it, x)) || moved;
+      }
+      if (!moved) break;
+    }
+    const out = { best };
+    auto.forEach(it => { const cap = capOf(it); out[it.id] = { areaM2: am[it.id], quantity: it.mode === 'units' ? Math.round(am[it.id] / it.size.areaM2) : null, capM2: cap, capped: best[0] > 0 && am[it.id] >= cap - unit(it) + 1e-9 }; });
+    return out;
+  }
+  /* The amount the app suggests for one item (autoPlan, with this item as the app's), for the screens:
+     { mode, quantity, areaM2, capped, availableM2, needed, goal } | null for an item without a tested configuration.
+     goal: the amount of this product alone that meets the target (treatmentForTarget), for the written-out calculation. */
+  function autoAmount(p, item) {
+    if (!item || !item.complete) return null;
+    const a = assessment(p), plan = autoPlan(p, item.amountBy === 'app' ? null : item.id), mine = plan[item.id];
+    if (!mine) return null;
+    return { mode: item.mode, quantity: mine.quantity, areaM2: mine.areaM2, capped: mine.capped, availableM2: mine.capM2,
+      needed: !!(a && a.available && a.status === 'above'), goal: a && a.available ? treatmentForTarget(p, item) : null };
+  }
+  // Whether an item's amount is the app's (it changes with the plan) rather than one the user set.
+  const isAutoAmount = (p, item) => !!item && item.amountBy === 'app';
+
+  /* The tested configuration (mounting) of an item's product that does best in this room, at the amount the app would
+     suggest for it: one that meets the target in every band with the least material first; else the fewest bands
+     outside their limits, then the average closest to the aim. A room that does not need treatment: the configuration
+     that absorbs most over the bands it is judged in. Only configurations with α in every judged band are considered. */
+  function recommendConfig(p, item) {
+    return cached('config', p, item.id, () => rankConfigs(p, item));
+  }
+  function rankConfigs(p, item) {
+    const cfgs = AM.services.catalog.getAcousticConfigurations(item.product.id), used = summaryBands(p);
+    const raw = (p.treatment.items || [])[item.index] || {};
+    const cands = cfgs.map(c => resolveItem(Object.assign({}, raw, { configurationId: c.id }), item.index))
+      .filter(c => c && c.complete && !used.some(f => c.missingBands.includes(f)));
+    if (!cands.length) return null;
+    const meanA = c => used.reduce((s, f) => s + (c.alpha[f] || 0), 0) / used.length;
+    const a = assessment(p), t = target(p);
+    if (cands.length === 1 || !a || !a.available || a.status !== 'above' || !t) return cands.slice().sort((x, y) => meanA(y) - meanA(x))[0].configuration.id;
+    // Each mounting with the amounts the app would then suggest for the whole plan (autoPlan): the plan with that mounting.
+    const scored = cands.map(c => {
+      const q = Object.assign({}, p, { treatment: Object.assign({}, p.treatment, { items: p.treatment.items.map((x, k) => (k === item.index ? Object.assign({}, x, { configurationId: c.configuration.id, amountBy: 'app' }) : x)) }) });
+      const plan = autoPlan(q, null, true), b = plan.best || [99, 9, Infinity]; // a coarse pass is enough to rank them
+      return { c, b, mean: meanA(c) };
+    });
+    scored.sort((x, y) => (x.b[0] !== y.b[0] ? x.b[0] - y.b[0] : x.b[0] === 0 ? x.b[2] - y.b[2] || y.mean - x.mean : x.b[1] - y.b[1] || y.mean - x.mean));
+    return scored[0].c.configuration.id;
   }
 
   // Treatment is needed when the verdict is "above": a band the room is judged in rings longer than the target allows
@@ -398,6 +581,7 @@
     const m = measured(p), next = W.STAGES.find(s => s.id !== 'home' && !p.completed.includes(s.id));
     const rev = W.STAGES.find(s => p.review.includes(s.id)); // first finished step flagged after an earlier change
     const t = target(p), a = assessment(p), plan = treatmentPlan(p), pred = prediction(p), avg = averageRT60(p), r = room(p), sm = summaryRT60(p), pol = policy(p);
+    const shownTarget = W.isDone(p, 'target') || p.lastStage === 'target', shownPred = predictionStarted(p, p.lastStage);
     return {
       id: p.id, kind: p.kind, name: p.room.name || 'Untitled room', industry: p.room.industry, type: p.room.type,
       geometry: geometry(p), measured: r ? r.headline.rt60 : null, band: r ? r.referenceBand : null,
@@ -405,14 +589,16 @@
       // The figure the room is judged by (its criterion's bands) and how many positions it rests on.
       summary: sm.available ? sm.value : null, summaryLabel: pol.label, summaryName: pol.name, summaryShort: pol.short, positions: r ? r.count : 0, positionsRequired: AM.services.spatial.MIN_POSITIONS,
       measuredAt: m ? m.takenAt : null,
-      target: t ? t.preferred : null,
-      status: a ? a.status : null, // the verdict: above, within or below (null without the summary)
-      treatment: { items: plan.items.length, predicted: pred ? pred.predicted : null, predictedStatus: pred && t ? pred.predictedStatus : null, required: treatmentRequired(p) },
+      // As the top bar shows them: the target once it is confirmed (step 2 finished), the prediction once Treatment is
+      // reached, and a verdict only when the room rests on enough positions (a provisional result is not a verdict).
+      target: t && shownTarget ? aim(t) : null, targetText: t && shownTarget ? AM.services.target.valueText(t) : null, targetForm: t ? AM.services.target.form(t) : null,
+      status: a && !a.provisional ? a.status : null, provisional: !!(a && a.provisional), // the verdict: above, within or below
+      treatment: { items: plan.items.length, predicted: pred && shownPred ? pred.predicted : null, predictedStatus: pred && t && shownPred ? pred.predictedStatus : null, required: treatmentRequired(p) },
       done: p.completed.filter(id => id !== 'home').length, total: W.NUMBERED, next: next ? next.title : null,
       review: p.review.length, reviewNext: rev ? rev.title : null,
       pinned: !!p.pinned, updatedAt: p.updatedAt, createdAt: p.createdAt,
     };
   }
 
-  AM.derive = { geometry, target, measured, room, positions, positionResults, positionOf: posOf, policy, summaryRT60, summaryBands, headlineMeasured, averageRT60, midAverageRT60, noiseChange, treatmentItems, treatmentSelection, treatmentPlan, planProblem, prediction, predictionStarted, assessment, soundGroups, absorptionGap, treatmentForTarget, treatmentRequired, noTreatment, coverage, summary, takeSummary, takeComparison, coveredBy: covered, laterTakes, diagnostics };
+  AM.derive = { geometry, target, aim, measured, room, positions, positionResults, positionOf: posOf, policy, summaryRT60, summaryBands, headlineMeasured, averageRT60, midAverageRT60, noiseChange, treatmentItems, treatmentSelection, treatmentPlan, planProblem, prediction, predictionMissing, predictionStarted, assessment, soundGroups, absorptionGap, treatmentForTarget, autoPlan, autoAmount, isAutoAmount, recommendConfig, treatmentRequired, noTreatment, coverage, summary, takeSummary, takeComparison, coveredBy: covered, laterTakes, diagnostics };
 })(window.AM);

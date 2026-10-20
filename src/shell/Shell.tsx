@@ -14,14 +14,16 @@ import { TourLayer } from './Tour';
 const STATE_LABEL: Record<string, string> = { current: 'Current', completed: 'Completed', available: 'Upcoming', locked: 'Locked' };
 function RailItem({ s }: { s: Stage }) {
   const p = S.state.project, cur = S.state.current;
-  const st = W.status(p, s.id, cur), done = W.isDone(p, s.id), rev = W.needsReview(p, s.id), n = W.stepNo(s.id);
-  const mark = st === 'completed' || (st === 'current' && done && s.id !== 'home') ? <Icon name="check" size={13} sw={2.8} />
-    : st === 'locked' ? <Icon name="lock" size={11} sw={2.4} /> : s.id === 'home' ? <Icon name="home" size={13} sw={2.2} /> : String(n);
+  // Home is a page, not a step: it is never "completed" and keeps its home icon.
+  const home = s.id === 'home', st0 = W.status(p, s.id, cur), st = home && st0 === 'completed' ? 'available' : st0;
+  const done = !home && W.isDone(p, s.id), rev = W.needsReview(p, s.id), n = W.stepNo(s.id);
+  const mark = home ? <Icon name="home" size={13} sw={2.2} /> : st === 'completed' || (st === 'current' && done) ? <Icon name="check" size={13} sw={2.8} />
+    : st === 'locked' ? <Icon name="lock" size={11} sw={2.4} /> : String(n);
   return (
     <button type="button" className={cx('wf-item', `is-${st}`, done && 'is-done', rev && 'is-flagged')} data-action="nav" data-value={s.id}
       aria-current={st === 'current' ? 'step' : undefined} aria-disabled={st === 'locked' ? 'true' : undefined}>
       <span className="wf-mark">{mark}</span>
-      <span className="wf-text"><span className="wf-title">{s.nav}</span><span className="wf-state">{st === 'current' && done ? 'Current · completed' : STATE_LABEL[st]}</span></span>
+      <span className="wf-text"><span className="wf-title">{s.nav}</span><span className="wf-state">{home ? (st === 'current' ? 'Current' : 'Projects and history') : st === 'current' && done ? 'Current · completed' : STATE_LABEL[st]}</span></span>
       {st === 'current' ? <Slash /> : null}
       {rev ? <span className="wf-flag" title="An earlier step changed after this one was finished">Review</span> : null}
     </button>
@@ -101,7 +103,7 @@ function TopBar({ stage }: { stage: Stage }) {
     facts = (
       <div className="facts" aria-label="Project values">
         <Fact cls="room" icon="room" k="Room" v={g ? fmt.m3(g.V) : null} />
-        <Fact cls="target" icon="target" k="Target" v={t && (W.isDone(p, 'target') || stage.id === 'target') ? fmt.s(t.preferred) : null} tip={`Preferred target RT60; every band ${pol.short} is checked against its range`} />
+        <Fact cls="target" icon="target" k="Target" v={t && (W.isDone(p, 'target') || stage.id === 'target') ? (am.services.target as any).valueText(t) : null} tip={t && t.preferred == null ? `Target RT60: an upper limit, judged at ${pol.judgedShort}` : `Preferred target RT60; every band ${pol.judgedShort} is judged against its limits`} />
         <Fact cls="measured" icon="mic" k="Measured" v={avg.available ? fmt.s(avg.value) : null} tip={measuredTip} stale={!!later} />
         <Fact cls="predicted" icon="trend" k="Predicted" v={pr ? fmt.s(pr.predicted) : null} tip={`Predicted average RT60, ${pol.short}, after treatment (model estimate)`} />
       </div>
@@ -188,7 +190,7 @@ function ActionBar({ stage, screen }: { stage: Stage; screen: ScreenDef }) {
   if (screen.footer === false) return null;
   const p = S.state.project, prev = W.prev(stage.id), nxt = W.next(stage.id), ctx = { project: p!, state: S.state, store: S, render: () => am.app && am.app.render() };
   const primary = (screen.primary && screen.primary(ctx)) || { label: stage.continueLabel || (nxt ? `Continue to ${nxt.nav}` : 'Finish'), action: 'continue' };
-  const chk = primary.action === 'continue' && stage.canContinue ? stage.canContinue(p) : { ok: true };
+  const chk = primary.action === 'continue' ? S.check(p, stage) : { ok: true };
   return (
     <footer className="actionbar">
       {prev ? <button type="button" className="btn btn-secondary" data-action="back"><Icon name="chevL" size={16} sw={2.2} /><span className="hide-sm">{prev.nav}</span><span className="show-sm">Back</span></button> : <span />}

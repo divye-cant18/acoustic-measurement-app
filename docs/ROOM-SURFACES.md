@@ -11,7 +11,7 @@ The acoustic workflow centres on three values:
 
 | Value | Comes from | Step |
 |---|---|---|
-| **Target RT60** | the room's type, use, volume and occupancy (`services/target.js`: DIN 18041:2016, ANSI/ASA S12.60 for classrooms); a range, not one value for every room | Target |
+| **Target RT60** | the room's category (type and main activity) and, where the criterion needs it, its volume, only from a verified criterion (`services/target.js`, docs/TARGET-CRITERIA.md); a range, or an upper limit where the standard gives only that | Target |
 | **Measured RT60** | the microphone measurement only (`js/measurement`, `services/processing.js`), unchanged | Measurement → Processing → Results |
 | **Predicted RT60 after treatment** | the measured RT60 and the chosen products (`services/prediction.js`) | Treatment → Predicted Result |
 

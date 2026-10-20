@@ -14,7 +14,8 @@
   const W = AM.workflow;
   const freshUi = () => ({
     navOpen: false, sheet: null, toast: null, band: AM.demo.REFERENCE_BAND, confirm: null,
-    catalog: { query: '', category: 'All', surface: 'Any', browsing: false, adding: false },
+    // The solutions explorer on Treatment: its view (home, category, product), category, product and version, search.
+    catalog: { query: '', category: 'All', surface: 'Any', browsing: false, adding: false, view: 'home', cat: null, group: null, variant: null },
   });
 
   const state = { project: null, projects: [], current: 'home', ui: freshUi() };
@@ -57,7 +58,10 @@
     } catch (e) { /* storage unavailable: start fresh */ }
     state.current = 'home';
     try {
+      // This tab's own project and step come first: the index's activeId is whichever tab saved last.
       const here = JSON.parse(sessionStorage.getItem(SKEY) || 'null');
+      const mine = here && here.projectId ? state.projects.find(p => p.id === here.projectId) : null;
+      if (mine) state.project = mine;
       if (here && state.project && here.projectId === state.project.id && W.get(here.current) && W.canEnter(state.project, here.current)) state.current = here.current;
     } catch (e) { /* no session storage: open on Home */ }
     window.addEventListener('storage', onStorage);
@@ -73,9 +77,12 @@
     if (p.room && p.room.industry === undefined) p.room.industry = AM.demo.industryFor(p.room.type);
     // Industries renamed and regrouped (2026-10-19): an earlier name moves to the one its room type is in now.
     if (p.room && p.room.industry) p.room.industry = AM.demo.canonicalIndustry(p.room.industry, p.room.type);
-    // Room uses now depend on the room type. Map the earlier general uses where the type offers them.
-    const uses = AM.services.target.usesFor(p.room.type);
-    if (!uses.includes(p.room.use)) p.room.use = uses.includes(LEGACY_USE[p.room.use]) ? LEGACY_USE[p.room.use] : uses[0] || '';
+    // Room uses depend on the room type. An earlier version's general use name moves to today's where the type has it;
+    // any other saved activity is kept exactly as saved (also for a type without a verified criterion), and a room saved
+    // before activities existed gets its type's most common activity with a verified criterion.
+    const TS = AM.services.target, legacy = LEGACY_USE[p.room.use];
+    if (legacy && TS.knownUses(p.room.type).includes(legacy)) p.room.use = legacy;
+    if (!p.room.use && TS.usesFor(p.room.type).length) p.room.use = TS.usesFor(p.room.type)[0];
     // Earlier targets had no source. A confirmed one is kept as the user's; an unconfirmed one follows the recommendation.
     if (!p.target.source) {
       const kept = p.completed.includes('target');
@@ -91,6 +98,8 @@
       p.treatment = { items: item, active: item.length ? item[0].id : null };
     }
     migrateMeasurement(p);
+    migrateMethod(p);
+    migrateTarget(p);
     // Six surfaces, from an earlier single floor / walls / ceiling choice where it names one material (surfaces.fromLegacy).
     if (p.room && !p.room.surfaces) p.room.surfaces = AM.services.surfaces.fromLegacy(p.room);
     const cat = AM.services.catalog, t = p.treatment;
@@ -106,6 +115,57 @@
       p.review = p.review.filter(x => !later.includes(x));
     }
     return p;
+  }
+
+  /* Targets come only from verified criteria (2026-10-19, js/data/targets.js). A recommended target is brought up to date
+     with the room as saved. When no verified criterion applies any more, its values are kept apart (target.earlier) and
+     never used: the project has no target until a supported category or the project's own target is chosen. A target
+     the user set in an earlier version stays theirs; where no criterion applies, its earlier basis is kept as its source.
+     The finished steps that relied on a changed target are marked for review, and targetNote says what happened. */
+  function migrateTarget(p) {
+    const TS = AM.services.target, stage = W.get('target'), t = p.target;
+    if (!t || !stage || !stage.sync) return;
+    const rec = TS.recommend(p.room);
+    if (t.source === 'custom') {
+      if (!rec && !t.note && t.basis) t.note = `Set in an earlier version of the app (${t.basis})`;
+      return;
+    }
+    const had = [t.preferred, t.min, t.max].some(x => typeof x === 'number');
+    const old = { preferred: t.preferred, min: t.min, max: t.max, basis: t.basis || '' };
+    if (!stage.sync(p) || !had) return;
+    const now = p.target, same = now.preferred === old.preferred && now.min === old.min && now.max === old.max;
+    if (same) return;
+    if (!TS.complete(now)) {
+      p.target = Object.assign({}, now, { earlier: old });
+      p.targetNote = `The target saved with this project (${old.basis || 'an earlier recommendation'}: ${typeof old.preferred === 'number' ? old.preferred.toFixed(2) : '—'} s) came from a criterion that is not verified for this room. It is kept for the record but no longer used: choose a supported room category, or set the project's own target with its source.`;
+    } else {
+      p.targetNote = `The recommended target was updated to the verified criterion (${now.basis}): it was ${typeof old.preferred === 'number' ? `${old.preferred.toFixed(2)} s (${old.min != null ? old.min.toFixed(2) : '—'}–${old.max != null ? old.max.toFixed(2) : '—'} s)` : 'different'}.`;
+    }
+    const flag = ['target', 'assessment', 'treatment', 'prediction', 'final'].filter(id => p.completed.includes(id) && !p.review.includes(id));
+    p.review.push(...flag);
+  }
+
+  /* RT60 is reported from T20 since 20 October 2026 (services/processing.js); before, from T30 where 45 dB of decay was
+     usable. A result processed before keeps every band's T20, so its bands are brought over to T20 from the take's own
+     data (rtMethod marks a result that is), never re-estimated: a position average never mixes the two. Its fit is
+     the T30 one, so it is dropped with its r² (shown as not kept). The finished steps that show the result are marked
+     for review when a value changed. */
+  function migrateMethod(p) {
+    const pr = p.processing || {}, results = [...Object.values(pr.positions || {}), pr.result].filter(r => r && r.valid && !r.rtMethod);
+    let changed = false;
+    results.forEach(r => {
+      (r.bands || []).forEach(b => {
+        if (b.path !== 'T30' || typeof b.t20 !== 'number') return;
+        Object.assign(b, { rt60: b.t20, path: 'T20', fit: null, r2: null, xi: null, converted: true });
+        changed = true;
+      });
+      const ref = (r.bands || []).find(b => b.f === r.referenceBand);
+      if (ref && r.headline) Object.assign(r.headline, { rt60: ref.rt60, method: ref.path });
+      r.rtMethod = 'T20';
+    });
+    if (!changed) return;
+    const flag = ['results', 'assessment', 'treatment', 'prediction', 'final'].filter(id => p.completed.includes(id) && !p.review.includes(id));
+    p.review.push(...flag);
   }
 
   /* Earlier versions simulated the microphone, the background noise and the measurement. Those values were never
@@ -161,7 +221,9 @@
   function saveIndex() {
     const ids = state.projects.map(p => p.id);
     const stored = readJson(KEY); // keep ids another tab added meanwhile
-    if (stored && stored.v === VERSION && Array.isArray(stored.ids)) stored.ids.forEach(id => { if (!ids.includes(id) && !deleted.has(id)) ids.push(id); });
+    // A project deleted here stays out of the index only while its data is gone: another tab that still has it open
+    // saves it again, and then it is listed again.
+    if (stored && stored.v === VERSION && Array.isArray(stored.ids)) stored.ids.forEach(id => { if (!ids.includes(id) && (!deleted.has(id) || localStorage.getItem(PKEY(id)))) ids.push(id); });
     localStorage.setItem(KEY, JSON.stringify({ v: VERSION, activeId: state.project ? state.project.id : null, ids }));
   }
   function save() {
@@ -176,7 +238,9 @@
     }
   }
 
-  // Another tab saved: pick up projects it added or changed (the open project here is left as it is).
+  /* Another tab saved: pick up projects it added or changed. The project open here is brought up to date too when the
+     other tab changed it (every change here is saved at once, so nothing of this tab's is lost); it is updated in place,
+     so a take or a processing job running here still belongs to it. A project another version cannot read is skipped. */
   function onStorage(e) {
     if (!e.key || !e.key.startsWith(KEY)) return;
     const d = readJson(KEY);
@@ -186,13 +250,21 @@
     const kept = state.projects.filter(x => x === state.project || d.ids.includes(x.id) || readJson(PKEY(x.id)));
     if (kept.length !== state.projects.length) { state.projects = kept; changed = true; }
     d.ids.forEach(id => {
-      if (deleted.has(id)) return;
-      if (state.project && state.project.id === id) return;
-      const p = readJson(PKEY(id));
-      if (!p || p.id !== id) return;
-      const i = state.projects.findIndex(x => x.id === id);
-      if (i < 0) { state.projects.push(migrate(p)); remember(p); changed = true; }
-      else if (JSON.stringify(state.projects[i]) !== JSON.stringify(p)) { state.projects[i] = migrate(p); remember(p); changed = true; }
+      const raw = localStorage.getItem(PKEY(id));
+      if (deleted.has(id)) { if (!raw) return; deleted.delete(id); } // saved again by a tab that had it open
+      if (!raw || written.get(id) === raw) return;
+      try {
+        const p = JSON.parse(raw);
+        if (!p || p.id !== id) return;
+        const i = state.projects.findIndex(x => x.id === id);
+        if (state.project && state.project.id === id) {
+          const fresh = migrate(p), cur = state.project;
+          Object.keys(cur).forEach(k => { if (!(k in fresh)) delete cur[k]; });
+          Object.assign(cur, fresh);
+          remember(cur); changed = true;
+        } else if (i < 0) { state.projects.push(migrate(p)); remember(p); changed = true; }
+        else if (JSON.stringify(state.projects[i]) !== raw) { state.projects[i] = migrate(p); remember(p); changed = true; }
+      } catch (err) { console.warn(`Project ${id} saved by another tab could not be read and was skipped.`, err); }
     });
     if (changed) listeners.forEach(fn => fn(state));
   }
@@ -257,9 +329,24 @@
     return true;
   }
 
+  /* Whether the step on screen can be finished: its own check, and no number field on it holding text that is not a
+     number (AM.ui.bad, kept by the interface). Such text is not stored, so continuing would silently drop it. */
+  function check(p, s) {
+    const chk = s.canContinue ? s.canContinue(p) : { ok: true };
+    if (!chk.ok || typeof document === 'undefined') return chk;
+    const bad = (AM.ui && AM.ui.bad) || {};
+    for (const id of Object.keys(bad)) {
+      const el = document.getElementById(id);
+      if (!el || !el.closest(`main.is-${s.id}`)) continue; // a field of this step, as on screen
+      const l = document.querySelector(`label[for="${id}"]`), name = l && l.firstChild ? String(l.firstChild.textContent || '').trim() : '';
+      return { ok: false, reason: `${name ? `${name}: ` : ''}"${bad[id]}" is not a number. Correct it or clear the field.` };
+    }
+    return chk;
+  }
+
   function advance() {
     const p = state.project, s = W.get(state.current);
-    const chk = s.canContinue ? s.canContinue(p) : { ok: true };
+    const chk = check(p, s);
     if (!chk.ok) { toast(chk.reason); return; }
     if (s.onContinue) s.onContinue(p);
     complete(s.id);
@@ -304,8 +391,9 @@
     const p = AM.demo.newProject('new');
     p.room = Object.assign(copy(src.room), { name: `${src.room.name || 'Untitled room'} · after treatment` });
     p.target = copy(src.target);
-    // The same measuring setup, sweep level included, so the treated room is measured as the original was.
-    Object.assign(p.setup, { deviceKind: src.setup.deviceKind || null, deviceId: src.setup.deviceId || 'default', deviceLabel: src.setup.deviceLabel || '', outputId: src.setup.outputId || 'default', position: src.setup.position, sweepLevelDb: AM.analysis.sweepLevel(src.setup.sweepLevelDb) });
+    // The same measuring setup, sweep level included, so the treated room is measured as the original was, starting
+    // again at the first position.
+    Object.assign(p.setup, { deviceKind: src.setup.deviceKind || null, deviceId: src.setup.deviceId || 'default', deviceLabel: src.setup.deviceLabel || '', outputId: src.setup.outputId || 'default', position: AM.demo.POSITIONS[0].id, sweepLevelDb: AM.analysis.sweepLevel(src.setup.sweepLevelDb) });
     p.followUpOf = src.id;
     p.completed = ['home', 'room', 'target'];
     p.lastStage = 'setup';
@@ -402,5 +490,5 @@
     emit();
   }
 
-  AM.store = { state, load, subscribe, emit, ui, uiSet, update, set, complete, resetFrom, flagFrom, go, advance, back, startProject, startFollowUp, openProject, closeProject, resetProject, deleteProject, togglePin, history, autofillTo, toast };
+  AM.store = { state, load, subscribe, emit, ui, uiSet, update, set, complete, resetFrom, flagFrom, go, advance, check, back, startProject, startFollowUp, openProject, closeProject, resetProject, deleteProject, togglePin, history, autofillTo, toast };
 })(window.AM);

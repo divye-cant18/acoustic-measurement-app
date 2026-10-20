@@ -6,10 +6,13 @@
    convolve   linear convolution of two real signals through the FFT
    biquads    RBJ "Audio EQ Cookbook" low-pass and high-pass sections: bilinear transform, pre-warped at the corner
               frequency, so the corner is exact at any sample rate
-   octave     IEC 61260 octave bands on the base-2 series (125, 250, 500, 1000, 2000, 4000 Hz).
-              Band edges fc/√2 and fc·√2. Each band is a 6th-order Butterworth high-pass at the lower edge cascaded with
-              a 6th-order Butterworth low-pass at the upper edge: −3 dB at both edges, 36 dB per octave outside the band.
-              Six second-order sections in total, run in double precision (direct form II transposed).
+   octave     IEC 61260-1:2014 octave bands, named by their nominal frequencies (125, 250, 500, 1000, 2000, 4000 Hz) and
+              centred on the exact base-10 midband frequencies fm = 1000·G^k, G = 10^(3/10) (125.89, 251.19, 501.19, 1000,
+              1995.3, 3981.1 Hz; the 2014 edition specifies base 10 only). Band edges fm·G^(−1/2) and fm·G^(1/2). Each band
+              is a 6th-order Butterworth high-pass at the lower edge cascaded with a 6th-order Butterworth low-pass at the
+              upper edge: −3 dB at both edges, about −18 dB at the neighbouring band's centre and more than 30 dB down one
+              octave beyond its edges. Six second-order sections in total, run in double precision (direct form II
+              transposed). The filter class of IEC 61260-1 has not been verified against its Table 1.
    reversed   time-reversed filtering: the signal is reversed, filtered and reversed back. The filter's own ringing then
               falls before the impulse onset instead of lengthening the decay, which matters for short decays at low
               frequencies (Rasmussen, Rindel & Henriksen 1991; ISO 3382-2 allows it). */
@@ -79,10 +82,14 @@
   const butterworthQ = order => Array.from({ length: order / 2 }, (_, k) => 1 / (2 * Math.cos((2 * k + 1) * Math.PI / (2 * order))));
 
   const BAND_ORDER = 6;
+  // The exact base-10 midband frequency of a nominal octave band (IEC 61260-1:2014): 1000·G^k, G = 10^0.3, with k the
+  // band's octave number from 1 kHz.
+  const G = Math.pow(10, 0.3);
+  const midband = f => 1000 * Math.pow(G, Math.round(Math.log2(f / 1000)));
   function octaveBand(fc, fs) {
-    const lo = fc / Math.SQRT2, hi = fc * Math.SQRT2, q = butterworthQ(BAND_ORDER);
+    const fm = midband(fc), half = Math.sqrt(G), lo = fm / half, hi = fm * half, q = butterworthQ(BAND_ORDER);
     return {
-      f: fc, lo, hi, fs, order: BAND_ORDER, bandwidth: hi - lo,
+      f: fc, fm, lo, hi, fs, order: BAND_ORDER, bandwidth: hi - lo,
       sections: [...q.map(Q => rbj('highpass', lo, fs, Q)), ...q.map(Q => rbj('lowpass', hi, fs, Q))],
     };
   }
@@ -126,5 +133,5 @@
   // Level of a mean-square value in dB. The floor keeps log10 finite for exact digital silence.
   const dbOf = ms => 10 * Math.log10(Math.max(ms, 1e-20));
 
-  AM.dsp = { nextPow2, fft, convolve, rbj, butterworthQ, BAND_ORDER, octaveBand, filter, filterReversed, magnitude, meanSquare, dbOf };
+  AM.dsp = { nextPow2, fft, convolve, rbj, butterworthQ, BAND_ORDER, midband, octaveBand, filter, filterReversed, magnitude, meanSquare, dbOf };
 })(window.AM);

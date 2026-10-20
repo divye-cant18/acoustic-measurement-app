@@ -47,7 +47,10 @@ function items(p: Ctx['project']): [string, string, boolean, boolean?][] {
     ['Microphone access', ACCESS_TEXT[s.permission] || 'Failed', s.permission === 'granted', !['granted', 'not-requested'].includes(s.permission)],
     ['Measuring position', `${pos.id} · ${pos.name}`, true],
     ['Room preparation', `${prepDone} of ${PREP().length} done`, prepDone === PREP().length],
-    ['Background noise', n ? `${ui.dbfs(n.inBand ? n.inBand.leqDbfs : n.leqDbfs)}${n.inBand ? ' in the RT60 bands' : ''} · ${ui.noiseWord(n.status)}` : s.noiseAttempt ? 'Last attempt not usable' : 'Not measured', !!n, n ? n.status === 'warning' || n.status === 'unassessed' : !!s.noiseAttempt],
+    // Each position has its own background check: one made at another position does not count here.
+    n && n.position && n.position !== s.position
+      ? ['Background noise', `Measured at ${n.position}; measure it at ${s.position}`, false, true]
+      : ['Background noise', n ? `${ui.dbfs(n.inBand ? n.inBand.leqDbfs : n.leqDbfs)}${n.inBand ? ' in the RT60 bands' : ''} · ${ui.noiseWord(n.status)}${n.position ? ` · at ${n.position}` : ''}` : s.noiseAttempt ? 'Last attempt not usable' : 'Not measured', !!n, n ? n.status === 'warning' || n.status === 'unassessed' : !!s.noiseAttempt],
   ];
 }
 
@@ -59,7 +62,11 @@ export function SetupScreen({ ctx }: { ctx: Ctx }) {
   const allowed = s.permission === 'granted', asking = !!(L.access && L.access.pid === p.id);
   const devices = L.devices.length ? L.devices : [{ id: s.deviceId || 'default', label: s.deviceLabel || 'Default microphone' }];
   const options = devices.map((d: any) => ({ value: d.id, label: d.label }));
-  if (!options.some((o: any) => o.value === s.deviceId)) options.unshift({ value: s.deviceId, label: s.deviceLabel || 'Previously selected microphone' });
+  // The saved choice when the list does not have it: the system default by name (some browsers list no 'default' entry),
+  // never twice when a listed microphone already carries its label.
+  if (!options.some((o: any) => o.value === s.deviceId) && !(s.deviceLabel && options.some((o: any) => o.label === s.deviceLabel))) {
+    options.unshift({ value: s.deviceId, label: s.deviceLabel || (s.deviceId === 'default' ? 'Default microphone' : 'Previously selected microphone') });
+  }
   const settings = s.input && s.input.settings, cfg = s.input && s.input.config;
   const procWarn: string[] = settings ? MEAS.processingWarnings(settings).filter((w: string) => !/does not report/.test(w)) : [];
   const kind = LIVE.kindOf(p), K = DEMO.DEVICE_KINDS[kind], detected = MEAS.deviceKind();
@@ -86,7 +93,7 @@ export function SetupScreen({ ctx }: { ctx: Ctx }) {
             <SelectInput id="setup-kind" label="Device profile" changeAction="setKind" value={kind}
               options={Object.entries(DEMO.DEVICE_KINDS).map(([v, k]) => ({ value: v, label: `${(k as { name: string }).name}${v === detected ? ' (detected)' : ''}` }))} />
             {s.deviceKind && s.deviceKind !== detected ? <Note tone="warn">{`This page runs on ${detected === 'mobile' ? 'a phone or tablet' : 'a computer'}. Choosing “${K.name}” changes the instructions only: the measurement always uses the speaker and microphone of the device this page runs on.`}</Note> : null}
-            <SelectInput id="setup-device" label="Microphone" changeAction="setDevice" value={s.deviceId} options={options} />
+            <SelectInput id="setup-device" label="Microphone" changeAction="setDevice" value={options.some((o: any) => o.value === s.deviceId) ? s.deviceId : (options.find((o: any) => o.label === s.deviceLabel) || { value: s.deviceId }).value} options={options} />
             <div className="status-line"><MicLine mic={L.mic} setup={p.setup} /></div>
             {speaker}
             {outProblem ? <Note tone="critical" icon="alert">{outProblem}</Note> : null}

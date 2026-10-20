@@ -135,6 +135,7 @@ export const tourActions = {
     remember({ declined: true });
     visit.offerHidden = true;
     S.toast('You can take the tour any time, from the top right.');
+    returnFocus(); // the offer is gone: focus goes to where the tour can be found again
   },
   offerVideo: () => { visit.offerHidden = true; S.ui({ sheet: { kind: 'guide', id: 'tour' }, navOpen: false }); },
 };

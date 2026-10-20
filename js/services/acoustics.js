@@ -21,11 +21,12 @@
   // shown "0.24" but x·100 rounds to 25; 202 of the values 0.100–5.000 s differ), and the verdict would contradict the
   // number beside it.
   const shown = x => Math.round(Number(x.toFixed(2)) * 100);
+  // An upper limit only (t.min null, e.g. NBC 2016 offices): a value is within it or above it, never below.
   function classify(rt, t) {
-    if (!isNum(rt) || !t || !isNum(t.min) || !isNum(t.max)) return null;
-    const r = shown(rt), lo = shown(t.min), hi = shown(t.max);
+    if (!isNum(rt) || !t || !isNum(t.max)) return null;
+    const r = shown(rt), hi = shown(t.max);
     if (r > hi) return 'above';
-    if (r < lo) return 'below';
+    if (isNum(t.min) && r < shown(t.min)) return 'below';
     return 'within';
   }
 
