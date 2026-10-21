@@ -8,7 +8,8 @@
      poster(id)        still frame for thumbnails
 
    Videos: How to measure (Measure), How to measure the room (Room Setup), What is RT60? (Target) and the app
-   walkthrough (Home), all in js/data/guides.js.
+   walkthrough (Home), all in js/data/guides.js. Each caption is spoken by one narrator as it appears (see "the voice"
+   below); the picture waits for the voice at the end of a line, and the voice can be turned off.
 
    The player only plays a video. It never touches the project or the measurement. */
 (function (AM) {
@@ -677,8 +678,63 @@
   }
   const reading = (x, y, txt) => `<rect x="${x}" y="${y}" width="64" height="24" rx="5" fill="#0E1A12"/>` + T(x + 32, y + 17, txt, { size: 13, weight: 650, fill: P.good, anchor: 'middle' });
 
+  /* ---------- the voice: every caption is spoken as it appears (Web Speech API, the device's own speech) ----------
+     One narrator, chosen by one fixed rule on every device: a warm, clear female English voice, Indian English first
+     (the team and its clients), then British, then American, natural (neural) voices before standard ones. There is no
+     choice of voice; the viewer only turns it on or off, which is remembered in this browser. Where the browser has no
+     speech, the video plays with its captions only. */
+  const SPEECH = typeof window !== 'undefined' && 'speechSynthesis' in window && typeof window.SpeechSynthesisUtterance === 'function';
+  const VOICE_KEY = 'acoustic-measurement-prototype:guide-voice';
+  const pref = (() => { try { const v = JSON.parse(localStorage.getItem(VOICE_KEY) || '{}'); return v && typeof v === 'object' ? { on: v.on } : {}; } catch (e) { return {}; } })();
+  const savePref = () => { try { localStorage.setItem(VOICE_KEY, JSON.stringify({ on: pref.on })); } catch (e) { /* storage unavailable */ } };
+  const voiceOn = () => SPEECH && pref.on !== false;
+  const englishVoices = () => (SPEECH ? speechSynthesis.getVoices().filter(v => /^en([-_]|$)/i.test(v.lang)) : []);
+  // The narrator, in order of preference; the first one the device has is used.
+  const NARRATOR = [
+    /Neerja.*Natural/i, /Neerja/i,              // Microsoft Edge: Indian English, natural
+    /Sonia.*Natural/i, /Libby.*Natural/i,       // Microsoft Edge: British English, natural
+    /Aria.*Natural/i, /Jenny.*Natural/i,        // Microsoft Edge: American English, natural
+    /^Google UK English Female$/i, /^Google US English$/i, // Chrome
+    /Heera/i,                                   // Windows: Indian English
+    /Veena/i, /Isha/i,                          // Apple: Indian English
+    /Serena/i, /Kate/i, /Samantha/i,            // Apple: British, then American English
+    /Zira/i,                                    // Windows: American English
+  ];
+  let narrator = null;
+  function voice() {
+    if (narrator) return narrator;
+    const vs = englishVoices();
+    for (const re of NARRATOR) { const v = vs.find(x => re.test(x.name)); if (v) return (narrator = v); }
+    narrator = vs.find(v => /^en[-_]IN/i.test(v.lang)) || vs.find(v => /^en[-_]GB/i.test(v.lang)) || vs.find(v => /^en[-_]US/i.test(v.lang)) || vs[0] || null;
+    return narrator;
+  }
+  if (SPEECH) speechSynthesis.addEventListener('voiceschanged', () => { narrator = null; });
+  /* Pronunciation: the captions are written for the eye, the voice gets them spelled for the ear. */
+  const SAY_AS = [
+    [/RT60/g, 'R T sixty'],
+    [/\bPDF\b/g, 'P D F'],
+    [/ring-down/gi, 'ring down'],
+    [/L-shaped/gi, 'L shaped'],
+    [/’/g, "'"],
+  ];
+  const spoken = text => SAY_AS.reduce((s, [re, to]) => s.replace(re, to), text);  function say(text) {
+    if (!voiceOn() || !text) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(spoken(text)), v = voice(), token = (st.sayId = (st.sayId || 0) + 1);
+    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-GB';
+    u.rate = 0.97; u.pitch = 1; u.volume = 1; // a touch slower than default: clearer on every voice
+    u.onend = u.onerror = () => { if (st.sayId === token) st.speaking = false; };
+    st.speaking = true;
+    speechSynthesis.speak(u);
+  }
+  function hush() {
+    if (SPEECH) speechSynthesis.cancel();
+    st.speaking = false; st.sayId = (st.sayId || 0) + 1;
+  }
+
   /* ---------- player ---------- */
   const PAUSE = '<svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+  const MUTED = '<svg class="i" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M16 10l5 5M21 10l-5 5"/></svg>';
   const length = g => g.chapters[g.chapters.length - 1].to;
   const mmss = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   const memory = {};  // where each guide was left, so reopening resumes
@@ -691,6 +747,7 @@
 
   function html(id) {
     const g = AM.guides[id], D = length(g);
+    const sound = SPEECH ? `<button type="button" class="iconbtn gv-sound" data-gv="sound" aria-pressed="${voiceOn()}" aria-label="${voiceOn() ? 'Voice on: turn off' : 'Voice off: turn on'}" title="${voiceOn() ? 'Turn the voice off' : 'Turn the voice on'}">${voiceOn() ? icon('speaker', 18, 2) : MUTED}</button>` : '';
     const screen = g.video.src
       ? `<div class="gv-screen"><video class="gv-video" src="${esc(g.video.src)}" controls playsinline preload="metadata"></video></div>`
       : `<div class="gv-screen">
@@ -698,11 +755,12 @@
           <button type="button" class="gv-big" data-gv="toggle" aria-label="Play video">${icon('play', 30, 2.2)}</button>
           <div class="gv-end" hidden><button type="button" class="btn btn-secondary btn-sm" data-gv="restart">${icon('refresh', 15, 2)} Watch again</button><button type="button" class="btn btn-primary btn-sm" data-action="closeGuide">${esc(g.closeLabel || 'Close')}</button></div>
         </div>
-        <p class="gv-cap" aria-live="polite"></p>
+        <p class="gv-cap" aria-live="${voiceOn() ? 'off' : 'polite'}"></p>
         <div class="gv-bar">
           <button type="button" class="iconbtn gv-play" data-gv="toggle" aria-label="Play">${icon('play', 18, 2)}</button>
           <span class="gv-time">0:00 / ${mmss(D)}</span>
           <div class="gv-track" data-gv="track" role="slider" tabindex="0" aria-label="Video position" aria-valuemin="0" aria-valuemax="${D}" aria-valuenow="0" aria-valuetext="0:00"><i class="gv-fill"></i>${g.chapters.slice(1).map(c => `<i class="gv-mark" style="left:${(c.from / D * 100).toFixed(2)}%"></i>`).join('')}</div>
+          ${sound}
         </div>`;
     return `<div class="gv" data-guide="${esc(id)}">${screen}${chaptersHTML(g)}</div>`;
   }
@@ -710,6 +768,15 @@
   function poster(id) {
     const pp = (AM.guides[id] || {}).poster, scene = pp && SCENES[pp.scene] ? SCENES[pp.scene](pp.u, 0) : '';
     return `<svg class="gv-poster" viewBox="0 0 640 360" aria-hidden="true"><rect width="640" height="360" fill="${P.bg}"/>${scene}</svg>`;
+  }
+
+  // The line of a chapter at u (0–1): its own share of the chapter (cues), or equal shares without them.
+  function lineAt(ch, u) {
+    const n = ch.captions.length;
+    if (!ch.cues) { const k = Math.min(n - 1, Math.floor(u * n)); return { k, end: (k + 1) / n }; }
+    let k = 0;
+    while (k + 1 < n && u >= ch.cues[k + 1]) k++;
+    return { k, end: k + 1 < n ? ch.cues[k + 1] : 1 };
   }
 
   function frame(force) {
@@ -721,8 +788,12 @@
     const ch = g.chapters[ci], u = c01((t - ch.from) / (ch.to - ch.from));
     const chip = `<rect x="14" y="12" width="${n(34 + ch.title.length * 7.2)}" height="26" rx="13" fill="rgba(0,0,0,.45)"/>` + T(28, 30, `${ci + 1}/${g.chapters.length}  ${esc(ch.title)}`, { size: 12, weight: 650 });
     el.querySelector('.gv-g').innerHTML = SCENES[ch.scene](u, t) + chip;
-    const cap = ch.captions[Math.min(ch.captions.length - 1, Math.floor(u * ch.captions.length))];
-    if (cap !== st.cap) { el.querySelector('.gv-cap').textContent = cap; st.cap = cap; }
+    const line = lineAt(ch, u), cap = ch.captions[line.k], key = `${ci}:${line.k}`;
+    if (key !== st.cap) {
+      el.querySelector('.gv-cap').textContent = cap; st.cap = key;
+      st.lineEnd = ch.from + line.end * (ch.to - ch.from); // the voice is waited for here
+      if (st.playing) say(cap);
+    }
     el.querySelector('.gv-fill').style.width = (t / D * 100).toFixed(2) + '%';
     el.querySelector('.gv-time').textContent = `${mmss(t)} / ${mmss(D)}`;
     const tr = el.querySelector('.gv-track');
@@ -746,27 +817,48 @@
     st.raf = requestAnimationFrame(loop);
     const dt = st.last ? Math.min(0.25, (now - st.last) / 1000) : 0;
     st.last = now;
-    st.t = Math.min(length(st.g), st.t + dt);
+    // While the voice is still on a line, the picture waits at that line's end instead of moving on without it.
+    const next = st.t + dt, hold = st.speaking && voiceOn() && next >= st.lineEnd - 0.05;
+    st.t = Math.min(length(st.g), hold ? Math.max(st.t, st.lineEnd - 0.05) : next);
     if (st.t >= length(st.g)) { pause(); return; }
     if (now - st.drawn > 33) { st.drawn = now; frame(); }
   }
   function play() {
     if (st.t >= length(st.g)) st.t = 0;
+    if (!st.playing) st.cap = null; // resuming: the current line is said again from its start
     st.playing = true; st.last = 0;
     cancelAnimationFrame(st.raf); st.raf = requestAnimationFrame(loop);
     frame(true);
   }
-  function pause() { st.playing = false; cancelAnimationFrame(st.raf); st.raf = 0; frame(true); }
+  function pause() { st.playing = false; hush(); cancelAnimationFrame(st.raf); st.raf = 0; frame(true); }
   function seek(t) {
-    st.t = c01(t / length(st.g)) * length(st.g); st.last = 0;
+    hush();
+    st.t = c01(t / length(st.g)) * length(st.g); st.last = 0; st.cap = null;
     if (st.t >= length(st.g) && st.playing) { pause(); return; } // jumping to the end finishes the video
     frame(true);
   }
 
+  /* ---------- voice controls ---------- */
+  function soundButton() {
+    const b = st.el && st.el.querySelector('.gv-sound');
+    if (!b) return;
+    const on = voiceOn();
+    b.innerHTML = on ? icon('speaker', 18, 2) : MUTED;
+    b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', on ? 'Voice on: turn off' : 'Voice off: turn on');
+    b.title = on ? 'Turn the voice off' : 'Turn the voice on';
+    st.el.querySelector('.gv-cap').setAttribute('aria-live', on ? 'off' : 'polite');
+  }
   function onClick(e) {
     const b = e.target.closest('[data-gv]');
     if (!b || !st.el) return;
     const kind = b.dataset.gv;
+    if (kind === 'sound') {
+      pref.on = !voiceOn(); savePref();
+      if (!pref.on) hush(); else if (st.playing) { st.cap = null; frame(); }
+      soundButton();
+      return;
+    }
     if (st.video) { if (kind === 'seek') { st.video.currentTime = Number(b.dataset.t); st.video.play().catch(() => {}); } return; }
     if (kind === 'toggle') (st.playing ? pause : play)();
     else if (kind === 'restart') { st.t = 0; play(); }
@@ -778,8 +870,9 @@
     unmount();
     const el = root.querySelector('.gv'), g = AM.guides[id];
     if (!el || !g) return;
-    st = { id, g, el, t: memory[id] && memory[id] < length(g) ? memory[id] : 0, playing: false, raf: 0, last: 0, drawn: 0, cap: null, chap: -1, video: null };
+    st = { id, g, el, t: memory[id] && memory[id] < length(g) ? memory[id] : 0, playing: false, raf: 0, last: 0, drawn: 0, cap: null, chap: -1, video: null, speaking: false, sayId: 0, lineEnd: 0 };
     el.addEventListener('click', onClick);
+    soundButton();
     if (g.video.src) { st.video = el.querySelector('video'); return; }
     const tr = el.querySelector('.gv-track');
     tr.addEventListener('pointerdown', e => { tr.setPointerCapture(e.pointerId); trackAt(e); });
@@ -797,11 +890,11 @@
   function unmount() {
     if (!st.el) return;
     cancelAnimationFrame(st.raf);
+    hush();
     if (st.video) st.video.pause();
     memory[st.id] = st.t;
     st = { el: null };
   }
   const sync = (root, sheet) => (sheet && sheet.kind === 'guide' ? mount(root, sheet.id) : unmount());
-
   AM.guide = { html, poster, sync, SCENES };
 })(window.AM);

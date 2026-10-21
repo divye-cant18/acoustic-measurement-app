@@ -261,8 +261,15 @@
       S.go('target');
       await sleep(150);
       const tx = app.textContent;
-      check('Target step, classroom: the recommendation names the reference and use type, what it applies to, its source and the checks; no other standard is added',
-        /DIN 18041:2016-03/.test(tx) && /Use type A3/.test(tx) && /Condition:/.test(tx) && /Source and how it was worked out/.test(tx) && /checks made before this target was generated/.test(tx) && !/ANSI/.test(tx), 'recommendation card and source');
+      check('Target step, classroom: the recommendation names the reference and use type and shows the value and its range; how it was worked out (condition, notes, source, checks) is left to Developer tools; no other standard is added',
+        /DIN 18041:2016-03/.test(tx) && /Use type A3/.test(tx) && /Recommended RT60/.test(tx) && /Acceptable 0\.\d\d–0\.\d\d s/.test(tx)
+          && !/Condition:/.test(tx) && !/Source and how it was worked out/.test(tx) && !/checks made before/.test(tx) && !/Annex A|DIN Media/.test(tx) && !/ANSI/.test(tx), 'recommendation card');
+      S.ui({ sheet: { kind: 'tools' } });
+      await sleep(150);
+      const dev = document.body.textContent;
+      check('Developer tools: how this room\'s target was worked out, with its condition, the notes, the method, the references and the checks',
+        /How this room's target was worked out/.test(dev) && /Condition:/.test(dev) && /Annex A/.test(dev) && /T_soll/.test(dev) && /BNB/.test(dev) && /The checks made before this target was generated/.test(dev), 'Developer tools panel');
+      S.ui({ sheet: null });
       S.openProject('old-restaurant');
       S.go('target');
       await sleep(150);

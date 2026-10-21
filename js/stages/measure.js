@@ -39,7 +39,7 @@
     const rec = p.measurement.recording;
     if (rec && rec.status === 'captured' && !evaluated(p, rec) && AM.derive.positionOf(rec) !== p.setup.position) return `Process the take recorded at ${AM.derive.positionOf(rec)} first (Process recording), so it is not replaced.`;
     if (!p.setup.noise) return 'Measure the background noise first.';
-    if (noiseElsewhere(p)) return `Measure the background noise at ${p.setup.position} first: the last check was made at ${p.setup.noise.position}.`;
+    if (noiseElsewhere(p)) return `Check the background noise here at ${p.setup.position} first.`;
     return null;
   }
   // The latest background check was made at another position than the one selected for the next take.

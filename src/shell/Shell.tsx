@@ -8,6 +8,7 @@ import type { Stage } from '../am';
 import { Btn, Icon, Logo, Pill, Slash } from '../ui/kit';
 import { HistoryList, summaries } from '../ui/blocks';
 import { screenFor, type ScreenDef } from '../screens/registry';
+import { TargetWorkings } from '../screens/Target';
 import { TourLayer } from './Tour';
 
 /* ---------- workflow rail ---------- */
@@ -227,6 +228,8 @@ function Sheet() {
         {S.state.ui.confirm === 'reset'
           ? <div className="confirm"><span>Reset clears this project’s data and progress.</span><Btn action="doReset" variant="primary" size="sm">Reset project</Btn><Btn action="cancelReset" variant="ghost" size="sm">Cancel</Btn></div>
           : <div className="hstack"><Btn action="askReset" size="sm" icon="refresh">Reset project</Btn><Btn action="closeProject" variant="ghost" size="sm">Close project</Btn></div>}
+        <div className="sub-h">How this room's target was worked out</div>
+        <TargetWorkings room={p.room} />
       </> : null}
     </>;
   } else if (sh.kind === 'history') {

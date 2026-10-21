@@ -21,7 +21,7 @@ const PHASE_ICON: Record<string, string> = { Define: 'room', Measure: 'mic', Ana
 function HowItWorks() {
   return (
     <section className="home-sec" aria-labelledby="how-h">
-      <div className="home-sec-h"><h2 id="how-h">How a measurement works</h2><Btn action="openGuide" value="tour" variant="ghost" size="sm" icon="play">{`Watch the walkthrough · ${am.guides.tour.lengthLabel}`}</Btn></div>
+      <div className="home-sec-h"><h2 id="how-h">How a measurement works</h2></div>
       <ol className="how">
         {W.PHASES.map(ph => {
           const n = W.STAGES.filter(s => s.phase === ph).map(s => W.stepNo(s.id));

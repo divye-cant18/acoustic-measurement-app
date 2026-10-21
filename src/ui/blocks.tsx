@@ -228,9 +228,9 @@ export function MicLine({ mic, setup }: { mic: any; setup?: Project['setup'] }) 
 const NOISE: Record<string, [string, string, string]> = { valid: ['good', 'Suitable for measuring', 'seal'], warning: ['warn', 'Measure with care', 'alert'], unassessed: ['neutral', 'Unable to assess', 'info'], invalid: ['critical', 'Measure the background again', 'x'], failed: ['critical', 'Failed', 'x'] };
 export function NoisePill({ status }: { status: string }) { const [tone, text, ic] = NOISE[status] || NOISE.invalid; return <Pill tone={tone} text={text} icon={ic} />; }
 const NOISE_SAYS: Record<string, string> = {
-  valid: 'The background is quiet and steady enough in the bands RT60 is measured in. Go ahead.',
-  warning: 'You can measure. The take checks its own background and decay, and says so if the noise affected them.',
-  unassessed: 'The take checks its own recording, so you can still measure.',
+  valid: 'The room is quiet enough. Go ahead.',
+  warning: 'A little noisy, but you can measure. Each take checks itself and says if the noise affected it.',
+  unassessed: 'You can still measure: each take checks its own recording.',
 };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function NoiseBody({ p, bands = true }: { p: any; bands?: boolean }) {
@@ -268,8 +268,9 @@ export function NoiseBody({ p, bands = true }: { p: any; bands?: boolean }) {
         <div className="vol"><NoisePill status={n.status} /></div>
         {(n.status === 'warning' || n.status === 'unassessed') && cautions.length ? <ul className="bullets">{cautions.map((w, i) => <li key={i}>{w}</li>)}</ul> : null}
         <p className="small">{NOISE_SAYS[n.status] || ''}</p>
-        <p className="small muted">{`Recording noise level ${ui.dbfs(ib ? ib.leqDbfs : n.leqDbfs)}${ib ? ' in the RT60 bands' : ''}, measured ${time(n.takenAt)}: how far below the loudest level the microphone can record (max). It is not the room's real loudness, because the microphone is not calibrated. It cannot tell the room's noise from the microphone's own noise or from what the device's processing did to it. RT60 does not depend on it; it only limits how much decay a take can use.`}</p>
+        <p className="small muted">{`Checked at ${time(n.takenAt)}.`}</p>
         <More summary="Details">
+          <p className="small muted">{`Recording noise level ${ui.dbfs(ib ? ib.leqDbfs : n.leqDbfs)}${ib ? ' in the RT60 bands' : ''}: how far below the loudest level the microphone can record (max). It is not the room's real loudness, because the microphone is not calibrated. It cannot tell the room's noise from the microphone's own noise or from what the device's processing did to it. RT60 does not depend on it; it only limits how much decay a take can use.`}</p>
           <Kv rows={rows} />
           {bands ? <>
             <TableWrap><table className="tbl tbl-mini"><thead><tr>{n.bands.map((b: { f: number }) => <th className="r" key={b.f}>{fmt.hzShort(b.f)}</th>)}</tr></thead>

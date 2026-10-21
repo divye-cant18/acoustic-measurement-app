@@ -1,17 +1,19 @@
 /* Step 2 · Target / Ideal RT60 — what we want, decided before measuring. The recommendation comes from
    AM.services.target, only from a verified criterion that applies to the room; the project keeps the values it confirms
    (js/stages/target.js). Without one, the step says why and offers another room category, or the project's own target
-   with its source: nothing is filled in by the app. */
+   with its source: nothing is filled in by the app. The screen shows the value, its range and the standard it comes from;
+   how it was worked out (condition, notes, clause, method, references, the checks) is for the developer, in Developer tools
+   (TargetWorkings, src/shell/Shell.tsx). */
 import { EVAL, fmt, isNum, stageModel, TGT } from '../lib';
 import type { Ctx, Target } from '../am';
-import { Btn, Card, Field, GuideThumb, Icon, More, Note, Pill, RtScale, Stat, Stepper, SubH, Tag, TextInput } from '../ui/kit';
+import { Btn, Card, Field, GuideThumb, Icon, Note, Pill, RtScale, Stat, Stepper, SubH, Tag, TextInput } from '../ui/kit';
 
 interface TargetModel { MIN: number; MAX: number; problem(t: Target, own: boolean): string | null; sameValues(a: unknown, b: unknown): boolean; isOwn(t: Target, rec: unknown): boolean }
 const M = () => stageModel<TargetModel>('target');
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // The six checks made before a target is generated (AM.services.target.availability), in order.
-function ChecksList({ checks }: { checks: any[] }) {
+export function ChecksList({ checks }: { checks: any[] }) {
   return (
     <ol className="tgt-checks">
       {checks.map(c => (
@@ -33,7 +35,6 @@ function RecommendationCard({ rec, av, pol }: { rec: any; av: any; pol: any }) {
         <Note tone="warn">{av.message}</Note>
         {blocked ? <p className="small muted">No target RT60 is generated: the app does not substitute a generic value or another room type's target. Choose a supported room type or main activity, or set the project's own target below from a specification you have.</p> : null}
         <div><Btn action="go" value="room" size="sm" icon="room">Change the room in Room Setup</Btn></div>
-        <More summary="The checks made before a target is generated"><ChecksList checks={av.checks} /></More>
       </Card>
     );
   }
@@ -49,25 +50,30 @@ function RecommendationCard({ rec, av, pol }: { rec: any; av: any; pol: any }) {
             : <Stat kind="target" label="Recommended RT60" value={rec.preferred.toFixed(2)} tag={<Tag kind="target" />} sub={`Acceptable ${rec.min.toFixed(2)}–${fmt.s(rec.max)} · every band ${pol.judgedShort} is judged`} />}
       </div>
       <p className="lead"><b>Why.</b>{` ${rec.reason}`}</p>
-      <Note tone="info" icon="target"><b>Condition:</b>{` ${rec.condition}`}</Note>
-      {rec.notes.length ? <ul className="rec-notes small">{rec.notes.map((n: string, i: number) => <li key={i}>{n}</li>)}</ul> : null}
     </Card>
   );
 }
 
-function SourceCard({ rec, av }: { rec: any; av: any }) {
-  if (!rec) return null;
+/** For the developer (Developer tools): how this room's target was worked out — the criterion and its condition, the
+    notes, clause, inputs, method, verification and references, and the checks made before it was generated. */
+export function TargetWorkings({ room }: { room: unknown }) {
+  const av = TGT.availability(room), rec = TGT.recommend(room);
+  if (!rec) return <><p className="small">{av.message || 'No target can be generated for this room.'}</p><ChecksList checks={av.checks} /></>;
   const ref = rec.reference;
   return (
-    <Card icon="search" title="Source and how it was worked out">
+    <div className="stack-sm">
+      <p className="small"><b>{`${ref.short} · ${rec.criterion.name}`}</b>{` · ${ref.evidence === 'primary' ? 'verified criterion' : 'verified in published sources'}`}</p>
+      <p className="small"><b>Condition:</b>{` ${rec.condition}`}</p>
+      {rec.notes.length ? <ul className="rec-notes small">{rec.notes.map((n: string, i: number) => <li key={i}>{n}</li>)}</ul> : null}
       <dl className="rec-workings">{rec.workings.map(([k, v]: [string, string]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
       <SubH>Reference</SubH>
       <ul className="rec-sources">
         <li>{`${ref.number}, ${ref.edition}: ${ref.title}. ${ref.issuer}.`}</li>
         {ref.checkedIn.map((c: string, i: number) => <li key={i} className="small muted">{c}</li>)}
       </ul>
-      <More summary="The checks made before this target was generated"><ChecksList checks={av.checks} /></More>
-    </Card>
+      <SubH>The checks made before this target was generated</SubH>
+      <ChecksList checks={av.checks} />
+    </div>
   );
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -97,7 +103,7 @@ export function TargetScreen({ ctx }: { ctx: Ctx }) {
       </section>
       {p.targetNote ? <Note tone="warn" icon="alert">{p.targetNote}</Note> : null}
       <RecommendationCard rec={rec} av={av} pol={pol} />
-      <div className="grid split">
+      <div className="stack">
         <div className="stack">
           <Card icon="sliders" title="Project target" cls="card-target"
             sub={rec
@@ -131,7 +137,6 @@ export function TargetScreen({ ctx }: { ctx: Ctx }) {
             <section className="card concept is-measured"><Tag kind="measured" /><h2>What we measure</h2><p>The measured RT60 is evidence from the room itself. It comes from the acoustic measurement in step 4 and is never adjusted to fit the target.</p></section>
           </div>
         </div>
-        <SourceCard rec={rec} av={av} />
       </div>
     </>
   );

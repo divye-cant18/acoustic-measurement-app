@@ -1421,7 +1421,8 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
 .gv-big[hidden],.gv-end[hidden]{display:none}
 .gv-end{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;background:rgba(14,19,20,.74)}
 .gv-cap{margin:0;min-height:48px;padding:10px 14px;border-radius:10px;background:var(--well);border:1px solid var(--line-soft);font-size:15px;line-height:1.45;color:var(--ink)}
-.gv-bar{display:flex;align-items:center;gap:10px}
+.gv-bar{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
+.gv-sound[aria-pressed="true"]{color:var(--brand-ink)}
 .gv-time{font-family:var(--font-num);font-size:12px;color:var(--muted);white-space:nowrap}
 .gv-track{position:relative;flex:1;height:24px;cursor:pointer;touch-action:none;border-radius:6px}
 .gv-track::before{content:"";position:absolute;left:0;right:0;top:10px;height:4px;border-radius:2px;background:var(--line)}

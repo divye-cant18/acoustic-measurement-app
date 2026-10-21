@@ -100,33 +100,29 @@
   const DEVICE_KINDS = {
     computer: {
       name: 'Laptop or computer', noun: 'laptop',
-      place: 'Place the laptop on a firm, stable table or stand at the measuring position, open as you normally use it, with its microphone and speaker unobstructed.',
-      support: 'On a firm table or stand. Many laptops have their speakers underneath or at the sides, so never on a cushion, a bed or your lap.',
+      place: 'Put the laptop here on a table, open as you normally use it.',
+      support: 'On a firm table, not on your lap or a cushion.',
       // What to check with this kind of device (instructions only: the audio request is the same for every profile).
       checks: [
-        'Switch off audio enhancements and microphone effects in the system\'s sound settings if it offers them (noise reduction, voice focus, automatic gain): the browser cannot always switch off what the system does.',
-        'Where this browser lets you choose the sound output, choose the built-in speakers; elsewhere, disconnect headphones and Bluetooth audio so the system plays through them.',
+        'Turn off noise reduction or voice effects in the computer\'s sound settings, if it has them.',
       ],
     },
     mobile: {
       name: 'Phone or tablet', noun: 'phone',
-      place: 'Place the phone securely at the measuring position, on a stand or propped upright on a firm surface. Do not hold it during the measurement. Keep the microphone and speaker openings unobstructed.',
-      support: 'On a stand, or propped upright. Laid flat, its speaker or microphone may be blocked. Turn on Do Not Disturb so no call or alert sounds during the take.',
+      place: 'Stand the phone up here; do not hold it.',
+      support: 'On a stand or propped upright, with Do Not Disturb on.',
       checks: [
-        'A phone browser cannot choose or confirm the loudspeaker. While the microphone is on, some phones play sound through the earpiece instead: the test sweep must be clearly audible from the loudspeaker. If it is faint, measure on a laptop.',
-        'Small phone speakers give little sound below about 500 Hz, so 125 and 250 Hz may show "Not reliable". A band that cannot be measured is left out of the room\'s average and named. To include it, measure again in a quiet room with a higher sweep level, or on a laptop.',
-        'Keep the screen on and this page in front during the take: locking the phone, a call or switching apps stops the take.',
+        'The test sound must be clearly heard from the loudspeaker. If it is faint, use a laptop.',
+        'Phone speakers are weak in the bass, so the lowest sounds may not be measured.',
+        'Keep the screen on and this page open during the take.',
       ],
     },
   };
   // Placement for either kind (the device-specific line is DEVICE_KINDS[kind].support).
   const PLACEMENT = [
-    'Put the device at the selected measuring position and leave it there for the whole take.',
-    'Do not hold it or touch the surface it stands on while measuring.',
-    'Keep the microphone and speaker openings uncovered: no case flap, cover, paper or hand.',
-    'At least 1 m from walls and large surfaces where practical, at about seated ear height (1.2 m) if you can.',
-    'Not pressed against a wall, furniture or anything that can vibrate.',
-    'Same place, height and orientation every time you measure this position.',
+    'Leave it at this spot for the whole take.',
+    'At least 1 m from the walls, at about seated ear height.',
+    'Do not hold it or touch the table during the take.',
   ];
 
   // The measurement uses one test signal: an exponential sine sweep (its range and length: AM.analysis.sweepPlan).

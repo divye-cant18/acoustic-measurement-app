@@ -30,7 +30,7 @@
     { id: 'assessment', title: 'Acoustic Assessment', nav: 'Acoustic Assessment', phase: 'Analyse', owns: [], deps: ['target', 'results'],
       purpose: 'Compare what was measured with the target, and decide whether the room needs treatment.' },
     { id: 'treatment', title: 'Treatment', nav: 'Treatment', phase: 'Improve', owns: ['treatment'], deps: ['room', 'assessment'],
-      purpose: 'Choose acoustic treatment and how much of it to add.' },
+      purpose: 'Choose acoustic products. The app picks how each is mounted and works out how much the room needs.' },
     { id: 'prediction', title: 'Predicted Result', nav: 'Predicted Result', phase: 'Improve', owns: [], deps: ['treatment'],
       purpose: 'Estimate the room after treatment and compare the estimate with the target.' },
     { id: 'final', title: 'Final Result', nav: 'Final Result', phase: 'Summary', owns: [], deps: ['room', 'assessment', 'prediction'],

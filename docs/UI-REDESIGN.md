@@ -100,8 +100,8 @@ every feature. Twelve chapters: the workflow (Define, Measure, Analyse, Improve,
 (Room Setup, Target, Measurement Setup, Measure, Processing, Results, Assessment, Treatment, Predicted Result, Final
 Result), then a closing chapter. Each step is drawn as a sketch of the app with the workflow rail on the left showing
 that step, two plain captions per chapter. It opens from "Quick help · How the app works" in the Home top bar (the
-crumb now reads "Home" there instead of repeating the brand) and from "Watch the walkthrough" beside "How a measurement
-works" on Home. It only explains; it never starts or records a measurement. Content: `AM.guides.tour` in
+crumb now reads "Home" there instead of repeating the brand); a second "Watch the walkthrough" link beside "How a
+measurement works" was removed on 21 October as a repeat of it. It only explains; it never starts or records a measurement. Content: `AM.guides.tour` in
 js/data/guides.js; scenes `tourIntro` … `tourOutro` in js/ui/guide.js.
 
 ## Tour of the screen (2026-10-16, on request)
@@ -120,11 +120,12 @@ the main button either "Ready: Continue to Target" or the step's own reason it c
 room name."). A stop with nothing on screen is left out (no projects yet, the step list folded away on a phone, where
 its menu button is shown instead). On a phone the card is a sheet at the bottom, or at the top when the control is low.
 
-**The option to take it.** On every visit (each time the site is opened or reloaded), a small card offers it (Take the
-tour / Not now / or watch the 2-minute video): on Home for the Home tour, and on the first step for the step tour (also
-after the Home tour). Once answered it stays away for the rest of that visit; "Not now" says where the tour lives.
-Moving on without answering passes it over for that visit. It is never offered, and cannot start, while a measurement is
-running.
+**The option to take it.** Once on a device, a small card offers it (Take the tour / Not now / or watch the 2-minute
+video): on Home for the Home tour, and on the first step opened for the step tour (also after the Home tour). Each card
+appears once, answered or not; "Not now" stops both and says where the tour lives. It is offered once more only after 30
+days without opening the app (kept in this browser: which cards were shown, "Not now", the last opening; until 21
+October it was offered on every visit, which kept popping up). It is never offered, and cannot start, while a
+measurement is running.
 
 **Where it lives afterwards.** Home: "Take the tour" beside the Quick help video in the top bar. Every step: a Help menu
 in the top bar with the tour of this screen, the How the app works video and Explain this step.
@@ -162,3 +163,20 @@ drawn wider underneath, so where they are the same both still show. The other ba
 - The look was checked in Chrome only (headless and the app's browser pane), not on physical phones or in Safari or
   Firefox; nothing here is a claim of physical-device validation.
 - Node.js is needed only to change the interface (`npm ci`, `npm run build`).
+
+## Narrated videos (21 October 2026, on request)
+
+Every video (How the app works, How to measure, How to measure the room, What is RT60?) now has a voice. The captions
+were rewritten as a spoken script (short sentences, numbers said as words, a warm second person, a clear next step at
+the end, nothing the app does not do), and the player speaks each line as it appears, so the subtitles are exactly what
+is said. Each chapter lasts as long as its lines take to say (js/data/guides.js, timed()), and the picture waits at the
+end of a line until the voice has finished, so a slower voice is never cut off. Pausing or seeking stops the voice;
+playing again repeats the current line.
+
+The voice is the device's own speech (the browser's Web Speech API, no files and no network of the app's own). There is
+one narrator, chosen by one fixed rule on every device (js/ui/guide.js, NARRATOR): a warm, clear female English voice,
+Indian English first (Microsoft Neerja, natural, in Edge), then British, then American, natural voices before standard
+ones; no choice of voice is offered, only a sound button, remembered in the browser. A pronunciation list (SAY_AS) spells
+words for the ear (RT60 as "R T sixty", PDF as "P D F"). Devices differ in the voices they have, so the narrator is
+the closest each one offers: the same voice on every device needs recorded audio. Without speech the videos play with
+captions only. Lengths are now 1½ to 2½ minutes.

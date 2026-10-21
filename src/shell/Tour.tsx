@@ -2,8 +2,8 @@
    tours, chosen by where you are: Home (how to start) and a step (how every step works). The words come from the
    workflow and from the screen itself (the step you are on, why Continue is not ready yet), so the tour can never
    disagree with the interface. It only points: while it runs the page behind it cannot be used (inert, as behind a
-   panel), and it never changes the project. It is offered on every visit (Take the tour / Not now); once answered it
-   stays away until the next visit. "Take the tour" on Home and Help on every step replay it. */
+   panel), and it never changes the project. It is offered once on a device (Take the tour / Not now), and once more after
+   30 days without opening the app. "Take the tour" on Home and Help on every step replay it at any time. */
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { am, cx, S, W } from '../lib';
 import { Btn, Icon } from '../ui/kit';
@@ -21,13 +21,24 @@ interface Stop {
 }
 interface Resolved { stop: Stop; el: HTMLElement; text: string; now: Now | null }
 
-/* ---------- this visit only: whether the tour was offered and answered (nothing is stored, so every visit offers it) ---------- */
-interface Prefs { declined?: boolean; home?: boolean; step?: boolean }
-let prefs: Prefs = {};
-function remember(patch: Prefs) { prefs = { ...prefs, ...patch }; }
-// The offer was passed over (the person moved on without answering, or chose the video).
-const visit = { offerAt: null as string | null, offerHidden: false };
-// An earlier version kept the answer in this browser; it is no longer read, so it is cleared.
+/* ---------- when the tour is offered: once on a device, and again after a long time away ----------
+   Kept in this browser: which offers were made (Home, a step), whether one was turned down, and when the app was last
+   opened. Each offer appears once, answered or not; "Not now" stops both. After AWAY_DAYS without opening the app this is
+   cleared, so someone coming back is offered the tour once more. Without storage the offer follows this visit only. */
+interface Prefs { declined?: boolean; home?: boolean; step?: boolean; lastOpen?: string }
+const TOUR_KEY = 'acoustic-measurement-prototype:tour-offer', AWAY_DAYS = 30;
+function readPrefs(): Prefs { try { const v = JSON.parse(localStorage.getItem(TOUR_KEY) || '{}'); return v && typeof v === 'object' ? v : {}; } catch { return {}; } }
+function writePrefs() { try { localStorage.setItem(TOUR_KEY, JSON.stringify(prefs)); } catch { /* storage unavailable */ } }
+let prefs: Prefs = (() => {
+  const was = readPrefs(), last = was.lastOpen ? Date.parse(was.lastOpen) : NaN;
+  const away = Number.isFinite(last) && Date.now() - last > AWAY_DAYS * 864e5;
+  return { ...(away ? {} : was), lastOpen: new Date().toISOString() };
+})();
+writePrefs();
+function remember(patch: Prefs) { prefs = { ...prefs, ...patch }; writePrefs(); }
+// This visit: where the offer is on screen, and whether it was passed over (moved on without answering, or the video).
+const visit = { offerAt: null as string | null, offerHidden: false, showing: null as Kind | null };
+// An earlier version kept the answer under another name; it is no longer read, so it is cleared.
 try { localStorage.removeItem('acoustic-measurement-prototype:tour'); } catch { /* storage unavailable */ }
 
 const kindOf = (stageId: string): Kind => (stageId === 'home' ? 'home' : 'step');
@@ -140,18 +151,19 @@ export const tourActions = {
   offerVideo: () => { visit.offerHidden = true; S.ui({ sheet: { kind: 'guide', id: 'tour' }, navOpen: false }); },
 };
 
-/* ---------- the offer: on every visit, on the first screen it fits ---------- */
+/* ---------- the offer: on the first screen it fits, once (see Prefs) ---------- */
 function offerFor(): Kind | null {
   const st = S.state;
   if (prefs.declined || visit.offerHidden || st.ui.tour || st.ui.sheet || st.ui.navOpen) return null;
-  const kind = kindOf(st.current);
-  if (kind === 'home' ? prefs.home || prefs.step : prefs.step) return null;
+  const kind = kindOf(st.current), here = `${st.project ? st.project.id : '-'}:${st.current}`;
+  const onScreen = visit.showing === kind && visit.offerAt === here; // stays until answered or passed over
+  if (!onScreen && (kind === 'home' ? prefs.home || prefs.step : prefs.step)) return null;
   const L = am.live.state;
   if (L.take || L.noise) return null; // never during a measurement
-  // Shown on one screen; moving on without answering passes it over for this visit.
-  const here = `${st.project ? st.project.id : '-'}:${st.current}`;
+  // Shown on one screen; moving on without answering passes it over.
   if (visit.offerAt == null) visit.offerAt = here;
   else if (visit.offerAt !== here) { visit.offerHidden = true; return null; }
+  if (!onScreen) { visit.showing = kind; remember({ [kind]: true }); } // made: not offered again (see Prefs)
   return kind;
 }
 

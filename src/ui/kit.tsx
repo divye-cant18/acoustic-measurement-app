@@ -501,7 +501,7 @@ export function RtScale({ target, measured, predicted, arrow = false, max }: { t
 export function GuideThumb({ id, size = 22, disabled }: { id: string; size?: number; disabled?: boolean }) {
   const g = am.guides[id];
   return (
-    <button type="button" className="mi-thumb" data-action="openGuide" data-value={id === 'measure' ? undefined : id} disabled={disabled || undefined} aria-label={`Play the ${g.title} video, ${g.lengthLabel}`}>
+    <button type="button" className="mi-thumb" data-action="openGuide" data-value={id} disabled={disabled || undefined} aria-label={`Play the ${g.title} video, ${g.lengthLabel}`}>
       <span className="mi-poster" dangerouslySetInnerHTML={{ __html: am.guide.poster(id) }} />
       <span className="mi-play"><Icon name="play" size={size} sw={2.4} /></span><span className="mi-len">{g.lengthLabel}</span>
     </button>

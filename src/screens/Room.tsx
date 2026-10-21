@@ -396,8 +396,7 @@ export function RoomScreen({ ctx }: { ctx: Ctx }) {
         </Card>
         <Card icon="users" title="Occupancy and furnishing">
           <div className="grid g2">
-            <NumberInput id="room-occ" label="Typical occupancy (people)" bind="room.occupancy" value={r.occupancy} type="int" placeholder="0" req="optional" error={occ}
-              hint="Recorded with the room. It does not change the target: DIN 18041 targets apply to the room in use, and the app does not convert between an empty and an occupied room." />
+            <NumberInput id="room-occ" label="Typical occupancy (people)" bind="room.occupancy" value={r.occupancy} type="int" placeholder="0" req="optional" error={occ} />
             <Field label="Furnishing"><Seg bind="room.furnishing" value={r.furnishing} options={O.furnishing.map((v: string) => ({ value: v, label: v }))} label="Furnishing" id="room-furn" /></Field>
           </div>
           <Field label="In the room" hint="Anything soft or acoustic already there. Choose all that apply."><Chips path="furnishings" options={O.furnishings} value={r.furnishings} label="In the room" /></Field>

@@ -61,7 +61,8 @@ assets/brand/                 the supplied Univicoustic icon and wordmark
 js/data/targets.js            RT60 target criteria: references, verified criteria, room categories and their status
                               (docs/TARGET-CRITERIA.md)
 js/data/guides.js             videos: How the app works, How to measure, How to measure the room, What is RT60?
-                              (chapters, captions; set video.src to use a filmed video)
+                              (chapters and their narration: each caption is spoken by the device's voice as it
+                              appears, and the chapter lasts as long as it takes to say; set video.src for a filmed video)
 js/data/products.generated.js product database, GENERATED from the NRC Master File (do not edit)
 js/data/room-form.js          Room Setup lists: constructions, finishes (and which fit which), wall equipment, each
                               industry's questions. Descriptions only, no acoustic values

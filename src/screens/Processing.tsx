@@ -70,7 +70,7 @@ export function ProcessingScreen({ ctx }: { ctx: Ctx }) {
     } else if (res.valid && nx) {
       session = (
         <Note tone="info" icon="pin">
-          <b>{`${here} measured: ${s.count} of ${s.required} positions.`}</b>{` Move the ${noun} to ${nx.id}, ${nx.name.toLowerCase()} (${nx.detail.toLowerCase()}), and measure there. Each position gets its own background check and take; the room's values are the average over the positions.`}
+          <b>{`${here} measured: ${s.count} of ${s.required} positions.`}</b>{` Next: move the ${noun} to ${nx.id}, ${nx.name.toLowerCase()} (${nx.detail.toLowerCase()}), check the background there and measure.`}
           <NoteActions><Btn action="nextPosition" variant="primary" size="sm" icon="pin">{`Measure position ${nx.id}`}</Btn><Btn action="continue" size="sm">View results so far</Btn></NoteActions>
         </Note>
       );

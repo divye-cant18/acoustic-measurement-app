@@ -5,7 +5,7 @@
 import type { ReactNode } from 'react';
 import { AN, am, D, DEMO, fmt, LIVE, MEAS, stageModel, ui } from '../lib';
 import type { Ctx, PrimaryAction, Project } from '../am';
-import { Btn, Card, Details, GuideThumb, Icon, Kv, KvNote, Note, Pill, Spin, Stepper } from '../ui/kit';
+import { Btn, Card, Details, GuideThumb, Icon, Kv, KvNote, More, Note, Pill, Spin, Stepper } from '../ui/kit';
 import { LevelMeter, MicLine } from '../ui/blocks';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -18,7 +18,7 @@ const M = () => stageModel<MeasureModel>('measure');
 const HEAD: Record<string, [string, string, string, string]> = {
   mic: ['Microphone needed', 'Connect the microphone to measure. Its status is shown below.', 'neutral', 'Not connected'],
   'not-measured': ['Measure the background first', 'The background noise is measured before the test signal, so the decay can be judged against it.', 'neutral', 'Not measured'],
-  'noise-elsewhere': ['Measure the background here', 'Each position gets its own background check: the last one was made at another position. Measure it here, then start the take.', 'neutral', 'Not measured here'],
+  'noise-elsewhere': ['Check the background here', 'This is a new position: check the background noise here first, then start the measurement.', 'neutral', 'Not measured here'],
   'noise-invalid': ['Background not usable', 'The last background measurement could not be used: the reason is shown below. Measure it again.', 'critical', 'Noise not usable'],
   'measuring-noise': ['Measuring the background', 'Keep the room quiet. The level is read from the microphone.', 'acoustic', 'Measuring'],
   'ready-for-rt60': ['Ready to measure', 'Start the take. This device plays the test sweep through its speaker and records the room with its microphone.', 'good', 'Ready'],
@@ -43,8 +43,8 @@ function LevelControl({ p, running }: { p: Project; running: boolean }) {
   const r = AN.levelRange(), lv = AN.sweepLevel(p.setup.sweepLevelDb), C = AN.CRITERIA.take;
   const peak = 20 * Math.log10(C.amplitude * AN.levelGain(lv)), base = 20 * Math.log10(C.amplitude);
   const [tone, word] = lv === 0 ? ['neutral', 'Default'] : lv > 0 ? ['acoustic', 'Above default'] : ['acoustic', 'Below default'];
-  const limit = lv >= r.max ? `${ui.levelDb(r.max, false)} is the highest level: the sweep's peak is then ${ui.dbfs(peak)}, just under the most the recording can hold, and louder would clip (distort). For more sound, raise the device volume, carefully.`
-    : lv <= r.min ? `${ui.levelDb(r.min, false)} is the lowest level. Each dB below the default leaves 1 dB less of the room's decay above the background: use it only when louder distorts or rattles.` : '';
+  const limit = lv >= r.max ? 'This is the highest level. For more sound, turn up the device volume, carefully.'
+    : lv <= r.min ? 'This is the lowest level. Use it only if louder distorts or rattles.' : '';
   return (
     <div className="sweep-level">
       <div className="sl-row">
@@ -53,23 +53,31 @@ function LevelControl({ p, running }: { p: Project; running: boolean }) {
         <Pill tone={tone} text={word} />
         {lv !== 0 ? <Btn action="sweepLevelReset" variant="ghost" size="sm" icon="refresh" disabled={running}>Reset to default</Btn> : null}
       </div>
-      <p className="small muted">{`How loud this app plays the test sweep, relative to its default (0 dB: peak ${ui.dbfs(base)}; now ${ui.dbfs(peak)}). Not the room's noise level and not sound pressure: the device volume still decides how loud the room hears it. A higher level can lift the room's decay further above the background. Use a comfortable listening level, and lower it if the sound distorts or rattles.`}</p>
+      <p className="small muted">How loud the test sound plays. The default suits most rooms: raise it in a noisy room, lower it if the sound distorts or rattles.</p>
       {limit ? <p className="small muted">{limit}</p> : null}
+      <More summary="Details"><p className="small muted">{`Relative to the app's default (0 dB: peak ${ui.dbfs(base)}; now ${ui.dbfs(peak)}). Not the room's noise level and not sound pressure: the device volume still decides how loud the room hears it. A higher level lifts the room's decay further above the background.`}</p></More>
     </div>
   );
 }
 
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+// Why the last background check could not be used, in plain words (the technical reason stays in Measurement Setup's details).
+function attemptWords(a: { status: string; reasons: string[] }): string {
+  const r = a.reasons[0] || '';
+  if (/overload|full scale|clip/i.test(r)) return 'The last check was too loud for the microphone. Move away from the noise or turn the input level down, then check again.';
+  return `The last check could not be used${r ? `: ${r}` : '.'}`;
+}
 function NoiseRow({ p }: { p: Project }) {
   const n = p.setup.noise, a = p.setup.noiseAttempt, run = M().noiseRun(p), busy = !!(LIVE.state.take || LIVE.state.noise);
   const change = D.noiseChange(p);
   return (
     <LiveRow k="Background noise">
-      <span className="live-v">{run ? <><Spin />Measuring the background…</> : n ? `${ui.dbfs(n.inBand ? n.inBand.leqDbfs : n.leqDbfs)}${n.inBand ? ' in the RT60 bands' : ''} · ${ui.noiseWord(n.status)} · ${ui.timeOf(n.takenAt)}${n.position ? ` · at ${n.position}` : ''}` : 'Not measured'}</span>
-      {a ? <span className="small tone-critical">{`Latest attempt ${a.status === 'failed' ? 'failed' : 'not usable'}: ${a.reasons[0] || ''}${n ? ' The measurement above is kept.' : ''}`}</span> : null}
+      <span className="live-v">{run ? <><Spin />Checking the background…</> : n ? `${cap(ui.noiseWord(n.status))} · checked ${ui.timeOf(n.takenAt)}${n.position ? ` at ${n.position}` : ''}` : 'Not checked yet'}</span>
+      {a ? <span className="small tone-critical">{`${attemptWords(a)}${n ? ' The earlier check still counts.' : ''}`}</span> : null}
       {change != null ? <span className="small tone-warn">{`${Math.abs(change)} dB ${change > 0 ? 'louder' : 'quieter'} than during the current RT60 measurement. Measure again to confirm it.`}</span> : null}
-      {M().noiseElsewhere(p) && n ? <span className="small tone-warn">{`Measured at ${n.position}. Measure it again here, at ${p.setup.position}, before the take.`}</span> : null}
+      {M().noiseElsewhere(p) && n ? <span className="small tone-warn">{`Checked at ${n.position}. Check it again here at ${p.setup.position} before measuring.`}</span> : null}
       <div className="hstack">{run ? <Btn action="cancelNoise" variant="ghost" size="sm" icon="x">Cancel</Btn>
-        : <Btn action="measureNoise" size="sm" icon={n ? 'refresh' : 'gauge'} disabled={busy || LIVE.state.mic.status !== 'live'}>{n ? 'Measure again' : 'Measure noise'}</Btn>}</div>
+        : <Btn action="measureNoise" size="sm" icon={n ? 'refresh' : 'gauge'} disabled={busy || LIVE.state.mic.status !== 'live'}>{!n ? 'Check background' : M().noiseElsewhere(p) ? 'Check here' : 'Check again'}</Btn>}</div>
     </LiveRow>
   );
 }
@@ -106,8 +114,8 @@ function PositionsCard({ p, busy }: { p: Project; busy: boolean }) {
           );
         })}
       </ol>
-      <p className="small muted">Move the device to each position in turn and measure there: its own background check, then the take. The room's values are the average over the positions, band by band; each position keeps its own result. A position whose take is not valid is not part of them: retry it, or use another position.</p>
-      {close.length ? <Note tone="info">{`In this room the plan puts ${close.join(' and ')} less than 2 m apart. ISO 3382-2 prefers measuring positions at least 2 m apart and 1 m from walls: place the device as far from the other positions as the room allows.`}</Note> : null}
+      <p className="small muted">Measure at each position in turn: check the background there, then start the measurement. The room's result is the average of the positions. If a position does not work, measure it again or use another one.</p>
+      {close.length ? <Note tone="info">{`${close.join(' and ')} ${close.length > 1 ? 'are each' : 'are'} less than 2 m apart in this room. Place the device as far from the other positions as you can: ideally 2 m apart and 1 m from walls.`}</Note> : null}
     </Card>
   );
 }
@@ -205,16 +213,16 @@ export function MeasureScreen({ ctx }: { ctx: Ctx }) {
         <GuideThumb id="measure" disabled={running} />
         <div className="mi-body">
           <span className="label">Before you start</span>
-          <h2 className="mi-title">Record how the room rings after a short test signal</h2>
-          <p className="mi-text">{`This ${K.noun} does the whole measurement. It records the room for ${plan.preRoll} s, plays a ${plan.seconds} s sweep from ${plan.f1} Hz to ${(plan.f2 / 1000).toFixed(plan.f2 % 1000 ? 1 : 0)} kHz through its own speaker, and keeps recording with its own microphone for ${plan.tail} s while the sound dies away. One take lasts about ${Math.round(plan.total)} seconds.`}</p>
+          <h2 className="mi-title">Measure how long the room echoes</h2>
+          <p className="mi-text">{`The ${K.noun} plays a short test sound and listens to how the room rings. It takes about ${Math.round(plan.total)} seconds.`}</p>
           <ul className="mi-tips">
-            <li><Icon name={kind === 'mobile' ? 'phone' : 'laptop'} size={16} sw={2} /><span><b>{`Your ${K.noun}`}</b>{` at ${pos.id} · ${pos.name}, on a firm, stable support, not held, at least 1 m from walls where practical`}</span></li>
-            <li><Icon name="speaker" size={16} sw={2} /><span><b>Its speaker and microphone</b> uncovered, headphones disconnected, volume high but not distorting</span></li>
-            <li><Icon name="users" size={16} sw={2} /><span><b>Everyone</b>{` still and silent until the take is complete. Nobody touches the ${K.noun} or what it stands on`}</span></li>
+            <li><Icon name={kind === 'mobile' ? 'phone' : 'laptop'} size={16} sw={2} /><span><b>{`${K.noun.charAt(0).toUpperCase()}${K.noun.slice(1)} at ${pos.id}`}</b>{`, ${pos.name.toLowerCase()}: on a table, not held`}</span></li>
+            <li><Icon name="speaker" size={16} sw={2} /><span><b>Volume up</b>, headphones unplugged</span></li>
+            <li><Icon name="users" size={16} sw={2} /><span><b>Everyone quiet</b> and still until it finishes</span></li>
           </ul>
           <div className="hstack">
-            <Btn action="openGuide" size="sm" icon="info" disabled={running}>How to measure</Btn>
-            <span className="small muted">{running ? 'Available when the take has finished.' : 'A short video. It does not start the measurement.'}</span>
+            <Btn action="openGuide" value="measure" size="sm" icon="play" disabled={running}>{`Watch how (${am.guides.measure.lengthLabel})`}</Btn>
+            {running ? <span className="small muted">Available when the take has finished.</span> : null}
           </div>
         </div>
       </section>

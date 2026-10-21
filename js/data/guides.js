@@ -1,8 +1,13 @@
 /* Instructional videos. Content only; AM.guide (js/ui/guide.js) plays it.
 
-   Each guide is a sequence of chapters. A chapter has a time span, the scene drawn during it and its captions
-   (shown one after another across the chapter). To use a filmed video instead of the animated one, set
-   `video.src` to the file (e.g. 'media/how-to-measure.mp4'); the chapters then become jump points into it.
+   Each guide is a sequence of chapters: the scene drawn during it and its narration. Every line of `captions` is
+   spoken by the player's voice as it appears on screen, so the subtitles are always exactly what is said. A chapter
+   lasts as long as its lines take to say at an easy pace (timed() below), never less than `min` seconds, so the
+   drawing never hurries the voice. To use a filmed video instead of the animated one, set `video.src` to the file
+   (e.g. 'media/how-to-measure.mp4'); the chapters then become jump points into it.
+
+   The narration is written to be listened to: short sentences, spoken numbers ("a metre", "sixty decibels"), a warm
+   second person, and a clear next step at the end. It says only what the app does.
 
    One device measures: the laptop or phone running the app plays the test signal through its own speaker and records
    the room with its own microphone. Placement follows common RT60 practice (ISO 3382-2) for the microphone: at a
@@ -10,186 +15,199 @@
 (function (AM) {
   'use strict';
 
+  /* How long each chapter lasts: the words of its lines at about 170 a minute, a short pause after each line and a
+     breath between chapters, and never less than the scene's own `min`. `cues` are where each line starts, as a
+     fraction of the chapter, weighted by its length, so a long line gets more time on screen than a short one. The
+     player also waits for the voice at the end of a line, so a slower voice is never cut off. */
+  const WORDS_PER_S = 2.8, LINE_PAUSE = 0.5, CHAPTER_PAUSE = 0.6;
+  const lineSeconds = line => line.split(/\s+/).filter(Boolean).length / WORDS_PER_S + LINE_PAUSE;
+  function timed(g) {
+    let t = 0;
+    g.chapters.forEach(c => {
+      const lines = c.captions.map(lineSeconds), spoken = lines.reduce((s, x) => s + x, 0) + CHAPTER_PAUSE;
+      const d = Math.max(c.min || 0, Math.ceil(spoken * 2) / 2);
+      let at = 0;
+      c.cues = lines.map(x => { const start = at; at += x / spoken; return start; });
+      c.from = t; c.to = t + d; t += d;
+    });
+    const halves = Math.max(2, Math.round(t / 30)); // to the nearest half minute
+    g.lengthLabel = `${halves % 2 ? `${(halves - 1) / 2}½` : halves / 2} min`;
+    return g;
+  }
+
   AM.guides = {
-    measure: {
+    measure: timed({
       title: 'How to measure',
-      lengthLabel: '1 min',
       closeLabel: 'Close and measure',
       video: { src: '' },
       poster: { scene: 'place', u: 0.95 },
       chapters: [
-        { id: 'intro', from: 0, to: 7, title: 'What you will do', scene: 'intro', captions: [
-          'Your laptop or phone does the whole measurement: its speaker plays a short test signal and its microphone records the room.',
-          'After the signal stops, the room keeps ringing. How long that takes is the RT60.',
+        { id: 'intro', min: 7, title: 'What you will do', scene: 'intro', captions: [
+          'Let’s measure your room! Your laptop or phone does everything: it plays a short test sound, and listens with its own microphone.',
+          'When the sound stops, the room keeps ringing for a moment. That ring-down is exactly what we are measuring.',
         ] },
-        { id: 'prepare', from: 7, to: 17, title: 'Prepare the room', scene: 'prepare', captions: [
-          'Close doors and windows.',
-          'Switch ventilation and air conditioning off, or to the lowest setting.',
-          'Put other phones on silent and leave the furniture as the room is normally used.',
+        { id: 'prepare', min: 10, title: 'Prepare the room', scene: 'prepare', captions: [
+          'First, make the room quiet. Close the doors and the windows.',
+          'Switch off the air conditioning and fans, or turn them right down.',
+          'Put phones on silent, and leave the furniture just as the room is normally used.',
         ] },
-        { id: 'place', from: 17, to: 28, title: 'Place the device', scene: 'place', captions: [
-          'Put the laptop or phone at the measuring position, where people normally sit.',
-          'A laptop goes on a firm table; a phone on a stand or propped upright. At about seated ear height where you can, at least 1 m from walls.',
-          'Do not hold it, and do not press it against a wall or anything that can vibrate.',
+        { id: 'place', min: 11, title: 'Place the device', scene: 'place', captions: [
+          'Now place the device where people usually sit.',
+          'A laptop goes on a firm table; a phone on a stand, or propped upright. Keep it about a metre from the walls, near seated ear height.',
+          'Don’t hold it, and don’t lean it against anything that can rattle.',
         ] },
-        { id: 'device', from: 28, to: 37, title: 'Set up the device', scene: 'device', captions: [
-          'Disconnect headphones and earbuds, so the test signal plays into the room.',
-          'Keep the speaker and microphone openings uncovered. Set the volume high, but not so high that it distorts.',
-          'Then step back. Do not touch the device or its table during the take.',
+        { id: 'device', min: 9, title: 'Set up the device', scene: 'device', captions: [
+          'Unplug headphones and earbuds, so the sound comes out into the room.',
+          'Keep the speaker and the microphone uncovered, and turn the volume up. Loud, but not so loud that it crackles.',
+          'Then step back. Hands off.',
         ] },
-        { id: 'run', from: 37, to: 47, title: 'Run the measurement', scene: 'run', captions: [
+        { id: 'run', min: 10, title: 'Run the measurement', scene: 'run', captions: [
           'Press Start measurement.',
-          'Stay still and silent while the signal plays and the room rings down.',
-          'Wait until the take is complete. It takes about 10 seconds.',
+          'Stay still and silent while the sound plays and the room rings down.',
+          'In about ten seconds, it’s done.',
         ] },
-        { id: 'avoid', from: 47, to: 55, title: 'What to avoid', scene: 'avoid', captions: [
-          'Avoid anything that adds noise or changes the room during the take.',
-          'Corners, talking, fans, holding the device, distortion and ringtones all spoil the decay.',
+        { id: 'avoid', min: 8, title: 'What to avoid', scene: 'avoid', captions: [
+          'A few things can spoil a take: talking, fans, ringtones, holding the device, or tucking it into a corner.',
+          'Keep the room calm, and your results will be spot on.',
         ] },
-        { id: 'ready', from: 55, to: 60, title: 'Ready', scene: 'ready', captions: [
-          'That is all. Close the video and press Start measurement.',
+        { id: 'ready', min: 5, title: 'Ready', scene: 'ready', captions: [
+          'You’re ready. Close this video, and press Start measurement.',
         ] },
       ],
-    },
+    }),
 
     /* Room Setup: taking the inside length, width and height. The app treats the room as a box (V = L × W × H),
        so irregular rooms are reduced to a box with the same floor area and average height. */
-    dimensions: {
+    dimensions: timed({
       title: 'How to measure the room',
-      lengthLabel: '1 min',
       closeLabel: 'Close and enter the sizes',
       video: { src: '' },
       poster: { scene: 'dimIntro', u: 0.9 },
       chapters: [
-        { id: 'what', from: 0, to: 7, title: 'What you will measure', scene: 'dimIntro', captions: [
-          'Room Setup needs three inside sizes: length, width and height, in metres.',
-          'The app multiplies them to get the room volume, which the RT60 target and the treatment amount both depend on.',
+        { id: 'what', min: 7, title: 'What you will measure', scene: 'dimIntro', captions: [
+          'Before anything else, the app needs three numbers: the room’s inside length, width and height, in metres.',
+          'From them it works out the volume, which shapes both the target and how much treatment the room needs.',
         ] },
-        { id: 'tools', from: 7, to: 14, title: 'Tools', scene: 'dimTools', captions: [
-          'A laser distance meter is quickest. Set it to metres and hold its back edge flat against the wall.',
-          'A tape measure works too. Ask someone to hold the other end and keep the tape straight and level.',
+        { id: 'tools', min: 7, title: 'Tools', scene: 'dimTools', captions: [
+          'A laser distance meter is the quickest. Set it to metres, and rest its back edge flat against the wall.',
+          'No laser? A tape measure works fine. Ask someone to hold the other end, and keep it straight and level.',
         ] },
-        { id: 'length', from: 14, to: 25, title: 'Length', scene: 'dimLength', captions: [
-          'Length is the longer side. Measure from the inside face of one wall to the inside face of the opposite wall.',
-          'Aim straight across, above the furniture, at about waist height.',
+        { id: 'length', min: 11, title: 'Length', scene: 'dimLength', captions: [
+          'Length is the longer side. Measure from the inside face of one wall, straight across to the opposite wall.',
+          'Aim above the furniture, at about waist height.',
           'If the walls are not parallel, measure at both ends and use the average.',
         ] },
-        { id: 'width', from: 25, to: 34, title: 'Width', scene: 'dimWidth', captions: [
+        { id: 'width', min: 9, title: 'Width', scene: 'dimWidth', captions: [
           'Width is the shorter side, at right angles to the length.',
-          'Measure it the same way, wall face to wall face, at both ends if the room narrows.',
+          'Same method: wall to wall, and at both ends if the room narrows.',
         ] },
-        { id: 'height', from: 34, to: 45, title: 'Height', scene: 'dimHeight', captions: [
-          'Height runs from the floor to the ceiling you can see.',
-          'With a closed suspended ceiling, measure to the ceiling tiles, not the slab above.',
+        { id: 'height', min: 11, title: 'Height', scene: 'dimHeight', captions: [
+          'Height runs from the floor up to the ceiling you can see.',
+          'With a closed false ceiling, measure to the ceiling tiles, not to the slab above.',
           'If the ceiling is an open grid or hanging baffles, measure to the slab instead.',
         ] },
-        { id: 'irregular', from: 45, to: 54, title: 'Irregular rooms', scene: 'dimIrregular', captions: [
-          'Ignore pillars, window recesses and small alcoves.',
-          'For an L-shaped room, add up the floor areas of its parts and enter a length and width that give the same area.',
-          'For a sloping ceiling, use the average of the lowest and the highest height.',
+        { id: 'irregular', min: 9, title: 'Irregular rooms', scene: 'dimIrregular', captions: [
+          'Pillars, window recesses and small alcoves? Simply ignore them.',
+          'For an L-shaped room, add up the floor areas of its parts, and enter a length and width that give the same total.',
+          'For a sloping ceiling, use the average of the lowest and the highest point.',
         ] },
-        { id: 'enter', from: 54, to: 60, title: 'Enter the sizes', scene: 'dimEnter', captions: [
-          'Enter the three sizes to the nearest 0.1 m. The app works out the volume and draws the room so you can check it.',
+        { id: 'enter', min: 6, title: 'Enter the sizes', scene: 'dimEnter', captions: [
+          'Type in the three sizes, to the nearest ten centimetres. The app draws the room, so you can check it at a glance.',
         ] },
       ],
-    },
+    }),
 
     /* Target step: what RT60 is and why it matters, before the target is set. An explainer, not a measurement: the
        room types are placed in their usual order, not at values, and the targets themselves come from js/data/targets.js. */
-    rt60: {
+    rt60: timed({
       title: 'What is RT60?',
-      lengthLabel: '1 min',
       closeLabel: 'Close and set the target',
       video: { src: '' },
       poster: { scene: 'rtDefine', u: 0.95 },
       chapters: [
-        { id: 'linger', from: 0, to: 10, title: 'Sound lingers', scene: 'rtWhat', captions: [
-          'Every room keeps a sound going after it stops: it bounces off the walls, the floor and the ceiling.',
-          'Each bounce is a little quieter, until the sound dies away. That lingering is called reverberation.',
+        { id: 'linger', min: 10, title: 'Sound lingers', scene: 'rtWhat', captions: [
+          'Clap your hands in an empty hall, and the sound doesn’t stop straight away. It bounces off the walls, the floor and the ceiling.',
+          'Each bounce is a little quieter, until it fades away. That lingering is called reverberation.',
         ] },
-        { id: 'define', from: 10, to: 22, title: 'What RT60 measures', scene: 'rtDefine', captions: [
-          'RT60 is the time it takes for a sound to fade by 60 decibels after it stops: from a loud clap to almost nothing.',
-          'It is given in seconds. The longer it is, the more the room rings.',
+        { id: 'define', min: 12, title: 'What RT60 measures', scene: 'rtDefine', captions: [
+          'RT60 puts a number on it: the time a sound takes to fade by sixty decibels after it stops. From a loud clap, to almost nothing.',
+          'It is measured in seconds. The longer it is, the more the room rings.',
         ] },
-        { id: 'long', from: 22, to: 34, title: 'Too long', scene: 'rtLong', captions: [
-          'When RT60 is too long, each word is still ringing when the next one starts.',
-          'Speech blurs, people raise their voices, and the room gets noisy and tiring, in meetings and on calls.',
+        { id: 'long', min: 12, title: 'Too long', scene: 'rtLong', captions: [
+          'When RT60 is too long, every word is still echoing when the next one begins.',
+          'Speech blurs, people raise their voices, and meetings and calls become tiring.',
         ] },
-        { id: 'short', from: 34, to: 44, title: 'Short', scene: 'rtShort', captions: [
-          'When it is short, each word fades before the next one: speech is clear and easy to follow.',
-          'Far too short can sound dead. That matters for music, not for meeting rooms.',
+        { id: 'short', min: 10, title: 'Short', scene: 'rtShort', captions: [
+          'When it is short, each word fades before the next one starts. Speech is clear and easy to follow.',
+          'Far too short can sound dead. But that matters for music, not for meeting rooms.',
         ] },
-        { id: 'depends', from: 44, to: 55, title: 'The right value', scene: 'rtDepends', captions: [
-          'There is no single best value. Rooms for speech, like meeting rooms and classrooms, need a short RT60.',
-          'Rooms for music, like concert halls, need a longer one. Standards set the target for each use and size, and this step uses them.',
+        { id: 'depends', min: 11, title: 'The right value', scene: 'rtDepends', captions: [
+          'So, what is the right value? It depends on the room. Rooms for talking, like meeting rooms and classrooms, need a short RT60.',
+          'Rooms for music, like concert halls, need a longer one. Acoustic standards set the target for each use and size, and this app follows them.',
         ] },
-        { id: 'treat', from: 55, to: 66, title: 'What changes it', scene: 'rtTreat', captions: [
-          'Hard, bare surfaces such as glass, plaster and concrete reflect sound, and bigger rooms ring for longer.',
-          'Acoustic panels absorb sound and shorten RT60. The treatment steps work out how much is needed.',
+        { id: 'treat', min: 11, title: 'What changes it', scene: 'rtTreat', captions: [
+          'Hard, bare surfaces like glass, plaster and concrete bounce sound around, and bigger rooms ring for longer.',
+          'Acoustic panels soak up sound and bring RT60 down. The app works out how much your room needs.',
         ] },
-        { id: 'app', from: 66, to: 72, title: 'In this app', scene: 'rtInApp', captions: [
-          'Here you set the target. Then you measure the room, compare the two, and choose treatment if it is needed.',
+        { id: 'app', min: 6, title: 'In this app', scene: 'rtInApp', captions: [
+          'Here is the plan: set the target, measure the room, compare the two, and choose treatment if it is needed. Let’s begin!',
         ] },
       ],
-    },
+    }),
 
     /* Home: a walkthrough of the workflow, one chapter per step, on a sketch of the app. Not every feature: the steps and
        what you do in each. The room in it is an example (10 × 6 × 3 m), not a measurement. */
-    tour: {
+    tour: timed({
       title: 'How the app works',
-      lengthLabel: '2 min',
       closeLabel: 'Close the walkthrough',
       video: { src: '' },
       poster: { scene: 'tourMeasure', u: 0.95 },
       chapters: [
-        { id: 'intro', from: 0, to: 7, title: 'The workflow', scene: 'tourIntro', captions: [
-          'The app takes you through ten steps, from describing the room to a report you can share.',
-          'The rail on the left always shows where you are and what is done.',
+        { id: 'intro', min: 7, title: 'The workflow', scene: 'tourIntro', captions: [
+          'Welcome! In the next few minutes, you’ll see how to turn a room full of echo into a clear, professional report.',
+          'There are ten simple steps, and the menu on the left always shows where you are.',
         ] },
-        { id: 'room', from: 7, to: 18, title: 'Room Setup', scene: 'tourRoom', captions: [
-          'Step 1: name the room, choose its type and use, and enter its length, width and height.',
-          'The app works out the volume. You can also describe the surfaces, for the treatment later.',
+        { id: 'room', min: 11, title: 'Room Setup', scene: 'tourRoom', captions: [
+          'Step one: Room Setup. Give the room a name, pick what it is used for, and type in its length, width and height.',
+          'The app works out the volume for you. Describing the walls and the ceiling is optional, but it sharpens the treatment advice later.',
         ] },
-        { id: 'target', from: 18, to: 27, title: 'Target', scene: 'tourTarget', captions: [
-          'Step 2: the app recommends a target RT60 from the room’s use and size.',
-          'Check it and confirm. Adjust it only if the project has its own criteria.',
+        { id: 'target', min: 9, title: 'Target', scene: 'tourTarget', captions: [
+          'Step two: the target. From how the room is used and how big it is, the app recommends the ideal echo time, straight from acoustic standards.',
+          'Have a quick look, and confirm it.',
         ] },
-        { id: 'setup', from: 27, to: 38, title: 'Measurement Setup', scene: 'tourSetup', captions: [
-          'Step 3: allow the microphone, prepare the room, and measure the background noise.',
-          'One device does everything: its own speaker plays the test signal and its microphone records.',
+        { id: 'setup', min: 11, title: 'Measurement Setup', scene: 'tourSetup', captions: [
+          'Step three: get ready. Allow the microphone, close the doors, and switch off the air conditioning.',
+          'Then the app listens to the room’s background noise for a few seconds.',
         ] },
-        { id: 'measure', from: 38, to: 52, title: 'Measure', scene: 'tourMeasure', captions: [
-          'Step 4: place the device at the first position and start the measurement. A take lasts about 10 seconds.',
-          'Then move to a second position and measure again. The room’s values are the average of the positions.',
+        { id: 'measure', min: 14, title: 'Measure', scene: 'tourMeasure', captions: [
+          'Step four, the fun part! Place your laptop or phone, press Start, and stay quiet. It plays a short test sound and listens to how the room rings. About ten seconds.',
+          'Then move to a second spot, and do it once more. The app averages the two.',
         ] },
-        { id: 'processing', from: 52, to: 61, title: 'Processing', scene: 'tourProcessing', captions: [
-          'Step 5: the app checks each take and calculates RT60, band by band.',
-          'A take that cannot be trusted is rejected with the reason, never guessed.',
+        { id: 'processing', min: 9, title: 'Processing', scene: 'tourProcessing', captions: [
+          'Step five: the app checks every recording carefully, and calculates the echo time, from low sounds to high.',
+          'If a recording can’t be trusted, it tells you why and asks you to measure again. No guessing.',
         ] },
-        { id: 'results', from: 61, to: 71, title: 'Results', scene: 'tourResults', captions: [
-          'Step 6: the measured RT60, averaged over the positions, in plain words first.',
-          'The technical detail is one click away when you need it.',
+        { id: 'results', min: 10, title: 'Results', scene: 'tourResults', captions: [
+          'Step six: your results, in plain words first. How long low sounds, voices and high sounds ring in this room.',
         ] },
-        { id: 'assessment', from: 71, to: 80, title: 'Assessment', scene: 'tourAssessment', captions: [
-          'Step 7: the room is compared with its target, band by band.',
-          'You see straight away whether it meets the target or needs treatment.',
+        { id: 'assessment', min: 9, title: 'Assessment', scene: 'tourAssessment', captions: [
+          'Step seven: the verdict. Does the room meet its target, or does it need treatment? You’ll know at a glance.',
         ] },
-        { id: 'treatment', from: 80, to: 91, title: 'Treatment', scene: 'tourTreatment', captions: [
-          'Step 8: choose tested acoustic products and how many.',
-          'The app shows how much absorption is needed and how much your plan adds.',
+        { id: 'treatment', min: 11, title: 'Treatment', scene: 'tourTreatment', captions: [
+          'Step eight: choose acoustic products from the catalogue. The app picks the best way to mount them, and works out how much the room needs.',
+          'Prefer another mounting? Pick it, and watch the result update.',
         ] },
-        { id: 'prediction', from: 91, to: 100, title: 'Predicted Result', scene: 'tourPrediction', captions: [
-          'Step 9: see the RT60 the room is predicted to have after treatment, against the target.',
-          'Change the amounts here and the prediction updates.',
+        { id: 'prediction', min: 9, title: 'Predicted Result', scene: 'tourPrediction', captions: [
+          'Step nine: a look into the future. The app predicts how the room will sound after treatment, side by side with the target.',
+          'Try more or less, and the prediction updates instantly.',
         ] },
-        { id: 'final', from: 100, to: 111, title: 'Final Result', scene: 'tourFinal', captions: [
-          'Step 10: the whole project on one page.',
-          'Fill in the short report form, then download the PDF report for your client.',
+        { id: 'final', min: 11, title: 'Final Result', scene: 'tourFinal', captions: [
+          'Step ten: everything on one page. Fill in a short form, and download a clean PDF report for your client.',
         ] },
-        { id: 'end', from: 111, to: 116, title: 'Ready', scene: 'tourOutro', captions: [
-          'That is the workflow. Every step has an Explain button, and short videos where they help.',
+        { id: 'end', min: 5, title: 'Ready', scene: 'tourOutro', captions: [
+          'That’s it! Ten steps, from echo to answer. If you are ever unsure, press Explain this step, or come back to these videos.',
         ] },
       ],
-    },
+    }),
   };
 })(window.AM);

@@ -79,9 +79,9 @@ export function SetupScreen({ ctx }: { ctx: Ctx }) {
   const prepDone = PREP().filter(([k]) => s.prep[k]).length;
   const speaker = selectable && outOptions.length > 1 ? <>
     <SelectInput id="setup-output" label="Sound output" changeAction="setOutput" value={s.outputId || 'default'} options={outOptions} />
-    <p className="small muted">{(s.outputId || 'default') === 'default' ? 'The system default output plays the test signal; which device that is, is not confirmed. Choose the built-in speakers to have the browser confirm them.'
-      : cfg && cfg.output && cfg.output.verified ? `In use, as confirmed by the browser: ${cfg.output.label || 'the selected output'}.` : cfg && cfg.output && cfg.output.error ? '' : 'Confirmed once microphone access is allowed.'}</p>
-  </> : <Kv rows={[['Sound output', <>{L.output ? L.output : "The system's current output"}<KvNote>{`This browser cannot choose or confirm the sound output: the test signal plays through whatever the system uses now${kind === 'mobile' ? ', which on some phones is the earpiece while the microphone is on' : ''}. Disconnect headphones and Bluetooth audio.`}</KvNote></>]]} />;
+    <p className="small muted">{(s.outputId || 'default') === 'default' ? `Choose this ${K.noun}'s built-in speakers.`
+      : cfg && cfg.output && cfg.output.verified ? `Playing through ${cfg.output.label || 'the selected output'}.` : cfg && cfg.output && cfg.output.error ? '' : 'Confirmed once microphone access is allowed.'}</p>
+  </> : <Kv rows={[['Sound output', <>{L.output ? L.output : "The system's current output"}<KvNote>{`Unplug headphones and turn off Bluetooth audio, so the sound comes from this ${K.noun}'s own speaker${kind === 'mobile' ? '' : 's'}.`}</KvNote></>]]} />;
 
   return (
     <>
@@ -99,7 +99,6 @@ export function SetupScreen({ ctx }: { ctx: Ctx }) {
             {outProblem ? <Note tone="critical" icon="alert">{outProblem}</Note> : null}
             {procWarn.map((w, i) => <Note tone="warn" key={i}>{w}</Note>)}
             <ul className="bullets small">{K.checks.map((t: string, i: number) => <li key={i}>{t}</li>)}</ul>
-            <p className="small muted">Recording levels are shown as dB below max: how far below the loudest level the microphone can record. This microphone is not calibrated, so they are not the room's real loudness. RT60 does not need a calibrated microphone.</p>
           </Card>
           <Card icon="shield" title="Microphone access">
             {asking ? <div className="status-line"><Spin />Waiting for the browser…</div> : <>
@@ -115,14 +114,13 @@ export function SetupScreen({ ctx }: { ctx: Ctx }) {
           <Plan room={p.room} posId={s.position} kind={kind} />
           <p className="small"><b>{`${pos.id} · ${pos.name}:`}</b>{` ${pos.detail}. ${K.place}`}</p>
           <ul className="bullets small">{[K.support, ...DEMO.PLACEMENT.slice(1)].map((t: string, i: number) => <li key={i}>{t}</li>)}</ul>
-          <p className="small muted">{`To measure another position, move the same ${K.noun} there and take a new measurement.`}</p>
         </Card>
       </div>
       <Card icon="list" cls="prep-card" title="Room preparation" sub={`${prepDone} of ${PREP().length} done`}>
         <div className="checks">{PREP().map(([k, label, hint]) => <Check key={k} id={`prep-${k}`} bind={`setup.prep.${k}`} checked={!!s.prep[k]} label={label} hint={hint} />)}</div>
       </Card>
       {/* The last thing before measuring, after the room is prepared. */}
-      <Card icon="wave" title="Background noise" sub="Measured with the microphone. The recording background noise limits how much decay can be measured."><NoiseBody p={p} /></Card>
+      <Card icon="wave" title="Background noise" sub="A few seconds of silence, to check the room is quiet enough."><NoiseBody p={p} /></Card>
       <Card icon="seal" title="Setup summary">
         <div className="summary">
           {list.map(([k, v, ok, warn]) => (

@@ -444,7 +444,7 @@
     // B2
     const mv = textOf(W.get('measure').view(ctx()).body);
     check('B2 At P2 the take cannot start until the background is measured there: the Measure step says so (the check at P1 does not count)',
-      p.setup.position === 'P2' && /Measure the background noise at P2 first/.test(mv) && /Not measured here/.test(mv), mv.slice(mv.indexOf('Measure the background noise at P2'), mv.indexOf('Measure the background noise at P2') + 90));
+      p.setup.position === 'P2' && /Check the background noise here at P2 first/.test(mv) && /Not measured here/.test(mv), mv.slice(mv.indexOf('Check the background noise here at P2'), mv.indexOf('Check the background noise here at P2') + 90));
     // B3: a take at P2 with a loud background (too little decay at 1 kHz): not valid.
     VR.rt = atP2; VR.rebuild();
     VR.setNoise(-48);
