@@ -187,18 +187,6 @@ export function Btn({ action, value, item, variant = 'secondary', size, icon, ic
 }
 export const HStack = ({ children, cls }: { children: ReactNode; cls?: string }) => <div className={cx('hstack', cls)}>{children}</div>;
 
-/** A link to an official UniVicoustic website, in a new tab. Nothing from the project is sent to it. */
-export function ExtLink({ tone = 'brand', glyph, title, text, label, href, note, level = 3 }: { tone?: 'brand' | 'acoustic'; glyph: string; title: string; text: string; label: string; href: string; note?: string; level?: 2 | 3 }) {
-  const H = level === 2 ? 'h2' : 'h3';
-  return (
-    <div className={`ext-cta ext-${tone}`}>
-      <span className="ext-ic" aria-hidden="true"><Icon name={glyph} size={22} sw={1.9} /></span>
-      <div className="ext-body"><H className="ext-t">{title}</H><p className="ext-s">{text}</p>{note ? <p className="ext-n">{note}</p> : null}</div>
-      <a className="btn ext-btn" href={href} target="_blank" rel="noopener noreferrer" aria-label={`${label} (opens in a new tab)`}>{label} <span className="ext-arrow" aria-hidden="true">↗</span></a>
-    </div>
-  );
-}
-
 /* ---------- form controls ---------- */
 /** An input the user owns while it has focus: React leaves it alone then, and shows the stored value otherwise. */
 function useSynced<T extends HTMLInputElement | HTMLTextAreaElement>(value: string) {

@@ -1,11 +1,13 @@
-/* Step 6 · Results — the room as measured: RT60 band by band over every measuring position, each position's own values,
-   the decay curves of the latest take, and how each value was calculated. Measured values only; the target is compared
-   in the next step. The room's values are the average over the valid positions (AM.derive.room). */
+/* Step 6 · Results — the room as measured: one RT60 for the room (its average over the bands the target is set for) and
+   low sounds, voices and high sounds in plain words. Folded under the technical details: RT60 band by band over every
+   measuring position, each position's own values, the decay curves of the latest take, each take, and how each value was
+   calculated. Measured values only; the target is compared in the next step. The room's values are the average over
+   the valid positions (AM.derive.room). */
 import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { am, D, DEMO, fmt, MEAS, PROC, RA } from '../lib';
-import type { Average, Ctx, PrimaryAction, Project, TakeRow } from '../am';
+import { am, cx, D, DEMO, fmt, MEAS, PROC, RA } from '../lib';
+import type { Average, Ctx, PrimaryAction, Project, SoundGroup, TakeRow } from '../am';
 import { Btn, Card, Chart, Details, Icon, Kv, KvNote, Legend, Note, NoteActions, NotReliable, Pill, TableWrap, Tag, TechH, type KvRow } from '../ui/kit';
-import { AverageSummary, MeasureCheck, SoundTiles } from '../ui/blocks';
+import { AverageSummary, MeasureCheck } from '../ui/blocks';
 import { ui } from '../lib';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -63,7 +65,7 @@ function sameWarningsOnce(ws: string[]): string[] {
 }
 
 const bandsNote = (a: Average) => (!a.available ? 'Not available' : a.partial ? `${a.n} of ${a.total} bands · ${a.missing.map(x => fmt.hz(x.f)).join(', ')} not measured` : `All ${a.total} bands measured`);
-const HeroValue = ({ a, cls, watch }: { a: Average; cls: string; watch: string }) => (
+const HeroValue = ({ a, cls, watch }: { a: Average; cls: string; watch?: string }) => (
   <div className={cls} data-watch={watch}>{a.available && a.value != null ? <>{a.value.toFixed(2)}<small>s</small></> : '—'}</div>
 );
 
@@ -74,8 +76,8 @@ function Comparison({ p }: { p: Project }) {
   if (rows.length < 2) return null;
   const f = fmt.hz(DEMO.REFERENCE_BAND);
   return (
-    <Card icon="history" title="Takes in this project"
-      sub={`Each take with its position and the sweep level it was made at: its own ${RA.SHORT} average, and RT60, usable decay, T20 / T30 and r² at ${f}. "In use": the latest valid take at its position, part of the room's values. Takes replaced before the six-band average existed show "—" (their bands are not kept, so it cannot be worked out).`}>
+    <>
+      <TechH title="Takes in this project" note={`Each take with its position and the sweep level it was made at: its own ${RA.SHORT} average, and RT60, usable decay, T20 / T30 and r² at ${f}. "In use": the latest valid take at its position, part of the room's values. Takes replaced before the six-band average existed show "—" (their bands are not kept, so it cannot be worked out).`} />
       <TableWrap>
         <table className="tbl">
           <thead><tr><th>Taken</th><th>Position</th><th>Sweep level</th><th>Status</th><th className="r">{`Average ${RA.SHORT}`}</th><th className="r">{`RT60 at ${f}`}</th><th>Method</th><th className="r">Usable decay</th><th className="r">T20 / T30</th><th className="r">r²</th><th className="r">Bands with a value</th><th>Distortion · reason</th></tr></thead>
@@ -96,7 +98,7 @@ function Comparison({ p }: { p: Project }) {
       </TableWrap>
       {spread != null && spread > 0.1 ? <Note tone="warn"><b>{`RT60 at ${f} differs by ${Math.round(spread * 100)} % between sweep levels at the same position.`}</b> With linear playback and recording, valid takes agree whatever the level. Distortion at the higher level or noise at the lower one may be affecting a take: compare their distortion and usable decay, and measure again.</Note> : null}
       <p className="small muted">With linear playback and recording, valid takes at different sweep levels give similar RT60 at the same position: the level changes how far the room's decay rises above the background, not the decay itself. A higher level helps only while it adds usable decay without distortion, so the loudest is not automatically the best. Different positions differ for real and are averaged, not compared, here. Valid takes are kept here, not overwritten; a take that was not valid is listed until the next take replaces it.</p>
-    </Card>
+    </>
   );
 }
 
@@ -258,6 +260,29 @@ export function TakeDeck({ p }: { p: Project }) {
 
 const POS: Record<string, [string, string, string?]> = { valid: ['good', 'Used', 'check'], waiting: ['neutral', 'Not processed'], invalid: ['critical', 'Not valid', 'x'], failed: ['critical', 'Not used', 'x'] };
 
+/* The three groups side by side, in plain words: which rings the longest and which fades the quickest, worked out from
+   the measured values. A group that could not be measured fully says so instead. */
+function GroupTiles({ groups }: { groups: SoundGroup[] }) {
+  const measured = groups.filter(g => g.value != null);
+  const longest = measured.length > 1 ? measured.reduce((a, b) => (b.value! > a.value! ? b : a)) : null;
+  const quickest = measured.length > 1 ? measured.reduce((a, b) => (b.value! < a.value! ? b : a)) : null;
+  return (
+    <ul className="rs-groups">
+      {groups.map(g => {
+        const miss = !g.missing.length ? null : g.value == null ? 'Could not be measured' : g.id === 'low' && g.missing.includes(125) ? 'Lowest sounds not measured' : 'Part of it not measured';
+        const word = miss || (g === longest ? 'Rings the longest' : g === quickest ? 'Fades the quickest' : 'In between');
+        return (
+          <li className={cx('rs-g', miss ? 'is-warn' : g === longest && 'is-top')} key={g.id} title={g.example}>
+            <span className="rs-gk"><Icon name={g.icon} size={15} sw={2} />{g.label}</span>
+            <span className="rs-gv">{g.value != null ? <>{g.value.toFixed(2)}<small>s</small></> : '—'}</span>
+            <span className="rs-gw">{word}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function ResultsScreen({ ctx }: { ctx: Ctx }) {
   const p = ctx.project, res = D.measured(p) as any, room = D.room(p) as any;
   if (!res || !room) return <Note tone="warn">There is no valid measurement yet. Go back to Processing.</Note>;
@@ -265,7 +290,7 @@ export function ResultsScreen({ ctx }: { ctx: Ctx }) {
   const sel = res.bands.find((b: any) => b.f === ctx.state.ui.band && b.curve) || ref;
   const change = D.noiseChange(p);
   const s = D.positions(p), pol = D.policy(p), here = D.positionOf(res);
-  // Two averages side by side: over the bands the room's criterion sets (what the target is checked on), and over all bands.
+  // Two averages: over the bands the room's criterion sets (what the target is checked on: the headline), and over all bands.
   const avg = D.averageRT60(p), sm = D.summaryRT60(p), rh = room.headline;
   const where = `${s.count} position${s.count > 1 ? 's' : ''}`;
   const nx = s.next ? s.rows.find(r => r.id === s.next) : null;
@@ -275,26 +300,9 @@ export function ResultsScreen({ ctx }: { ctx: Ctx }) {
   const unreliable = room.bands.filter((b: any) => b.rt60 == null);
   const partialBands = room.bands.filter((b: any) => b.n < b.of && b.n > 0);
   const later = D.laterTakes(p);
-
-  const hero = (
-    <section className="card hero-card is-measured-card">
-      <header className="card-h"><span className="label">{`Measured RT60 · average over ${where}`}</span><Tag kind="measured" /></header>
-      <div className="hero-two">
-        <div className="h2"><span className="h2-k">{pol.label}</span><HeroValue a={sm} cls="hero-v" watch="summary-headline" /><span className="h2-s">{sm.available ? `What the target is checked on · ${bandsNote(sm).toLowerCase()}` : 'Not available'}</span></div>
-        <div className="h2"><span className="h2-k">{`All bands, ${RA.SHORT}`}</span><HeroValue a={avg} cls="hero-v hero-v2" watch="avg-headline" /><span className="h2-s">{bandsNote(avg)}</span></div>
-      </div>
-      <div className="hero-pills">
-        <Pill tone={s.complete ? 'good' : 'warn'} text={s.complete ? `${s.count} positions` : `${s.count} of ${s.required} positions · incomplete`} icon={s.complete ? 'seal' : 'pin'} />
-        {sm.available ? null : <Pill tone="warn" text="No summary" icon="alert" />}
-        {room.status === 'warning' ? <Pill tone="warn" text="With warnings" icon="alert" /> : <Pill tone="good" text="Valid" icon="seal" />}
-        <Pill tone="neutral" text={`${rh.quality} · ${rh.confidence.toLowerCase()} confidence at ${fmt.hz(rh.f)}`} />
-      </div>
-      <p className="small muted">{sm.available
-        ? `The first covers the bands this room's target is set for (${pol.criterion || "the app's default"}), and is compared with it in the next step${sm.partial ? `; ${sm.missing.map(x => fmt.hz(x.f)).join(' and ')} could not be measured at any position, so ${sm.missing.length > 1 ? 'they are' : 'it is'} left out` : ''}. The second covers every band. Each is the average of the positions, band by band; each position's own values are below.`
-        : `${sm.reason || ''} Without it the room cannot be assessed against its target. Each is the average of the positions, band by band; each position's own values are below.`}</p>
-    </section>
-  );
-
+  const say = !sm.available ? `${sm.reason || ''} Without it the room cannot be assessed against its target.`
+    : `How long sound rings in this room before it fades away: ${sm.total === 1 ? `its value at ${pol.short}, the pitch` : `its average over ${pol.short}, the pitches`} the target is set for${sm.partial ? ` (${sm.missing.map(x => fmt.hz(x.f)).join(' and ')} could not be measured, so ${sm.missing.length > 1 ? 'they are' : 'it is'} left out)` : ''}.`;
+  const techSummary = `Show the technical details: all-band average ${avg.available && avg.value != null ? fmt.s(avg.value) : 'not available'}, ${fmt.hz(rh.f)} ${fmt.s(rh.rt60)}, each position and each take`;
 
   return (
     <>
@@ -304,96 +312,117 @@ export function ResultsScreen({ ctx }: { ctx: Ctx }) {
           <NoteActions><Btn action="nextPosition" variant="primary" size="sm" icon="pin">{`Measure position ${s.next || ''}`}</Btn></NoteActions>
         </Note>
       )}
-      <div className="grid split">
-        <div className="stack">
-          {hero}
-          {/* Newer takes that are not this measurement: said next to the values they did not replace. */}
-          {later.map((k, i) => (k.kind === 'unprocessed'
-            ? <Note tone="warn" key={i}><b>{`A newer take, recorded ${fmt.when(k.takenAt)}, has not been processed yet.`}</b>{` The values here are from the takes processed so far (latest ${fmt.when(res.takenAt)}). `}<Btn action="processLatest" size="sm">Process it</Btn></Note>
-            : <Note tone="warn" key={i}><b>{`Your latest take (${fmt.when(k.takenAt)}) gave no value${k.kind === 'failed' ? ': it could not be analysed' : ''}.`}</b>{` ${k.reason || ''} Shown: the valid takes, the latest from ${fmt.when(res.takenAt)}.`}</Note>))}
-          {change != null ? <Note tone="warn"><b>The background has changed.</b>{` The latest noise measurement is ${Math.abs(change)} dB ${change > 0 ? 'louder' : 'quieter'} than when this RT60 was measured. Measure again to confirm it.`}</Note> : null}
-          {room.warnings && room.warnings.length ? <Note tone="warn"><b>Measured with warnings.</b>{` ${sameWarningsOnce(room.warnings).join(' ')}`}</Note> : null}
-          <Card icon="bars" title="How long sound rings in this room" right={<Tag kind="measured" />}>
-            <SoundTiles groups={groups} />
-            <Details id="results-bands">
-              <TechH title={`RT60 by octave band, average over ${where}`} />
-              <Chart type="bands" cls="chart-compact" spec={{ line: true, series: [{ label: 'Measured RT60', kind: 'measured', values: room.bands.map((b: any) => b.rt60) }], unit: 's', label: room.referenceBand, height: 190, yTitle: 'RT60 (s)', aria: 'Measured RT60 by octave band, averaged over the positions', missingText: 'not reliable' }} height={190} />
-              <AverageSummary avg={avg} />
-              {unreliable.length ? <><p className="small muted">Bands without a value could not be measured reliably at any position:</p><ul className="bullets small">{unreliable.map((b: any) => <li key={b.f}><b>{`${fmt.hz(b.f)}:`}</b>{` ${b.reason || 'Not reliable'}`}</li>)}</ul></> : null}
-            </Details>
-          </Card>
-          <Card icon="pin" title={`Measured at ${where}`} right={<Tag kind="measured" />} sub={`The room's values are the average of the valid positions, band by band. At least ${s.required} are needed.`}>
-            <TableWrap>
-              <table className="tbl">
-                <thead><tr><th>Position</th><th className="r">{pol.short}</th><th className="r">All bands</th><th>Status</th></tr></thead>
-                <tbody>
-                  {s.rows.filter(r => r.status !== 'not-measured').map(r => {
-                    const pr = r.result, a = pr ? RA.ofBands(pr, pol.primary) : null, all = pr ? RA.of(pr) : null, w = POS[r.status];
-                    return (
-                      <tr className={pr && pr.recordingId === res.recordingId ? 'is-ref' : undefined} key={r.id}>
-                        <td><b>{r.id}</b>{' '}<span className="muted">{r.name}</span></td>
-                        <td className="r">{a && a.available ? fmt.s(a.value) : '—'}</td><td className="r">{all && all.available ? fmt.s(all.value) : '—'}</td>
-                        <td>{w ? <Pill tone={w[0]} text={w[1]} icon={w[2]} /> : <Pill tone="neutral" text="Not measured" />}{r.issue ? <KvNote>{r.issue.reason || ''}</KvNote> : null}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </TableWrap>
-            <Details id="results-positions">
-              <TechH title="RT60 by band and position" note="The room's value is the mean of the positions with a reliable value in that band (arithmetic mean, ISO 3382-2 spatial averaging); spread is the longest minus the shortest." />
-              <TableWrap>
-                <table className="tbl">
-                  <thead><tr><th>Band</th>{used.map(id => <th className="r" key={id}>{id}</th>)}<th className="r">Room</th><th className="r">Positions</th><th className="r">Spread</th><th>Method</th><th>Quality</th></tr></thead>
-                  <tbody>
-                    {room.bands.map((b: any) => (
-                      <tr className={b.f === room.referenceBand ? 'is-ref' : undefined} key={b.f}>
-                        <td>{fmt.hz(b.f)}</td>
-                        {b.values.map((v: any, i: number) => <td className="r" key={i}>{v.rt60 != null ? fmt.s(v.rt60) : <NotReliable reason={v.reason} text="—" />}</td>)}
-                        <td className="r">{b.rt60 != null ? <b>{fmt.s(b.rt60)}</b> : <NotReliable reason={b.reason} />}</td><td className="r">{`${b.n} of ${b.of}`}</td>
-                        <td className="r">{b.spread != null ? fmt.s(b.spread) : '—'}</td><td>{b.path || '—'}</td><td><Pill tone={ui.tone[b.quality] || 'neutral'} text={b.quality} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableWrap>
-              {partialBands.length ? <p className="small muted">{partialBands.map((b: any) => `${fmt.hz(b.f)}: ${b.notes[0] || ''}`).join(' ')}</p> : null}
-            </Details>
-          </Card>
-          <Card icon="seal" title="Can you trust this measurement?">
-            <MeasureCheck groups={groups} />
-            <Details id="results-decay">
-              <TechH title={`Latest take (${here}): decay curve at ${fmt.hz(sel.f)}`} note="The band-filtered impulse response and its backward-integrated decay." />
-              <div className="chips">
-                {res.bands.map((b: any) => <button type="button" className="chip" key={b.f} data-action="band" data-value={String(b.f)} aria-pressed={b.f === sel.f} disabled={b.curve ? undefined : true} title={b.rt60 == null ? b.reason || 'Not reliable' : ''}>{fmt.hz(b.f)}</button>)}
-              </div>
-              <Chart type="decay" spec={{ curve: sel.curve, noiseDb: sel.noiseFloorDb, fit: fit || null, path: sel.path, rt: sel.rt60, f: sel.f, crossSec: sel.crossSec }} height={290} />
-              <Legend items={[['line', 'Decay curve (backward-integrated)'], ['faint', 'Band energy'], ['eval', `${sel.path || 'Evaluation'} range`], ['dash', 'Fit, extended over 60 dB of decay'], ['dash-muted', 'Recording background noise']]} />
-              <p className="chart-caption">{fit && sel.rt60 != null
-                ? <>{`${sel.path} at ${fmt.hz(sel.f)}: the fitted decay falls from −${+Math.abs(fit.from).toFixed(1)} dB at ${fit.t1.toFixed(2)} s to −${+Math.abs(fit.to).toFixed(1)} dB at ${fit.t2.toFixed(2)} s. ${(fit.t2 - fit.t1).toFixed(3)} s × ${mult} = `}<b>{fmt.s(sel.rt60)}</b>{` (r² ${fit.r2.toFixed(4)}).${sel.headDb > direct ? ` The device's direct sound lies ${sel.headDb.toFixed(1)} dB above the start of the room's decay here, so the range starts below it.` : ''}`}</>
-                : sel.rt60 != null ? `${sel.path} at ${fmt.hz(sel.f)}: ${fmt.s(sel.rt60)}, the T20 this take measured (it was processed before RT60 was reported from T20, so its own fit was not kept).`
-                  : `No RT60 at ${fmt.hz(sel.f)}: ${sel.reason || 'not enough usable decay'}`}</p>
-              <TechH title={`Latest take (${here}) band by band`} />
-              <TableWrap>
-                <table className="tbl">
-                  <thead><tr><th>Band</th><th className="r">T20</th><th className="r">T30</th><th className="r">RT60</th><th>Method</th><th className="r">Usable decay</th><th>Quality</th></tr></thead>
-                  <tbody>
-                    {res.bands.map((b: any) => (
-                      <tr className={b.f === res.referenceBand ? 'is-ref' : undefined} key={b.f}>
-                        <td>{fmt.hz(b.f)}</td><td className="r">{b.t20 != null ? fmt.s(b.t20) : '—'}</td><td className="r">{b.t30 != null ? fmt.s(b.t30) : '—'}</td>
-                        <td className="r">{b.rt60 != null ? <b>{fmt.s(b.rt60)}</b> : <NotReliable reason={b.reason} />}</td>
-                        <td>{b.path || '—'}</td><td className="r">{b.decayRangeDb != null ? `${Math.round(b.decayRangeDb)} dB` : '—'}</td><td><Pill tone={ui.tone[b.quality] || 'neutral'} text={b.quality} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableWrap>
-            </Details>
-          </Card>
+
+      {/* Newer takes that are not this measurement, and a changed background: said before the values. */}
+      {later.map((k, i) => (k.kind === 'unprocessed'
+        ? <Note tone="warn" key={i}><b>{`A newer take, recorded ${fmt.when(k.takenAt)}, has not been processed yet.`}</b>{` The values here are from the takes processed so far (latest ${fmt.when(res.takenAt)}). `}<Btn action="processLatest" size="sm">Process it</Btn></Note>
+        : <Note tone="warn" key={i}><b>{`Your latest take (${fmt.when(k.takenAt)}) gave no value${k.kind === 'failed' ? ': it could not be analysed' : ''}.`}</b>{` ${k.reason || ''} Shown: the valid takes, the latest from ${fmt.when(res.takenAt)}.`}</Note>))}
+      {change != null ? <Note tone="warn"><b>The background has changed.</b>{` The latest noise measurement is ${Math.abs(change)} dB ${change > 0 ? 'louder' : 'quieter'} than when this RT60 was measured. Measure again to confirm it.`}</Note> : null}
+
+      {/* One RT60 for the room, three plain groups, the rest folded away. */}
+      <section className="card rs-hero" aria-label="RT60 of the room">
+        <div className="rs-top">
+          <div className="rs-main">
+            <span className="rs-k">RT60 of the room <Tag kind="measured" /></span>
+            <HeroValue a={sm} cls="rs-v" watch="summary-headline" />
+          </div>
+          {s.complete ? <Pill tone="good" icon="check" text={`Measured at ${where}`} /> : <Pill tone="warn" icon="pin" text={`Incomplete: ${s.count} of ${s.required} positions`} />}
         </div>
-        <TakeDeck p={p} />
-      </div>
-      <Comparison p={p} />
+        <p className="rs-say">{say}</p>
+        <GroupTiles groups={groups} />
+
+        <Details id="results-tech" summary={techSummary}>
+          <TechH title={`Two averages, over ${where}`} />
+          <div className="hero-two">
+            <div className="h2"><span className="h2-k">{pol.label}</span><HeroValue a={sm} cls="hero-v hero-v2" /><span className="h2-s">{sm.available ? `What the target is checked on · ${bandsNote(sm).toLowerCase()}` : 'Not available'}</span></div>
+            <div className="h2"><span className="h2-k">{`All bands, ${RA.SHORT}`}</span><HeroValue a={avg} cls="hero-v hero-v2" watch="avg-headline" /><span className="h2-s">{bandsNote(avg)}</span></div>
+          </div>
+          <div className="hero-pills">
+            {sm.available ? null : <Pill tone="warn" text="No summary" icon="alert" />}
+            {room.status === 'warning' ? <Pill tone="warn" text="With warnings" icon="alert" /> : <Pill tone="good" text="Valid" icon="seal" />}
+            <Pill tone="neutral" text={`${rh.quality} · ${rh.confidence.toLowerCase()} confidence at ${fmt.hz(rh.f)}`} />
+          </div>
+          <p className="small muted">{sm.available
+            ? `The first covers the bands this room's target is set for (${pol.criterion || "the app's default"}), and is compared with it in the next step. The second covers every band. Each is the average of the positions, band by band; each position's own values are below.`
+            : "Each is the average of the positions, band by band; each position's own values are below."}</p>
+
+          <TechH title={`RT60 by octave band, average over ${where}`} />
+          <Chart type="bands" cls="chart-compact" spec={{ line: true, series: [{ label: 'Measured RT60', kind: 'measured', values: room.bands.map((b: any) => b.rt60) }], unit: 's', label: room.referenceBand, height: 190, yTitle: 'RT60 (s)', aria: 'Measured RT60 by octave band, averaged over the positions', missingText: 'not reliable' }} height={190} />
+          <AverageSummary avg={avg} />
+          {unreliable.length ? <><p className="small muted">Bands without a value could not be measured reliably at any position:</p><ul className="bullets small">{unreliable.map((b: any) => <li key={b.f}><b>{`${fmt.hz(b.f)}:`}</b>{` ${b.reason || 'Not reliable'}`}</li>)}</ul></> : null}
+
+          <TechH title={`Measured at ${where}`} note={`The room's values are the average of the valid positions, band by band. At least ${s.required} are needed.`} />
+          <TableWrap>
+            <table className="tbl">
+              <thead><tr><th>Position</th><th className="r">{pol.short}</th><th className="r">All bands</th><th>Status</th></tr></thead>
+              <tbody>
+                {s.rows.filter(r => r.status !== 'not-measured').map(r => {
+                  const pr = r.result, a = pr ? RA.ofBands(pr, pol.primary) : null, all = pr ? RA.of(pr) : null, w = POS[r.status];
+                  return (
+                    <tr className={pr && pr.recordingId === res.recordingId ? 'is-ref' : undefined} key={r.id}>
+                      <td><b>{r.id}</b>{' '}<span className="muted">{r.name}</span></td>
+                      <td className="r">{a && a.available ? fmt.s(a.value) : '—'}</td><td className="r">{all && all.available ? fmt.s(all.value) : '—'}</td>
+                      <td>{w ? <Pill tone={w[0]} text={w[1]} icon={w[2]} /> : <Pill tone="neutral" text="Not measured" />}{r.issue ? <KvNote>{r.issue.reason || ''}</KvNote> : null}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </TableWrap>
+          <TechH title="RT60 by band and position" note="The room's value is the mean of the positions with a reliable value in that band (arithmetic mean, ISO 3382-2 spatial averaging); spread is the longest minus the shortest." />
+          <TableWrap>
+            <table className="tbl">
+              <thead><tr><th>Band</th>{used.map(id => <th className="r" key={id}>{id}</th>)}<th className="r">Room</th><th className="r">Positions</th><th className="r">Spread</th><th>Method</th><th>Quality</th></tr></thead>
+              <tbody>
+                {room.bands.map((b: any) => (
+                  <tr className={b.f === room.referenceBand ? 'is-ref' : undefined} key={b.f}>
+                    <td>{fmt.hz(b.f)}</td>
+                    {b.values.map((v: any, i: number) => <td className="r" key={i}>{v.rt60 != null ? fmt.s(v.rt60) : <NotReliable reason={v.reason} text="—" />}</td>)}
+                    <td className="r">{b.rt60 != null ? <b>{fmt.s(b.rt60)}</b> : <NotReliable reason={b.reason} />}</td><td className="r">{`${b.n} of ${b.of}`}</td>
+                    <td className="r">{b.spread != null ? fmt.s(b.spread) : '—'}</td><td>{b.path || '—'}</td><td><Pill tone={ui.tone[b.quality] || 'neutral'} text={b.quality} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableWrap>
+          {partialBands.length ? <p className="small muted">{partialBands.map((b: any) => `${fmt.hz(b.f)}: ${b.notes[0] || ''}`).join(' ')}</p> : null}
+
+          <TechH title="Can you trust this measurement?" />
+          <MeasureCheck groups={groups} />
+          <TechH title={`Latest take (${here}): decay curve at ${fmt.hz(sel.f)}`} note="The band-filtered impulse response and its backward-integrated decay." />
+          <div className="chips">
+            {res.bands.map((b: any) => <button type="button" className="chip" key={b.f} data-action="band" data-value={String(b.f)} aria-pressed={b.f === sel.f} disabled={b.curve ? undefined : true} title={b.rt60 == null ? b.reason || 'Not reliable' : ''}>{fmt.hz(b.f)}</button>)}
+          </div>
+          <Chart type="decay" spec={{ curve: sel.curve, noiseDb: sel.noiseFloorDb, fit: fit || null, path: sel.path, rt: sel.rt60, f: sel.f, crossSec: sel.crossSec }} height={290} />
+          <Legend items={[['line', 'Decay curve (backward-integrated)'], ['faint', 'Band energy'], ['eval', `${sel.path || 'Evaluation'} range`], ['dash', 'Fit, extended over 60 dB of decay'], ['dash-muted', 'Recording background noise']]} />
+          <p className="chart-caption">{fit && sel.rt60 != null
+            ? <>{`${sel.path} at ${fmt.hz(sel.f)}: the fitted decay falls from −${+Math.abs(fit.from).toFixed(1)} dB at ${fit.t1.toFixed(2)} s to −${+Math.abs(fit.to).toFixed(1)} dB at ${fit.t2.toFixed(2)} s. ${(fit.t2 - fit.t1).toFixed(3)} s × ${mult} = `}<b>{fmt.s(sel.rt60)}</b>{` (r² ${fit.r2.toFixed(4)}).${sel.headDb > direct ? ` The device's direct sound lies ${sel.headDb.toFixed(1)} dB above the start of the room's decay here, so the range starts below it.` : ''}`}</>
+            : sel.rt60 != null ? `${sel.path} at ${fmt.hz(sel.f)}: ${fmt.s(sel.rt60)}, the T20 this take measured (it was processed before RT60 was reported from T20, so its own fit was not kept).`
+              : `No RT60 at ${fmt.hz(sel.f)}: ${sel.reason || 'not enough usable decay'}`}</p>
+          <TechH title={`Latest take (${here}) band by band`} />
+          <TableWrap>
+            <table className="tbl">
+              <thead><tr><th>Band</th><th className="r">T20</th><th className="r">T30</th><th className="r">RT60</th><th>Method</th><th className="r">Usable decay</th><th>Quality</th></tr></thead>
+              <tbody>
+                {res.bands.map((b: any) => (
+                  <tr className={b.f === res.referenceBand ? 'is-ref' : undefined} key={b.f}>
+                    <td>{fmt.hz(b.f)}</td><td className="r">{b.t20 != null ? fmt.s(b.t20) : '—'}</td><td className="r">{b.t30 != null ? fmt.s(b.t30) : '—'}</td>
+                    <td className="r">{b.rt60 != null ? <b>{fmt.s(b.rt60)}</b> : <NotReliable reason={b.reason} />}</td>
+                    <td>{b.path || '—'}</td><td className="r">{b.decayRangeDb != null ? `${Math.round(b.decayRangeDb)} dB` : '—'}</td><td><Pill tone={ui.tone[b.quality] || 'neutral'} text={b.quality} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableWrap>
+
+          <TechH title="Each take" note="Every take of this project on its own card, the current measurement first: where, with what and when it was recorded, and its full record." />
+          <TakeDeck p={p} />
+          <Comparison p={p} />
+        </Details>
+      </section>
+      {/* Warnings about how the room was measured: after the result they qualify. */}
+      {room.warnings && room.warnings.length ? <Note tone="warn"><b>Measured with warnings.</b>{` ${sameWarningsOnce(room.warnings).join(' ')}`}</Note> : null}
+
     </>
   );
 }

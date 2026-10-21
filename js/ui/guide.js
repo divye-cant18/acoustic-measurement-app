@@ -16,8 +16,11 @@
   'use strict';
   const { esc, icon } = AM.util;
 
-  /* ---------- drawing helpers (fixed video palette, the same in light and dark mode) ---------- */
-  const P = { bg: '#121718', panel: '#232A2B', line: '#3E4648', ink: '#ECF1F0', dim: 'rgba(242,239,236,.6)', faint: 'rgba(242,239,236,.16)', accent: '#FF5A45', good: '#4CC94C', bad: '#FF6B5B', blue: '#5AA2F0', warn: '#FAB219' };
+  /* ---------- drawing helpers (fixed video palette, the same in light and dark mode) ----------
+     The logo's two colours and their shades only: the warm black for the screen, the red for the brand and for what
+     is wrong. What is right is the palest tint of the red (near white), a warning the light red, and a second series
+     (music beside speech) a warm grey; a tick or a cross always says which as well. */
+  const P = { bg: '#1A1617', panel: '#2A2425', line: '#4A4243', ink: '#F2EDEC', dim: 'rgba(242,237,236,.6)', faint: 'rgba(242,237,236,.16)', accent: '#FF5A44', good: '#FFD9CF', bad: '#FF5A44', blue: '#C9BFBE', warn: '#FF9A80' };
   const c01 = x => (x < 0 ? 0 : x > 1 ? 1 : x);
   const seg = (u, a, b) => c01((u - a) / (b - a));
   const ease = x => { x = c01(x); return x * x * (3 - 2 * x); };
@@ -123,7 +126,7 @@
     // The device close up: where its microphone and speaker are, and what to check before the take.
     device(u) {
       const lo = ease(seg(u, 0.03, 0.14));
-      let s = `<rect x="70" y="92" width="210" height="128" rx="8" fill="${P.panel}" stroke="${P.ink}" stroke-width="2"/><rect x="82" y="104" width="186" height="104" rx="3" fill="#0E1414"/>`;
+      let s = `<rect x="70" y="92" width="210" height="128" rx="8" fill="${P.panel}" stroke="${P.ink}" stroke-width="2"/><rect x="82" y="104" width="186" height="104" rx="3" fill="#171314"/>`;
       s += `<path d="M48,236 L302,236 L288,222 L62,222 Z" fill="${P.panel}" stroke="${P.ink}" stroke-width="2" stroke-linejoin="round"/>`;
       s += `<circle cx="175" cy="98" r="2.8" fill="${P.accent}"/>` + T(175, 84, 'microphone', { size: 11, fill: P.accent, anchor: 'middle', op: lo });
       for (let i = 0; i < 6; i++) s += `<circle cx="${n(84 + i * 6)}" cy="229" r="1.4" fill="${P.dim}"/><circle cx="${n(236 + i * 6)}" cy="229" r="1.4" fill="${P.dim}"/>`;
@@ -200,7 +203,7 @@
 
     dimTools(u) {
       let s = L(146, 118, 146, 262, P.line, 5);
-      s += `<rect x="150" y="140" width="80" height="110" rx="12" fill="${P.panel}" stroke="${P.ink}" stroke-width="2"/><rect x="162" y="152" width="56" height="34" rx="4" fill="#0E1A12"/>`;
+      s += `<rect x="150" y="140" width="80" height="110" rx="12" fill="${P.panel}" stroke="${P.ink}" stroke-width="2"/><rect x="162" y="152" width="56" height="34" rx="4" fill="#2A1714"/>`;
       const b = ease(seg(u, 0.08, 0.4));
       s += T(190, 175, `${(10 * b).toFixed(2)} m`, { size: 13, weight: 650, fill: P.good, anchor: 'middle' }) + `<circle cx="190" cy="222" r="10" fill="none" stroke="${P.dim}" stroke-width="2"/>`;
       if (b > 0) s += L(230, 165, 230 + 120 * b, 165, P.bad, 2) + `<circle cx="${n(230 + 120 * b)}" cy="165" r="4" fill="${P.bad}"/>`;
@@ -478,7 +481,7 @@
         s += tick(172, y - 4, u >= at) + T(190, y + 1, label, { size: 13, fill: u >= at ? P.ink : P.dim });
       });
       const lv = seg(u, 0.44, 0.66);
-      if (lv > 0) s += `<rect x="190" y="236" width="150" height="7" rx="3.5" fill="${P.line}"/><rect x="190" y="236" width="${n(150 * lv)}" height="7" rx="3.5" fill="${TEAL}"/>`;
+      if (lv > 0) s += `<rect x="190" y="236" width="150" height="7" rx="3.5" fill="${P.line}"/><rect x="190" y="236" width="${n(150 * lv)}" height="7" rx="3.5" fill="${MEAS}"/>`;
       s += pill(190, 254, 'Suitable for measuring', P.good, ease(seg(u, 0.68, 0.76)));
       s += table(528, 244, 320, 104) + laptop(528, 244);
       s += T(528, 334, 'One device plays and records', { size: 11, fill: P.dim, anchor: 'middle' });
@@ -491,13 +494,13 @@
       s += `<rect x="${rx0}" y="${ry0}" width="${rw}" height="${rh}" rx="3" fill="${P.bg}" stroke="${P.ink}" stroke-width="2"/>`;
       const mv = ease(seg(u, 0.48, 0.58)), dx = lerp(p1[0], p2[0], mv), dy = lerp(p1[1], p2[1], mv);
       [['P1', p1, 0.44], ['P2', p2, 0.92]].forEach(([id, [x, y], at]) => { s += `<circle cx="${x}" cy="${y}" r="5" fill="none" stroke="${P.dim}" stroke-width="1.6"/>` + T(x, y - 12, id, { size: 11, weight: 650, anchor: 'middle' }) + (u >= at ? tick(x - 22, y + 12, true) : ''); });
-      s += `<rect x="${n(dx - 7)}" y="${n(dy - 5)}" width="14" height="10" rx="2" fill="${TEAL}"/>`;
+      s += `<rect x="${n(dx - 7)}" y="${n(dy - 5)}" width="14" height="10" rx="2" fill="${MEAS}"/>`;
       const first = u < 0.5, prog = first ? seg(u, 0.1, 0.42) : seg(u, 0.6, 0.9);
       s += T(380, 128, first ? 'Take at P1' : 'Take at P2', { size: 12, weight: 650 }) + take(380, 606, 184, 24, prog);
       const tap = first ? seg(u, 0.06, 0.16) : seg(u, 0.56, 0.66);
       s += button(380, 228, 150, 'Start measurement', P.accent, tap);
       s += T(160, 300, 'Each position: a background check, then a 10 s take.', { size: 12, fill: P.dim });
-      s += T(160, 322, 'The room’s values are the average of the positions.', { size: 12, fill: TEAL, op: ease(seg(u, 0.9, 0.98)) });
+      s += T(160, 322, 'The room’s values are the average of the positions.', { size: 12, fill: MEAS, op: ease(seg(u, 0.9, 0.98)) });
       return s;
     },
 
@@ -505,7 +508,7 @@
       let s = appFrame(4, 'Processing checks each take');
       ['Separate the room’s decay', 'Check it against the background', 'Calculate T20, check with T30', 'Calculate RT60, band by band'].forEach((label, i) => {
         const y = 138 + i * 36, a = 0.1 + i * 0.18, done = u >= a + 0.12, on = u >= a && !done;
-        s += (done ? tick(172, y - 4, true) : on ? `<circle cx="172" cy="${y - 4}" r="9" fill="none" stroke="${P.line}" stroke-width="2.4"/><path d="M172,${y - 13} a9,9 0 0 1 9,9" fill="none" stroke="${TEAL}" stroke-width="2.4" transform="rotate(${n((u * 2400) % 360)} 172 ${y - 4})"/>` : `<circle cx="172" cy="${y - 4}" r="9" fill="none" stroke="${P.line}" stroke-width="2"/>`);
+        s += (done ? tick(172, y - 4, true) : on ? `<circle cx="172" cy="${y - 4}" r="9" fill="none" stroke="${P.line}" stroke-width="2.4"/><path d="M172,${y - 13} a9,9 0 0 1 9,9" fill="none" stroke="${MEAS}" stroke-width="2.4" transform="rotate(${n((u * 2400) % 360)} 172 ${y - 4})"/>` : `<circle cx="172" cy="${y - 4}" r="9" fill="none" stroke="${P.line}" stroke-width="2"/>`);
         s += T(190, y + 1, label, { size: 13, fill: done || on ? P.ink : P.dim });
       });
       s += T(160, 318, 'A take that cannot be trusted is rejected with its reason, never guessed.', { size: 12, fill: P.good, op: ease(seg(u, 0.84, 0.92)) });
@@ -515,11 +518,11 @@
     tourResults(u) {
       let s = appFrame(5, 'Read the results');
       s += T(160, 128, 'Measured RT60 · average over 2 positions', { size: 11, fill: P.dim });
-      s += T(160, 170, '0.72 s', { size: 32, weight: 700, fill: TEAL, op: ease(seg(u, 0.06, 0.18)) });
+      s += T(160, 170, '0.72 s', { size: 32, weight: 700, fill: MEAS, op: ease(seg(u, 0.06, 0.18)) });
       const vals = [0.95, 0.8, 0.76, 0.7, 0.62, 0.52], labels = ['125', '250', '500', '1k', '2k', '4k'];
       vals.forEach((v, i) => {
         const g = ease(seg(u, 0.2 + i * 0.06, 0.32 + i * 0.06)), h = v * 110 * g, x = 380 + i * 38;
-        s += `<rect x="${x}" y="${n(286 - h)}" width="22" height="${n(h)}" rx="3" fill="${TEAL}"/>` + T(x + 11, 302, labels[i], { size: 10, fill: P.dim, anchor: 'middle' });
+        s += `<rect x="${x}" y="${n(286 - h)}" width="22" height="${n(h)}" rx="3" fill="${MEAS}"/>` + T(x + 11, 302, labels[i], { size: 10, fill: P.dim, anchor: 'middle' });
       });
       s += L(372, 286, 610, 286, P.line, 1.4);
       s += T(160, 212, 'Low sounds 0.95 s', { size: 12, op: ease(seg(u, 0.5, 0.58)) }) + T(160, 234, 'Voices 0.72 s', { size: 12, weight: 650, op: ease(seg(u, 0.56, 0.64)) }) + T(160, 256, 'High sounds 0.57 s', { size: 12, op: ease(seg(u, 0.62, 0.7)) });
@@ -553,7 +556,7 @@
 
     tourPrediction(u) {
       let s = appFrame(8, 'See the predicted result');
-      [['Measured', '0.72 s', TEAL], ['Predicted', '0.50 s', VIO], ['Target', '0.48 s', P.ink]].forEach(([k, v, col], i) => {
+      [['Measured', '0.72 s', MEAS], ['Predicted', '0.50 s', VIO], ['Target', '0.48 s', P.ink]].forEach(([k, v, col], i) => {
         const x = 160 + i * 150, o = ease(seg(u, 0.05 + i * 0.12, 0.15 + i * 0.12));
         s += `<g opacity="${op(o)}"><rect x="${x}" y="114" width="134" height="64" rx="10" fill="${P.panel}" stroke="${i === 1 ? VIO : P.panel}" stroke-width="1.6" ${i === 1 ? 'stroke-dasharray="5 4"' : ''}/></g>` + T(x + 12, 134, k, { size: 11, fill: P.dim, op: o }) + T(x + 12, 164, v, { size: 22, weight: 700, fill: col, op: o });
       });
@@ -565,7 +568,7 @@
 
     tourFinal(u) {
       let s = appFrame(9, 'Get the report');
-      [['Before', '0.72 s', TEAL], ['Predicted', '0.50 s', VIO], ['Target', '0.48 s', P.ink]].forEach(([k, v, col], i) => {
+      [['Before', '0.72 s', MEAS], ['Predicted', '0.50 s', VIO], ['Target', '0.48 s', P.ink]].forEach(([k, v, col], i) => {
         s += T(160 + i * 120, 128, k, { size: 10, fill: P.dim }) + T(160 + i * 120, 150, v, { size: 16, weight: 700, fill: col });
       });
       s += field(160, 172, 180, 'Your name', 'A. Sales', seg(u, 0.12, 0.24)) + field(352, 172, 210, 'Email', 'name@company.com', seg(u, 0.26, 0.4));
@@ -589,14 +592,14 @@
   };
 
   /* helpers for the walkthrough: a sketch of the app (the workflow rail with the step on show) and its controls */
-  const TEAL = '#3BC2B6', VIO = '#A48EFF';
+  const MEAS = '#CFC6C5', VIO = '#FF7A66', DONE = '#F58C79'; // as in the app on dark: a measured value (warm grey), a predicted one (the red), the rail's done steps
   const TOUR = ['Room Setup', 'Target', 'Setup', 'Measure', 'Processing', 'Results', 'Assessment', 'Treatment', 'Prediction', 'Final Result'];
   function appFrame(cur, title) {
-    let s = `<rect x="16" y="48" width="608" height="298" rx="10" fill="#0D1112" stroke="${P.line}"/><path d="M26,48 h118 v298 h-118 a10,10 0 0 1 -10,-10 v-278 a10,10 0 0 1 10,-10 z" fill="#080B0C"/>`;
+    let s = `<rect x="16" y="48" width="608" height="298" rx="10" fill="#141112" stroke="${P.line}"/><path d="M26,48 h118 v298 h-118 a10,10 0 0 1 -10,-10 v-278 a10,10 0 0 1 10,-10 z" fill="#0F0C0D"/>`;
     TOUR.forEach((name, i) => {
       const y = 72 + i * 27, done = i < cur, on = i === cur;
-      if (on) s += `<rect x="21" y="${y - 11}" width="118" height="22" rx="5" fill="#1C2427"/>`;
-      s += `<circle cx="35" cy="${y}" r="6.5" fill="${done ? TEAL : on ? '#fff' : 'none'}" stroke="${done ? TEAL : on ? P.accent : P.line}" stroke-width="1.6"/>`;
+      if (on) s += `<rect x="21" y="${y - 11}" width="118" height="22" rx="5" fill="#2A2425"/>`;
+      s += `<circle cx="35" cy="${y}" r="6.5" fill="${done ? DONE : on ? '#fff' : 'none'}" stroke="${done ? DONE : on ? P.accent : P.line}" stroke-width="1.6"/>`;
       s += T(48, y + 4, name, { size: 11, weight: on ? 650 : 400, fill: on ? '#fff' : done ? P.ink : P.dim });
       if (on) s += `<path d="M129,${y - 6} l-3,12 M134,${y - 6} l-3,12" stroke="${P.accent}" stroke-width="2.2" stroke-linecap="round"/>`;
     });
@@ -622,14 +625,14 @@
     const X = v => 160 + (v / 1.5) * 446;
     let s = `<g opacity="${op(o)}"><rect x="160" y="${y - 3}" width="446" height="6" rx="3" fill="${P.line}"/><rect x="${n(X(0.38))}" y="${y - 12}" width="${n(X(0.59) - X(0.38))}" height="24" fill="rgba(242,239,236,.08)" stroke="${P.dim}" stroke-dasharray="3 3"/>${L(X(0.48), y - 15, X(0.48), y + 15, P.dim, 2)}`;
     [0, 0.5, 1, 1.5].forEach(v => { s += T(X(v), y + 32, `${v.toFixed(1)} s`, { size: 10, fill: P.dim, anchor: 'middle' }); });
-    if (m != null) s += `<circle cx="${n(X(m))}" cy="${y}" r="7" fill="${TEAL}"/>` + T(X(m), y - 20, `${m.toFixed(2)} s`, { size: 11, weight: 650, fill: TEAL, anchor: 'middle' });
+    if (m != null) s += `<circle cx="${n(X(m))}" cy="${y}" r="7" fill="${MEAS}"/>` + T(X(m), y - 20, `${m.toFixed(2)} s`, { size: 11, weight: 650, fill: MEAS, anchor: 'middle' });
     if (pr != null) s += `<circle cx="${n(X(pr))}" cy="${y}" r="7" fill="${VIO}"/>` + T(X(pr), y - 20, `${pr.toFixed(2)} s`, { size: 11, weight: 650, fill: VIO, anchor: 'middle' });
     return `${s}</g>`;
   }
   const PHASE_GLYPH = [
     (x, y) => { const { pts } = isoBox(3, 2, 1.4, 9, x - 4, y - 8); return box3d(pts, 3, 2, 1.4); },
     (x, y) => `<rect x="${x - 7}" y="${y - 18}" width="14" height="24" rx="7" fill="none" stroke="${P.ink}" stroke-width="3"/><path d="M${x - 13},${y} a13,13 0 0 0 26,0 M${x},${y + 13} v7" fill="none" stroke="${P.ink}" stroke-width="3" stroke-linecap="round"/>`,
-    (x, y) => [[-14, 12], [-3, 22], [8, 8]].map(([dx, h]) => `<rect x="${x + dx}" y="${y + 12 - h}" width="8" height="${h}" rx="2" fill="${TEAL}"/>`).join(''),
+    (x, y) => [[-14, 12], [-3, 22], [8, 8]].map(([dx, h]) => `<rect x="${x + dx}" y="${y + 12 - h}" width="8" height="${h}" rx="2" fill="${MEAS}"/>`).join(''),
     (x, y) => [[-15, -15], [2, -15], [-15, 2], [2, 2]].map(([dx, dy]) => `<rect x="${x + dx}" y="${y + dy}" width="13" height="13" rx="2" fill="none" stroke="${P.good}" stroke-width="2.6"/>`).join(''),
     (x, y) => `<path d="M${x - 11},${y - 16} h15 l8,8 v24 h-23 z" fill="none" stroke="${P.accent}" stroke-width="2.6" stroke-linejoin="round"/>${L(x - 6, y, x + 6, y, P.accent, 2)}${L(x - 6, y + 6, x + 6, y + 6, P.accent, 2)}`,
   ];
@@ -676,7 +679,7 @@
     });
     return s;
   }
-  const reading = (x, y, txt) => `<rect x="${x}" y="${y}" width="64" height="24" rx="5" fill="#0E1A12"/>` + T(x + 32, y + 17, txt, { size: 13, weight: 650, fill: P.good, anchor: 'middle' });
+  const reading = (x, y, txt) => `<rect x="${x}" y="${y}" width="64" height="24" rx="5" fill="#2A1714"/>` + T(x + 32, y + 17, txt, { size: 13, weight: 650, fill: P.good, anchor: 'middle' });
 
   /* ---------- the voice: every caption is spoken as it appears (Web Speech API, the device's own speech) ----------
      One narrator, chosen by one fixed rule on every device: a warm, clear female English voice, Indian English first

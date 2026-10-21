@@ -10,7 +10,7 @@
     icon: 'assets/brand/univicoustic-icon.png',          // "UV" application icon, transparent background
     wordmark: 'assets/brand/univicoustic-wordmark.webp', // "UNIVICOUSTIC · MAKES SOUND SENSE", transparent background
     /* Official UniVicoustic websites, opened in a new browser tab: the product catalogue and the panel and wall
-       configurator, both from Treatment's product browser (top right), and the configurator again from Final Result.
+       configurator, from Treatment's product browser (top right) only.
        They are links only: nothing from the project is sent to them, nothing from them enters the project, and the app
        works the same when they are unreachable. */
     links: {

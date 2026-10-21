@@ -260,6 +260,13 @@ measured RT60 representing the room; A0 not exceeding the room's surface (if it 
 are wrong); laboratory α on the installed product (edge effects and placement are not modelled); air absorption part of
 A0 and unchanged by treatment. Only a measurement after installation confirms the result.
 
+Predicted Result leads with one card, in the same form as Assessment's verdict: after treatment, "Meets the target",
+"Nearly on target" (the average is inside the range but a judged band is not), "Still above the target" or "Drier than
+the target"; one sentence saying what the plan does and which sounds stay off; one tip (the app's amount, a second
+product, or less treatment); and three figures (now, measured; after, estimated, drawn apart; target) on the RT60 scale.
+"Try more or less" follows. The band-by-band verdict, the calculation written out at 1000 Hz, the checks above and the
+assumptions, and the band chart and table are under **Show the technical details**.
+
 **Choosing products (20 October 2026).** Treatment opens on the acoustic solutions: the catalogue grouped for choosing
 (`services/solutions.js`), in three views that keep the selection throughout (screen state `ui.catalog`; the selection is
 the plan, saved with the project):
@@ -331,10 +338,14 @@ Results …           every later step reads only the CURRENT measurement
 **Plain-language views.** Results and Assessment lead with what a sales person can read at a glance, built from the
 same band values (`AM.derive.soundGroups`): **low sounds** (125 and 250 Hz: footsteps, AC hum), **voices** (500, 1000 and
 2000 Hz: people talking, marked the most important) and **high sounds** (4000 Hz: keyboard clicks, clinking cups), each the
-mean of its bands that have a value, with a note when part of a group could not be measured. Results shows "How long
-sound rings in this room" (the three values) and "Can you trust this measurement?" (what was measured clearly, and what
-to do about what was not); Assessment shows "Where the room needs help" (each group on a too dull / just right / too
-echoey strip against the goal) and one sentence of advice, voices first. The decay curve, the RT60 by octave band chart
+mean of its bands that have a value, with a note when part of a group could not be measured. Results leads with one
+card: the **RT60 of the room** (its average over the bands the target is set for), how many positions it rests on, one
+sentence on what it means, and the three groups side by side, each with its value and which rings the longest or fades
+the quickest (worked out from the values; a group not fully measured says so instead). Everything else on Results (the
+two averages, the band chart, each position, "Can you trust this measurement?", the decay curve, each take and the takes
+table) is under **Show the technical details** in that card, whose summary names the all-band average and the 1000 Hz
+value. Assessment leads with the verdict and one sentence of advice, voices first, then "What to fix": each group with
+its value, too dull / just right / too echoey, and the bands that are off. The decay curve, the RT60 by octave band chart
 and table, and the band-by-band comparison are unchanged under **Show technical details** (`ui.details`, which stays
 open across re-renders and draws its charts when opened). The groups are a summary for reading; the room's RT60 compared
 with the target is still the six-band average.
@@ -554,7 +565,7 @@ prediction of the complete plan. Nothing is recalculated with another formula; m
 "Not available" with the reason. Without a valid measurement the report states that and gives no RT60, assessment or
 prediction. In the calculation, the inputs are shown as stored (volume, measured RT60 to 0.001 s, panel area, entered area,
 octave-band α to 0.01), each result is rounded half-up to 0.01 m², and the total is the sum of the parts as shown, so every printed
-line adds up. Measured values are dark, the target grey and dashed, predicted values violet, as in the app.
+line adds up. Measured values are dark, the target grey and dashed, predicted values red, as in the app.
 
 **Length.** The report aims for one page without a treatment plan and two with one. If the content does not fit, the
 same report is set in a smaller size (compact, then dense) rather than shortened; nothing is dropped to make it fit, so a
@@ -849,7 +860,7 @@ A reload of the same tab returns to the step on screen (sessionStorage). A new t
 ## Rules the code keeps
 
 - Measured values come only from the current valid measurement; predicted values only from the prediction engine.
-  They are always styled apart: measured = solid ink, predicted = dashed violet, target = neutral wash.
+  They are always styled apart: measured = solid ink, predicted = dashed red, target = neutral wash.
 - No value is shown that was not measured: before a measurement, values read "Not measured"; a band the recording could
   not support reads "Not reliable".
 - A treatment plan is used only when every product has a tested configuration and an amount above zero.
@@ -867,17 +878,22 @@ line, lit where steps are done); the workspace is a cool light grey with white p
 readouts in IBM Plex Mono with small units, labels are tracked capitals (the spacing of the wordmark). The context bar
 shows the project's readouts: room, target, measured, predicted.
 
-Colour carries meaning (tokens at the top of `css/app.css`):
+Colour: the two colours of the logo, red-orange `#EE4935` (the V//) and warm black `#231E1F` (the U), sampled from
+`assets/brand`, and their shades only (tokens at the top of `css/app.css`; the guide videos and the PDF report use the
+same):
 
-| Token | Use |
+| Shade | Use |
 |---|---|
-| graphite neutrals | surfaces, text, lines; the rail |
-| ink | text (the black of the wordmark) |
-| brand orange | the orange of the wordmark's tagline: the brand and "now" (the current step and its `//`, a live recording), primary actions, chosen options, panel icons. Never a status, never data |
-| teal (the one accent) | measured values and measurement information: live signal, positions, done steps, focus |
-| violet | predicted values (a model estimate), in dashed outlines |
+| warm greys, from the logo black | surfaces, lines; the rail (the logo black itself) |
+| black | text, measured values and measurement information, "within the target" |
+| red | the brand and "now" (the current step and its `//`, a live recording), primary actions, chosen options, panel icons |
+| red, outlined or dashed | predicted values (a model estimate), always drawn apart from measured |
+| light red (peach, coral) | done steps on the rail, warnings ("needs attention"), the product drawings |
+| deep red (maroon) | failed or invalid |
 | neutral wash, dashed edge | the target |
-| green / amber / crimson | target met / needs attention / failed or invalid |
+
+A status always carries its icon and its words as well, so it never rests on colour alone. Text colours meet WCAG AA
+(4.5:1) on their backgrounds in both themes.
 
 The interface is set in IBM Plex Sans; readouts in IBM Plex Mono. Both come from Google Fonts and fall back to the system
 faces offline. Light and dark mode share every token.
@@ -929,15 +945,17 @@ missing, and they are flagged in `data/import-report.md`, as are suspected decim
   Reset or close the project.
 - Projects are saved in the browser's localStorage (no account). Home lists them: pinned projects first, then the six most
   recently updated. Measurement History lists every project. Projects can be deleted (after a confirmation).
-- Final Result: **Measure the treated room** (a follow-up project with the same room, target and measuring setup, opened
-  at Measurement Setup) and, at the bottom, **Download PDF Report** (see Project report).
-- Official UniVicoustic websites, opened in a new tab (`ui.extLink`; the addresses are kept once, in `AM.brand.links`,
-  `js/data/brand.js`):
-  - **Product catalogue** (https://catalog.univicoustic.com/) and **Wall configurator**
-    (https://configurator.univicoustic.com/login): two buttons at the top right of Treatment's product browser, on every
-    view of it (all solutions, a category, a product), where products are being discovered.
-  - **Open Panel & Wall Configurator** (https://configurator.univicoustic.com/login) on Final Result, below the treatment
-    summary and above the project report, only when the project has a treatment plan. The configurator has its own sign-in.
+- Final Result leads with one summary card: the room's name on the brand band (the logo, the dark rail colour and its red
+  underline), the outcome as one verdict and one sentence, and the journey in four figures (RT60 now, treatment, RT60
+  after, target) on the RT60 scale; the project record and how the room was judged are under **Show the project
+  details**. Then what is left to do, in order: 1 get the PDF report (scrolls to the form), 2 **Measure the treated
+  room** (a follow-up project with the same room, target and measuring setup, opened at Measurement Setup). At the
+  bottom, the report form and **Download PDF Report** (see Project report).
+- Official UniVicoustic websites, opened in a new tab (the addresses are kept once, in `AM.brand.links`,
+  `js/data/brand.js`): **Product catalogue** (https://catalog.univicoustic.com/) and **Wall configurator**
+  (https://configurator.univicoustic.com/login), two buttons at the top right of Treatment's product browser, on every
+  view of it (all solutions, a category, a product). They appear nowhere else in the app. The configurator has its own
+  sign-in.
 
   They are links only: nothing from the project is sent to either site, nothing from them enters the project, the plan
   and the prediction use only the tested data in the app, and the app works the same when the sites are unreachable.

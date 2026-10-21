@@ -26,7 +26,7 @@
     { id: 'processing', title: 'Measurement Processing', nav: 'Processing', phase: 'Measure', owns: ['processing'], deps: ['measure'],
       purpose: 'Check that the recording can be trusted, choose a valid calculation, then calculate RT60.' },
     { id: 'results', title: 'Results', nav: 'Results', phase: 'Analyse', owns: [], deps: ['processing'],
-      purpose: 'The measured reverberation of the room, band by band, with how it was calculated.' },
+      purpose: 'The RT60 of the room as measured, in plain words. Every band, position and take is under the technical details.' },
     { id: 'assessment', title: 'Acoustic Assessment', nav: 'Acoustic Assessment', phase: 'Analyse', owns: [], deps: ['target', 'results'],
       purpose: 'Compare what was measured with the target, and decide whether the room needs treatment.' },
     { id: 'treatment', title: 'Treatment', nav: 'Treatment', phase: 'Improve', owns: ['treatment'], deps: ['room', 'assessment'],

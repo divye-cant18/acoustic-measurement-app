@@ -41,7 +41,7 @@ export function SoundField() {
     function draw(t: number) {
       if (!size()) return;
       const w = cv!.clientWidth, h = cv!.clientHeight, narrow = w < 700;
-      const css = getComputedStyle(cv!), line = css.getPropertyValue('--acoustic').trim() || '#0B7A72', brand = css.getPropertyValue('--brand').trim() || '#E2462E';
+      const css = getComputedStyle(cv!), line = css.getPropertyValue('--acoustic').trim() || '#423B3C', brand = css.getPropertyValue('--brand').trim() || '#EE4935';
       look.x += (look.tx - look.x) * 0.05; look.y += (look.ty - look.y) * 0.05;
       const yaw = -0.42 + 0.1 * Math.sin(t * 0.11) + look.x * 0.2, pitch = 0.86 + look.y * 0.07, dist = 4.7;
       const cyaw = Math.cos(yaw), syaw = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);

@@ -24,10 +24,12 @@
   const { fmt, isNum } = AM.util;
 
   const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+  // The logo's two colours and their shades, as in the app: warm black for text, measured values and "within"; the red
+  // (one step deeper, for print) for the brand and predicted values; a lighter and a deeper red for warnings and failures.
   const C = {
-    ink: hex('#14191B'), ink2: hex('#384145'), muted: hex('#566065'), faint: hex('#8A9496'), line: hex('#C9D0CF'), soft: hex('#E3E7E7'),
-    wash: hex('#F4F6F6'), brand: hex('#D93A27'), acoustic: hex('#0B7A73'), predicted: hex('#6A4BD6'), predictedTint: hex('#EEEAFB'),
-    targetWash: hex('#E7EBEB'), good: hex('#16884A'), warn: hex('#A8670A'), critical: hex('#C42E42'), white: [1, 1, 1],
+    ink: hex('#231E1F'), ink2: hex('#423B3C'), muted: hex('#6B6263'), faint: hex('#A1999A'), line: hex('#D6CFCE'), soft: hex('#E7E2E1'),
+    wash: hex('#F8F6F5'), brand: hex('#D23A25'), acoustic: hex('#231E1F'), predicted: hex('#D23A25'), predictedTint: hex('#FBE7E3'),
+    targetWash: hex('#EEEAE9'), good: hex('#231E1F'), warn: hex('#C25037'), critical: hex('#A3241A'), white: [1, 1, 1],
   };
   const STATUS = {
     within: { word: 'Within range', long: 'Within the target range', color: C.good },
