@@ -9,9 +9,10 @@
     descriptor: 'Acoustic Measurement & Room Analysis',
     icon: 'assets/brand/univicoustic-icon.png',          // "UV" application icon, transparent background
     wordmark: 'assets/brand/univicoustic-wordmark.webp', // "UNIVICOUSTIC · MAKES SOUND SENSE", transparent background
-    /* Official UniVicoustic websites, opened in a new browser tab: the product catalogue from Treatment (product
-       discovery), the panel and wall configurator from Final Result. They are links only: nothing from the project is
-       sent to them, nothing from them enters the project, and the app works the same when they are unreachable. */
+    /* Official UniVicoustic websites, opened in a new browser tab: the product catalogue and the panel and wall
+       configurator, both from Treatment's product browser (top right), and the configurator again from Final Result.
+       They are links only: nothing from the project is sent to them, nothing from them enters the project, and the app
+       works the same when they are unreachable. */
     links: {
       catalogue: 'https://catalog.univicoustic.com/',
       configurator: 'https://configurator.univicoustic.com/login',

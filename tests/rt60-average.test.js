@@ -265,9 +265,11 @@
           && techTable && !!rd.querySelector('details.tech [data-chart="decay"]') && !!rd.querySelector('details.tech [data-chart="bands"]') && !bad(rt),
         `technical table ${techTable}; decay chart ${!!rd.querySelector('details.tech [data-chart="decay"]')}`);
       const ah = W.get('assessment').view(ctx()).body, at = textOf(ah), ad = dom(ah);
-      check('8 Assessment shows "Where the room needs help": one strip per group with its status and one sentence of advice; the band chart and table are under "Show technical details"',
-        /Where the room needs help/.test(at) && ad.querySelectorAll('.ss-row:not(.ss-head)').length === 3 && !!ad.querySelector('.advice') && !!ad.querySelector('details.tech [data-chart="bands"]') && !bad(at),
-        (ad.querySelector('.advice') || {}).textContent);
+      const fixRows = [...ad.querySelectorAll('.fix-row')];
+      check('8 Assessment leads with the verdict and one sentence of advice, then "What to fix": one row per group with its value and status; the band chart and table are under "Show technical details"',
+        /What to fix/.test(at) && fixRows.length === 3 && fixRows.every(r => /\d\.\d\ds(Tooechoey|Toodull|Justright)|Notmeasured/.test(r.textContent.replace(/\s+/g, '')))
+          && !!ad.querySelector('.av-hero .av-verdict') && (ad.querySelector('.av-say') || {}).textContent.trim().length > 20 && !!ad.querySelector('details.tech [data-chart="bands"]') && !bad(at),
+        (ad.querySelector('.av-say') || {}).textContent);
     }
 
     /* ===== 7. the same average everywhere ===== */

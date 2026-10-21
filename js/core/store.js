@@ -391,9 +391,9 @@
     const p = AM.demo.newProject('new');
     p.room = Object.assign(copy(src.room), { name: `${src.room.name || 'Untitled room'} · after treatment` });
     p.target = copy(src.target);
-    // The same measuring setup, sweep level included, so the treated room is measured as the original was, starting
-    // again at the first position.
-    Object.assign(p.setup, { deviceKind: src.setup.deviceKind || null, deviceId: src.setup.deviceId || 'default', deviceLabel: src.setup.deviceLabel || '', outputId: src.setup.outputId || 'default', position: AM.demo.POSITIONS[0].id, sweepLevelDb: AM.analysis.sweepLevel(src.setup.sweepLevelDb) });
+    // The same measuring setup, sweep level and room preparation included (the same room, prepared the same way), so the
+    // treated room is measured as the original was, starting again at the first position.
+    Object.assign(p.setup, { deviceKind: src.setup.deviceKind || null, deviceId: src.setup.deviceId || 'default', deviceLabel: src.setup.deviceLabel || '', outputId: src.setup.outputId || 'default', position: AM.demo.POSITIONS[0].id, sweepLevelDb: AM.analysis.sweepLevel(src.setup.sweepLevelDb), prep: Object.assign({}, p.setup.prep, copy(src.setup.prep || {})) });
     p.followUpOf = src.id;
     p.completed = ['home', 'room', 'target'];
     p.lastStage = 'setup';

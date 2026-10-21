@@ -1200,6 +1200,16 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
 }
 .sol{display:flex;flex-direction:column;gap:16px;scroll-margin-top:16px}
 .sol-top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 16px}
+.sol-where{display:flex;flex-direction:column;gap:3px;min-width:0}
+/* the catalogue and the configurator, top right: official UniVicoustic websites in a new tab */
+.sol-links{display:flex;flex-wrap:wrap;gap:8px;margin-left:auto}
+.sol-link{--ext:var(--brand);flex:1 1 auto;min-height:40px;padding:8px 14px;text-decoration:none}
+.sol-link.is-config{--ext:var(--acoustic)}
+.sol-link svg{color:var(--ext)}
+.sol-link .ext-arrow{margin-left:-2px;color:var(--muted)}
+.sol-link:hover .ext-arrow{color:var(--ext);transform:translate(2px,-2px)}
+.sol-link:focus-visible{outline:2px solid var(--acoustic);outline-offset:3px}
+@media (max-width:760px){.sol-links{width:100%;margin-left:0}.sol-link{flex:1 1 150px}}
 .sol-crumbs{display:flex;align-items:center;flex-wrap:wrap;gap:4px;font-size:14px;color:var(--muted)}
 .sol-crumbs button{display:inline-flex;align-items:center;gap:2px;color:var(--ink-2);font-weight:500;padding:4px 6px;margin:-4px -2px;border-radius:6px}
 .sol-crumbs button:hover{background:var(--hover);color:var(--ink)}
@@ -1363,7 +1373,7 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
 .f-node.is-treatment{background:var(--surface)}
 .f-arrow{display:grid;place-items:center;color:var(--faint)}
 .record{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0 24px}
-/* links to official UniVicoustic websites: catalogue in Treatment, configurator in Final Result */
+/* links to official UniVicoustic websites: the configurator in Final Result (Treatment's are .sol-link buttons) */
 .ext-cta{--ext:var(--brand);--ext-ink:var(--brand-ink);--ext-tint:var(--brand-tint);display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;padding:14px 16px;border-radius:var(--r);background:var(--well);border:1px solid var(--line)}
 .ext-acoustic{--ext:var(--acoustic);--ext-ink:var(--acoustic-ink);--ext-tint:var(--acoustic-tint)}
 .ext-ic{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;background:var(--ext-tint);color:var(--ext-ink);flex:none;align-self:flex-start}
@@ -1642,4 +1652,81 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
   .card,.stat,.f-node{break-inside:avoid;box-shadow:none;border:1px solid #ccd3d2}
   .grid.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
   a{color:inherit}
+}
+
+/* Processing, "How long each pitch rings": one row per band, its bar as long as its RT60 and fading like a decay, a
+   plain tag, and the average in big type. The technical table is folded away under it. */
+.ring-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.ring-row{display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(0,2fr) 64px minmax(124px,auto);grid-template-areas:"k t v q" "w w w w";align-items:center;gap:4px 14px;padding:10px 14px;border-radius:var(--r);background:var(--well)}
+.ring-k{grid-area:k;display:flex;flex-direction:column;gap:1px;min-width:0}
+.ring-k b{font-size:14px;color:var(--ink)}
+.ring-track{grid-area:t;position:relative;height:12px;border-radius:999px;background:var(--sunken);overflow:hidden}
+.ring-track i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:linear-gradient(90deg,var(--acoustic) 0%,var(--acoustic) 55%,color-mix(in srgb,var(--acoustic) 45%,transparent) 100%);transform-origin:left;animation:ringgrow .8s var(--ease) both}
+.ring-row.is-none .ring-track{background:repeating-linear-gradient(135deg,var(--sunken) 0 6px,transparent 6px 12px);box-shadow:inset 0 0 0 1px var(--line-soft)}
+.ring-v{grid-area:v;font-family:var(--font-num);font-size:15px;font-weight:600;text-align:right;color:var(--ink)}
+.ring-row.is-none .ring-v{color:var(--faint)}
+.ring-q{grid-area:q;justify-self:start;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ring-q.is-good{color:var(--good-ink);background:var(--good-tint)}
+.ring-q.is-fair{color:var(--acoustic-ink);background:var(--acoustic-tint)}
+.ring-q.is-none{color:var(--muted);background:var(--surface);box-shadow:inset 0 0 0 1px var(--line)}
+.ring-why{grid-area:w;color:var(--muted)}
+.ring-sum{display:flex;flex-wrap:wrap;align-items:center;gap:8px 22px;padding:14px 18px;border-radius:var(--r);background:var(--acoustic-tint)}
+.ring-avg{display:flex;flex-direction:column;gap:2px}
+.ring-big-k{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--acoustic-ink)}
+.ring-big{font-family:var(--font-num);font-size:36px;font-weight:600;line-height:1;letter-spacing:-.03em;color:var(--acoustic-ink)}
+.ring-big small{font-family:var(--font);font-size:15px;font-weight:600;margin-left:3px;letter-spacing:0}
+.ring-say{flex:1;min-width:220px;display:flex;flex-direction:column;gap:4px}
+.ring-say p{margin:0}
+@keyframes ringgrow{from{transform:scaleX(0)}}
+@media (max-width:760px){
+  .ring-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"k v" "t t" "q q" "w w";padding:10px 12px}
+  .ring-q{margin-top:2px}
+}
+.method-pill{display:inline-flex;align-items:center;padding:4px 14px;border-radius:999px;font-family:var(--font-num);font-size:15px;font-weight:700;color:var(--on-action);background:var(--acoustic)}
+.method-pill.is-none{font-family:var(--font);font-size:13px;color:var(--muted);background:var(--well);box-shadow:inset 0 0 0 1px var(--line)}
+
+/* Acoustic Assessment: the verdict first, big and coloured, with the room's RT60 beside its target; then what to fix,
+   one row per sound group; the technical figures under "Show technical details". */
+.av-hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px 28px;align-items:center;padding:22px 24px;position:relative;overflow:hidden;--av:var(--critical);--av-ink:var(--critical-ink);--av-tint:var(--critical-tint)}
+.av-hero.is-good{--av:var(--good);--av-ink:var(--good-ink);--av-tint:var(--good-tint)}
+.av-hero.is-warn{--av:var(--warn);--av-ink:var(--warn-ink);--av-tint:var(--warn-tint)}
+.av-hero::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--av)}
+.av-main{display:flex;gap:16px;align-items:flex-start;min-width:0}
+.av-ic{flex:none;width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:var(--av-tint);color:var(--av)}
+.av-words{display:flex;flex-direction:column;gap:6px;min-width:0}
+.av-k{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.av-verdict{display:block;font-size:26px;font-weight:700;line-height:1.15;letter-spacing:-.015em;color:var(--av-ink)}
+.av-say{margin:2px 0 0;font-size:15px;line-height:1.5;color:var(--ink)}
+.av-next{margin:0;font-size:13.5px;line-height:1.5;color:var(--ink-2)}
+.av-figs{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+.av-fig{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border-radius:var(--r);background:var(--well)}
+.av-fig.is-room{background:var(--acoustic-tint)}
+.av-n{font-family:var(--font-num);font-size:32px;font-weight:600;line-height:1.05;letter-spacing:-.03em;color:var(--ink)}
+.av-fig.is-room .av-n{color:var(--acoustic-ink)}
+.av-n small{font-family:var(--font);font-size:14px;font-weight:600;margin-left:3px;letter-spacing:0;color:var(--muted)}
+.av-sub{font-size:12px;color:var(--muted)}
+.av-scale{grid-column:1/-1}
+.fix-card{gap:14px}
+.fix-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.fix-row{display:grid;grid-template-columns:40px minmax(130px,.9fr) 84px minmax(0,2fr);align-items:center;gap:6px 14px;padding:12px 14px;border-radius:var(--r);background:var(--well);border-left:4px solid var(--fx,var(--line));--fx:var(--line);--fx-ink:var(--muted);--fx-tint:var(--surface)}
+.fix-row.is-above{--fx:var(--critical);--fx-ink:var(--critical-ink);--fx-tint:var(--critical-tint)}
+.fix-row.is-below{--fx:var(--warn);--fx-ink:var(--warn-ink);--fx-tint:var(--warn-tint)}
+.fix-row.is-within{--fx:var(--good);--fx-ink:var(--good-ink);--fx-tint:var(--good-tint)}
+.fix-ic{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--fx-tint);color:var(--fx)}
+.fix-k{display:flex;flex-direction:column;gap:1px;min-width:0}
+.fix-k b{font-size:15px;color:var(--ink)}
+.fix-k span{font-size:12.5px;color:var(--muted)}
+.fix-v{font-family:var(--font-num);font-size:22px;font-weight:600;color:var(--ink);text-align:right}
+.fix-v small{font-family:var(--font);font-size:12.5px;font-weight:600;margin-left:2px;color:var(--muted)}
+.fix-say{display:flex;flex-direction:column;gap:3px;min-width:0;font-size:13.5px;line-height:1.45;color:var(--ink-2)}
+.fix-say>b{font-size:14px;color:var(--fx-ink)}
+.fix-bands{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
+.fix-band{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;color:var(--fx-ink);background:var(--fx-tint)}
+@media (max-width:980px){.av-hero{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:760px){
+  .av-hero{padding:18px 16px 18px 20px}
+  .av-ic{width:44px;height:44px}
+  .av-verdict{font-size:21px}
+  .fix-row{grid-template-columns:40px minmax(0,1fr) auto;grid-template-areas:"i k v" "s s s"}
+  .fix-ic{grid-area:i}.fix-k{grid-area:k}.fix-v{grid-area:v}.fix-say{grid-area:s}
 }

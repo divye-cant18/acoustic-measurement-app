@@ -116,7 +116,8 @@ export function SetupScreen({ ctx }: { ctx: Ctx }) {
           <ul className="bullets small">{[K.support, ...DEMO.PLACEMENT.slice(1)].map((t: string, i: number) => <li key={i}>{t}</li>)}</ul>
         </Card>
       </div>
-      <Card icon="list" cls="prep-card" title="Room preparation" sub={`${prepDone} of ${PREP().length} done`}>
+      <Card icon="list" cls="prep-card" title="Room preparation" sub={prepDone === PREP().length ? 'The room is ready.' : 'Check these, then confirm them all at once.'}
+        right={prepDone === PREP().length ? <Pill tone="good" text="Ready" icon="check" /> : <Btn action="prepAll" variant="primary" size="sm" icon="check">Yes, the room is ready</Btn>}>
         <div className="checks">{PREP().map(([k, label, hint]) => <Check key={k} id={`prep-${k}`} bind={`setup.prep.${k}`} checked={!!s.prep[k]} label={label} hint={hint} />)}</div>
       </Card>
       {/* The last thing before measuring, after the room is prepared. */}

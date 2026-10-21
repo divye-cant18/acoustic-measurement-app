@@ -281,3 +281,19 @@ edits the app's code on their own computer can still build a report. The databas
 Truly server-side enforcement would mean generating or signing the PDF on the server, or putting the measurement data
 behind authenticated access. That would require sign-in for sales representatives, which the product currently excludes
 (no login or accounts). It is a product decision, not made here.
+
+## Measuring the positions in one place (21 October 2026)
+
+The positions are measured on the Measure step without going back and forth:
+
+- **Room preparation:** "Yes, the room is ready" on Measurement Setup ticks the six checklist items at once (each can
+  still be ticked on its own). A follow-up project for the treated room starts with them ticked: the same room, prepared
+  the same way.
+- **One press per position:** Start measurement (or Measure P2, Retry P2) checks the background noise at that position first
+  when it has not been checked there, then plays the sweep straight away. The take still never starts without a
+  background check at its own position, and a check that is not usable, or stopped, starts no take.
+- **The result on the same screen:** the take is processed right after it, with Processing's own calculation
+  (stages/processing.js, `process`), while the Measure step stays on screen ("Working out the result"). A valid take
+  moves the next take to the next position that still needs one ("P1 done. Next: P2"); a take that is not valid says
+  why and offers Retry. With enough positions, See results marks Measurement and Processing done and opens Results.
+  Processing stays as the place to look at each take's details.

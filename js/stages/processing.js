@@ -60,8 +60,22 @@
     }
   }
 
+  /* Processes the latest take if it has not been yet: when this step is shown, or straight after the take on the
+     Measure step (its startTake). Resolves with the evaluation, or null when there was nothing to do or it was stopped.
+     Each job clears only itself: a cancelled job's late answer must not end the job that replaced it (another project
+     opened meanwhile). */
+  function process(p) {
+    const rec = p && p.measurement.recording;
+    if (!rec || rec.status !== 'captured' || outcome(p, rec)) return Promise.resolve(null);
+    if (job && job.recId === rec.id) return job.promise;
+    if (job) job.ctl.cancel();
+    const mine = job = { i: -1, recId: rec.id, ctl: PROC.run(rec, { noise: p.setup.noise, onStep: i => { if (job === mine) { mine.i = i; AM.app.render(); } } }) };
+    mine.promise = mine.ctl.done.then(result => { if (job === mine) job = null; apply(p, result); return result; }, () => { if (job === mine) job = null; return null; });
+    return mine.promise;
+  }
+
   W.define('processing', {
-    model: { outcome, job: () => job }, // read by the screen
+    model: { outcome, job: () => job, process }, // read by the screen; process also by the Measure step
     canContinue,
     continueLabel: 'View results',
     actions: {
@@ -70,14 +84,7 @@
       // The next position that has no valid take: chosen for the next take, then back to Measurement.
       nextPosition: ctx => { const nx = AM.derive.positions(ctx.project).next; if (nx) S.update(pp => { pp.setup.position = nx; }); S.go('measure'); },
     },
-    mount() {
-      const p = S.state.project, rec = p && p.measurement.recording;
-      if (!rec || rec.status !== 'captured' || job || outcome(p, rec)) return;
-      // Each job clears only itself: a cancelled job's late answer must not end the job that replaced it (another
-      // project opened on this step meanwhile).
-      const mine = job = { i: -1, recId: rec.id, ctl: PROC.run(rec, { noise: p.setup.noise, onStep: i => { if (job === mine) { mine.i = i; AM.app.render(); } } }) };
-      mine.ctl.done.then(result => { if (job === mine) job = null; apply(p, result); }, () => { if (job === mine) job = null; });
-    },
+    mount() { process(S.state.project); },
     leave() { if (job) { job.ctl.cancel(); job = null; } },
     // Developer tools: only a project with a real, valid measurement can pass this step.
     demoFill: p => !!AM.derive.measured(p),

@@ -408,6 +408,10 @@
     const p = S.state.project;
     S.set('room', Object.assign(JSON.parse(JSON.stringify(p.room)), { name: 'Guided positions', type: 'Meeting room', use: 'Meetings and presentations', L: 9, W: 7, H: 3 }));
     W.get('setup').demoFill(p);
+    // "Yes, the room is ready" ticks the whole room preparation checklist at once.
+    S.update(pp => { Object.keys(pp.setup.prep).forEach(k => { pp.setup.prep[k] = false; }); });
+    W.get('setup').actions.prepAll(ctx());
+    check('B0 "Yes, the room is ready" ticks every item of the room preparation checklist at once', Object.keys(p.setup.prep).length === 6 && Object.values(p.setup.prep).every(Boolean), JSON.stringify(p.setup.prep));
     status('Microphone…');
     await AM.live.requestAccess(p);
     await until(() => p.setup.permission === 'granted', 'microphone access');
@@ -443,8 +447,17 @@
     await sleep(300);
     // B2
     const mv = textOf(W.get('measure').view(ctx()).body);
-    check('B2 At P2 the take cannot start until the background is measured there: the Measure step says so (the check at P1 does not count)',
-      p.setup.position === 'P2' && /Check the background noise here at P2 first/.test(mv) && /Not measured here/.test(mv), mv.slice(mv.indexOf('Check the background noise here at P2'), mv.indexOf('Check the background noise here at P2') + 90));
+    check('B2 At P2 the take cannot start until the background is measured there: the Measure step says Start measurement checks it there first (the check at P1 does not count)',
+      p.setup.position === 'P2' && /checks the background noise there first/.test(mv) && /Not measured at P2 yet/.test(mv) && W.get('measure').model.startBlocker(p) === 'Check the background noise here at P2 first.' && W.get('measure').model.needsNoise(p),
+      mv.slice(mv.indexOf('Next: P2'), mv.indexOf('Next: P2') + 140));
+    // Pressing it at P2 starts the background check there, not the take; stopped here, the steps below measure by hand.
+    W.get('measure').actions.startTake(ctx());
+    const autoNoise = !!(AM.live.state.noise && AM.live.state.noise.auto) && !AM.live.state.take;
+    AM.live.cancelNoise();
+    await until(() => !AM.live.state.noise, 'the background check to stop');
+    await sleep(100);
+    check('B2 Start measurement at P2 checks the background there first, before any take; stopped, no take follows',
+      autoNoise && !AM.live.state.take && p.setup.noise.position === 'P1', `background check started: ${autoNoise}; take: ${!!AM.live.state.take}; background still from ${p.setup.noise.position}`);
     // B3: a take at P2 with a loud background (too little decay at 1 kHz): not valid.
     VR.rt = atP2; VR.rebuild();
     VR.setNoise(-48);

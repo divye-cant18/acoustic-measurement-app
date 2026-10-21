@@ -4,7 +4,7 @@
 import type { ReactNode } from 'react';
 import { am, D, DEMO, fmt, LIVE, PROC, RA, stageModel, ui } from '../lib';
 import type { Ctx, PrimaryAction, Project, Result } from '../am';
-import { Btn, Card, Icon, Kv, Note, NoteActions, NotReliable, Pill, Spin, TableWrap } from '../ui/kit';
+import { Btn, Card, Details, Icon, Note, NoteActions, NotReliable, Pill, Spin, TableWrap, TechH } from '../ui/kit';
 import { AverageSummary } from '../ui/blocks';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -95,14 +95,14 @@ export function ProcessingScreen({ ctx }: { ctx: Ctx }) {
       ) : null}
       {res.valid && !own.available ? <Note tone="warn" icon="alert"><b>Valid, but with no average RT60.</b>{` ${own.reason || ''} The room is compared with its target by the average of the bands that were measured, and at least half of them are needed, so without it there is no assessment, treatment amount or prediction. Measuring again (a quieter room, or a higher sweep level) can give those bands enough usable decay.`}</Note> : null}
       {notes.length ? <Note tone="warn"><b>Warnings.</b><ul className="bullets">{notes.map((n, i) => <li key={i}>{n}</li>)}</ul></Note> : null}
-      <div className="grid split">
-        <Card icon="sliders" title={`Calculation path at ${fmt.hz(ref.f)}`} sub="The reference band decides whether the measurement is valid."><Cascade band={ref} /></Card>
-        <Card icon="decay" title="Required usable decay">
-          <Kv rows={[['T20 (20 dB × 3), the value', `${PROC.REQUIRED.T20} dB`], ['T30 (30 dB × 2), the check', `${PROC.REQUIRED.T30} dB`]]} />
-          <p className="small muted">Each is the evaluation range plus a 5 dB start offset and a 10 dB margin above the recording background noise (ISO 3382). Usable decay is the room's own decay in each band: from where it starts, below the direct sound of the measuring device, down to the recording background noise.</p>
-        </Card>
-      </div>
-      <Card icon="bars" title="Band by band">
+      <Card icon="sliders" title="Calculation method" right={<span className={ref.path ? 'method-pill' : 'method-pill is-none'}>{ref.path || 'None'}</span>}
+        sub={ref.path ? `Used to work out RT60 for this take (at ${fmt.hz(ref.f)}, the band that decides whether a take is valid).` : `No method could be used: there was not enough sound above the background noise at ${fmt.hz(ref.f)}.`} />
+      <Card icon="bars" title="How long each pitch rings" sub="This take, from low sounds to high. A longer bar rings longer.">
+        <RingRows res={res} />
+        <RingSummary res={res} avg={own} />
+        <Details id="proc-bands-tech" summary="Show the technical details">
+        <TechH title={`Calculation path at ${fmt.hz(ref.f)}`} note="The reference band decides whether the measurement is valid." />
+        <Cascade band={ref} />
         <TableWrap>
           <table className="tbl">
             <thead><tr><th>Band</th><th className="r">Direct sound</th><th className="r">Usable decay</th><th>Path</th><th className="r">T20</th><th className="r">T30</th><th className="r">RT60</th><th className="r">r²</th><th>Quality</th></tr></thead>
@@ -122,6 +122,7 @@ export function ProcessingScreen({ ctx }: { ctx: Ctx }) {
         <AverageSummary avg={own} />
         <p className="small muted">{`Direct sound: how far the device's direct sound and earliest reflections lie above the start of the room's decay in that band. Above ${am.analysis.CRITERIA.decay.directAllowanceDb} dB the evaluation moves below them, so it measures the room, not the device.`}</p>
         {reasons.length ? <ul className="bullets small">{reasons.map((b: any) => <li key={b.f}><b>{`${fmt.hz(b.f)}:`}</b>{` ${b.reason}`}</li>)}</ul> : null}
+        </Details>
       </Card>
     </>;
   }
@@ -129,19 +130,53 @@ export function ProcessingScreen({ ctx }: { ctx: Ctx }) {
   return (
     <>
       {session}
-      <div className="grid split">
-        <Card icon="gauge" title="Processing steps" sub={`Take recorded ${fmt.when(rec.takenAt)}`} right={<Pill tone={tone} text={text} icon={ic} />}><ol className="psteps">{steps}</ol></Card>
-        <Card icon="info" title="How a result is earned">
-          <ol className="principle">
-            <li><span><b>Is the decay trustworthy?</b>Separate the device's own direct sound from the room's decay, then find the recording background noise in each band and how much of the room's decay lies above it.</span></li>
-            <li><span><b>Which calculation is valid?</b>T20 from at least 35 dB of usable decay, checked against T30 where 45 dB is usable.</span></li>
-            <li><span><b>Calculate RT60.</b>Only from a valid path and a straight decay. Otherwise stop and measure again.</span></li>
-          </ol>
-          <Note tone="info">Every value comes from this take's recording. Where the recording cannot support a value, none is given.</Note>
-        </Card>
-      </div>
+      <Card icon="gauge" title="Processing steps" sub={`Take recorded ${fmt.when(rec.takenAt)}`} right={<Pill tone={tone} text={text} icon={ic} />}><ol className="psteps">{steps}</ol></Card>
       {after}
     </>
+  );
+}
+
+/* ---------- the take's bands in plain words: how long each pitch rings ----------
+   The same values as the technical table below them, said for someone who does not know sound: each band named by the
+   sounds it carries (AM.derive.SOUND_GROUPS), a bar as long as its RT60, and whether it was measured clearly. A band
+   without a value says why in everyday words; its exact reason stays in the technical details. */
+const groupOf = (f: number) => (((D as any).SOUND_GROUPS || []) as any[]).find(g => g.bands.includes(f)) || null;
+function plainWhy(reason: string | null | undefined): string {
+  const r = String(reason || '');
+  if (/background/i.test(r)) return 'Too little sound above the room’s background noise to measure it.';
+  if (/straight|curv|linear|bend/i.test(r)) return 'The sound did not fade evenly enough to measure it.';
+  return 'It could not be measured reliably in this take.';
+}
+function RingRows({ res }: { res: any }) {
+  const vals: number[] = res.bands.map((b: any) => b.rt60).filter((v: any) => typeof v === 'number'), top = Math.max(1, ...vals) * 1.15;
+  return (
+    <ul className="ring-list">
+      {res.bands.map((b: any) => {
+        const g = groupOf(b.f), ok = b.rt60 != null, tone = !ok ? 'none' : b.quality === 'Good' ? 'good' : 'fair';
+        return (
+          <li className={`ring-row is-${tone}`} key={b.f}>
+            <span className="ring-k"><b>{g ? g.label : fmt.hz(b.f)}</b><span className="small muted">{`${fmt.hz(b.f)}${g ? ` · ${g.example}` : ''}`}</span></span>
+            <span className="ring-track" aria-hidden="true">{ok ? <i style={{ width: `${Math.min(100, (b.rt60 / top) * 100).toFixed(1)}%` }} /> : null}</span>
+            <span className="ring-v">{ok ? fmt.s(b.rt60) : '—'}</span>
+            <span className={`ring-q is-${tone}`}>{!ok ? 'Not measured' : tone === 'good' ? 'Measured clearly' : 'Measured'}</span>
+            {!ok ? <span className="ring-why small">{plainWhy(b.reason)}</span> : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+function RingSummary({ res, avg }: { res: any; avg: any }) {
+  const missing: number[] = res.bands.filter((b: any) => b.rt60 == null).map((b: any) => b.f), low = missing.some(f => f <= 250);
+  const left = missing.length ? ` ${missing.map(f => fmt.hz(f)).join(' and ')} ${missing.length > 1 ? 'are' : 'is'} left out.` : '';
+  return (
+    <div className="ring-sum">
+      <div className="ring-avg"><span className="ring-big-k">Average RT60, this take</span><span className="ring-big">{avg.available && avg.value != null ? <>{avg.value.toFixed(2)}<small>s</small></> : '—'}</span></div>
+      <div className="ring-say">
+        <p className="small">{avg.available && avg.value != null ? `RT60 is how long sound takes to fade away in the room. This is its average over the ${avg.n} pitches that could be measured.${left}` : `Not enough pitches could be measured to give an average.${left}`}</p>
+        {low ? <p className="small muted">Deep sounds are often too quiet from a laptop or phone speaker to measure. A quieter room or a louder test sound can help.</p> : null}
+      </div>
+    </div>
   );
 }
 

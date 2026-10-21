@@ -38,6 +38,32 @@
   const productById = new Map(products.map(p => [p.id, p]));
   const configById = new Map(configurations.map(c => [c.id, c]));
 
+  /* Names as shown: the source writes most product names in capitals, and a few with an internal prefix ("GEN_PENRAY 01
+     CLOUD"). They are shown in title case, with acronyms and the range names as written, without the prefix, and with a
+     type number at the end ("3D Embossed Panel-90") as ", type 90". The name as listed in the source stays as sourceName
+     (the grouping into solutions uses it); the type number is kept as type. No other field changes. */
+  const ACRONYMS = new Set(['VMT', 'PET', 'HD', 'NRC', '3D']);
+  const RANGES = new Set(products.map(p => String(p.category || '').toUpperCase()).filter(Boolean));
+  const TYPE_END = /-(\d{2,3})\s*$/;
+  function displayName(raw) {
+    let s = String(raw || '').replace(/^GEN[_\s]+/i, '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+    const type = (s.match(TYPE_END) || [])[1] || null;
+    if (type) s = s.replace(TYPE_END, '').trim();
+    s = s.split(' ').map(w => {
+      const u = w.toUpperCase();
+      if (ACRONYMS.has(u) || RANGES.has(u)) return u;
+      if (w === u && /[A-Z]{2}/.test(w)) return w.charAt(0) + w.slice(1).toLowerCase();
+      return /^[a-z]/.test(w) ? w.charAt(0).toUpperCase() + w.slice(1) : w;
+    }).join(' ');
+    return type ? `${s}, type ${type}` : s;
+  }
+  products.forEach(p => {
+    if (p.sourceName !== undefined) return;
+    p.sourceName = p.name;
+    p.type = (String(p.name).match(TYPE_END) || [])[1] || null;
+    p.name = displayName(p.name);
+  });
+
   // Browsing helpers derived once from the data (kept beside the products, never written back to the source).
   const summaries = new Map();
   const searchWords = new Map();
@@ -48,7 +74,7 @@
     const nrcs = cs.map(c => c.ratings.nrc).filter(x => typeof x === 'number');
     const warnings = p.flags.filter(f => f.severity === 'warning').length + cs.reduce((n, c) => n + c.flags.filter(f => f.severity === 'warning').length, 0);
     summaries.set(p.id, { configurationCount: cs.length, nrcMin: nrcs.length ? Math.min(...nrcs) : null, nrcMax: nrcs.length ? Math.max(...nrcs) : null, warnings });
-    searchWords.set(p.id, words([p.name, p.category, p.finish, `${p.gsm.raw} gsm`, `${p.thickness.raw} mm`, p.size.raw, p.application.raw,
+    searchWords.set(p.id, words([p.name, p.sourceName, p.category, p.finish, `${p.gsm.raw} gsm`, `${p.thickness.raw} mm`, p.size.raw, p.application.raw,
       ...cs.map(c => c.label), ...cs.map(c => c.test.certificate)].filter(Boolean).join(' ')));
   });
 

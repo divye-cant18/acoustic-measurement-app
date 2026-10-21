@@ -2,18 +2,19 @@
    in everyday categories, and each product's versions (thickness, weight, size) together under one name.
 
    Nothing here adds product data. A category is a way of grouping by what a product is, read from its own name in the
-   source (a cloud, a tile, wallpaper …); a solution is every product in the source with the same range and name; its
+   source (a cloud, a tile, wallpaper …); a solution is every product in the source with the same range and name (the
+   numbered types of one name, "-90", "-75", "-50", together); its
    description is put together only from its own data (range, finish, thickness, sizes, where it is applied, how many
    tested mountings, the tested NRC). The source has no floor products, so there is no floor category.
 
    Contract:
      CATEGORIES                     -> [{ id, name, purpose, where }] in display order
-     all()                          -> every solution: { key, name, range, category, kind, products: [variants], surfaces,
+     all()                          -> every solution: { key, name, types, range, category, kind, products: [variants], surfaces,
                                        thickness: [min, max] mm, sizes: [labels], mountings, nrcMin, nrcMax }
      byCategory(id)                 -> the solutions of one category
      get(key) / ofProduct(id)       -> one solution
      search(query)                  -> solutions whose name, range or finish matches every word
-     variantLabel(solution, product)-> what tells this version apart from the others ("25 mm · 3600 GSM")
+     variantLabel(solution, product)-> what tells this version apart from the others ("Type 90 · 25 mm · 3600 GSM")
      summary(solution)              -> one sentence from its data
      whereText(solution)            -> "For walls", "For ceilings", "For walls and ceilings" */
 (function (AM) {
@@ -58,18 +59,21 @@
   function build() {
     const by = new Map();
     CAT.getProducts().forEach(p => {
-      const key = `${p.category}|${p.name}`;
+      // One product per range and name as listed in the source; the types of one name ("-90", "-75", "-50") together.
+      const key = p.type ? `${p.category}|${p.sourceName.replace(/-\d{2,3}\s*$/, '').trim()}|types` : `${p.category}|${p.sourceName}`;
       if (!by.has(key)) by.set(key, []);
       by.get(key).push(p);
     });
     return [...by.entries()].map(([key, products]) => {
-      const p0 = products[0], category = categoryOf(p0.name);
-      // Versions from thin to thick, then light to heavy, as listed otherwise.
-      products = products.slice().sort((a, b) => (a.thickness.mm || 0) - (b.thickness.mm || 0) || (a.gsm.value || 0) - (b.gsm.value || 0));
+      const p0 = products[0], category = categoryOf(p0.sourceName);
+      const types = [...new Set(products.map(p => p.type).filter(Boolean))].sort((a, b) => Number(b) - Number(a));
+      const name = types.length ? `${p0.name.replace(/, type \d+$/, '')}, types ${types.length > 1 ? `${types.slice(0, -1).join(', ')} and ${types[types.length - 1]}` : types[0]}` : p0.name;
+      // Versions by type (highest number first), then from thin to thick, then light to heavy, as listed otherwise.
+      products = products.slice().sort((a, b) => (Number(b.type) || 0) - (Number(a.type) || 0) || (a.thickness.mm || 0) - (b.thickness.mm || 0) || (a.gsm.value || 0) - (b.gsm.value || 0));
       const sums = products.map(p => CAT.getSummary(p.id) || {}), nrcs = sums.flatMap(s => [s.nrcMin, s.nrcMax]).filter(isNum);
       const th = products.map(p => p.thickness.mm).filter(isNum);
       return {
-        key, name: p0.name, range: p0.category, category, kind: kindOf(p0.name, category), products,
+        key, name, types, range: p0.category, category, kind: kindOf(p0.sourceName, category), products,
         surfaces: [...new Set(products.flatMap(p => p.application.surfaces || []))],
         finishes: [...new Set(products.map(p => p.finish).filter(Boolean))],
         thickness: th.length ? [Math.min(...th), Math.max(...th)] : null,
@@ -93,9 +97,10 @@
   }
 
   // What tells one version apart from the others of its solution: only the fields that differ between them.
-  function variantLabel(sol, p) {
-    const vary = f => new Set(sol.products.map(f)).size > 1;
+  function variantLabel(sol, p, opts) {
+    const vary = f => new Set(sol.products.map(f)).size > 1, withType = !opts || opts.type !== false;
     return [
+      withType && vary(x => x.type) && p.type ? `Type ${p.type}` : null,
       vary(x => x.thickness.mm) && isNum(p.thickness.mm) ? `${p.thickness.mm} mm` : null,
       vary(x => x.gsm.raw) && p.gsm.raw ? `${p.gsm.raw} GSM` : null,
       vary(x => x.finish) ? p.finish : null,

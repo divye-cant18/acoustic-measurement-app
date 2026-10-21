@@ -66,6 +66,8 @@
       },
       measureNoise: ctx => LIVE.measureNoise(ctx.project),
       cancelNoise: () => LIVE.cancelNoise(),
+      // "Yes, the room is ready": every item of the checklist at once (each can still be ticked on its own).
+      prepAll: () => S.update(pp => { PREP.forEach(([k]) => { pp.setup.prep[k] = true; }); }),
     },
     mount(root, ctx) {
       const p = ctx.project;

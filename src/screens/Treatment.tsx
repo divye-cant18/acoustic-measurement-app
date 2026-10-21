@@ -4,7 +4,7 @@
 import { acoustics, am, CAT, D, DEMO, fmt, isNum, RA, SURF, TGT, ui } from '../lib';
 import type { Ctx, PrimaryAction, Project } from '../am';
 import { MountArt, RoomPreview, SolutionArt } from '../ui/solutions';
-import { AmountSlider, amountWords, Btn, Card, Chart, CoverageWarning, ExtLink, Icon, Kv, KvNote, Legend, More, Note, Pill, ResultPill, SelectInput, soundsAdvice, soundsText, SubH, TableWrap, whereWords } from '../ui/kit';
+import { AmountSlider, amountWords, Btn, Card, Chart, CoverageWarning, Icon, Kv, KvNote, Legend, More, Note, Pill, ResultPill, SelectInput, soundsAdvice, soundsText, SubH, TableWrap, whereWords } from '../ui/kit';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const variantText = (p: any) => [p.category, p.finish, p.gsm.raw && `${p.gsm.raw} GSM`, p.thickness.raw && `${p.thickness.raw} mm`, p.size.raw].filter(Boolean).join(' · ');
@@ -117,6 +117,7 @@ function ProductPage({ ctx, sol }: { ctx: Ctx; sol: any }) {
           <h3 className="sol-title is-big">{sol.name}<span className="sol-title-2">{S.whereText(sol)}</span></h3>
           <dl className="sol-specs">{specs.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
           {versions}
+          {sol.types && sol.types.length > 1 ? <p className="small muted">{`Types ${sol.types.slice(0, -1).join(', ')} and ${sol.types[sol.types.length - 1]} are named this way in the UniVicoustic product list, which does not describe how they differ. Pick a type under Version and compare their tested absorption under How it is mounted.`}</p> : null}
           <p className="small muted">{`Sizes: ${shown.size.raw || 'not stated in the source'}`}</p>
           {gap.length ? <Note tone="warn">{`This version's test has no absorption value at ${fmt.hzList(gap)}, which this room is judged on, so its effect cannot be predicted here. Choose another version${sol.products.length > 1 ? '' : ' or another product'}.`}</Note> : null}
         </div>
@@ -139,7 +140,7 @@ function ProductPage({ ctx, sol }: { ctx: Ctx; sol: any }) {
 }
 
 function Explorer({ ctx }: { ctx: Ctx }) {
-  const p = ctx.project, c = ctx.state.ui.catalog, S = SOL(), src = CAT.getSource();
+  const p = ctx.project, c = ctx.state.ui.catalog, S = SOL();
   const view = c.view || 'home', cat = S.CATEGORIES.find((x: any) => x.id === c.cat) || null, sol = c.group ? S.get(c.group) : null;
   let body;
   if (view === 'product' && sol) body = <ProductPage ctx={ctx} sol={sol} />;
@@ -156,21 +157,31 @@ function Explorer({ ctx }: { ctx: Ctx }) {
         ? (found.length ? <><p className="small muted">{`${found.length} product${found.length === 1 ? '' : 's'} found`}</p><ul className="sol-grid">{found.map((s: any) => <SolutionCard key={s.key} p={p} sol={s} />)}</ul></>
           : <div className="cat-empty">No products match. Try fewer words, or choose a category.</div>)
         : <ul className="sol-cats">{S.CATEGORIES.map((x: any) => <CategoryCard key={x.id} p={p} c={x} />)}</ul>}
-      <ExtLink tone="brand" glyph="panels" href={am.brand.links.catalogue} title="Discover acoustic products"
-        text="Explore acoustic products, finishes and applications to discover potential solutions for your room."
-        label="Explore UniVicoustic Product Catalogue"
-        note="Opens the UniVicoustic website in a new tab; this project stays as it is. To use a product here, choose it above: the prediction uses only the tested data in this list." />
     </>;
   }
   return (
     <section className="card sol" id="solutions" aria-label="Acoustic solutions">
       <div className="sol-top">
-        <nav className="sol-crumbs" aria-label="Where you are in the products">
-          {view === 'home' ? <span aria-current="page">All solutions</span> : <button type="button" data-action="solHome"><Icon name="chevL" size={15} sw={2.2} />All solutions</button>}
-          {cat && view !== 'home' ? <><Icon name="chevR" size={14} sw={2} />{view === 'category' ? <span aria-current="page">{cat.name}</span> : <button type="button" data-action="solCategory" data-value={cat.id}>{cat.name}</button>}</> : null}
-          {sol && view === 'product' ? <><Icon name="chevR" size={14} sw={2} /><span aria-current="page">{sol.name}</span></> : null}
-        </nav>
-        <span className="small muted">{`${S.all().length} products, tested data from ${src.file}`}</span>
+        <div className="sol-where">
+          <nav className="sol-crumbs" aria-label="Where you are in the products">
+            {view === 'home' ? <span aria-current="page">All solutions</span> : <button type="button" data-action="solHome"><Icon name="chevL" size={15} sw={2.2} />All solutions</button>}
+            {cat && view !== 'home' ? <><Icon name="chevR" size={14} sw={2} />{view === 'category' ? <span aria-current="page">{cat.name}</span> : <button type="button" data-action="solCategory" data-value={cat.id}>{cat.name}</button>}</> : null}
+            {sol && view === 'product' ? <><Icon name="chevR" size={14} sw={2} /><span aria-current="page">{sol.name}</span></> : null}
+          </nav>
+          <span className="small muted">{`${S.all().length} products, each with tested sound absorption`}</span>
+        </div>
+        {/* Official UniVicoustic websites, in a new tab. Links only: nothing from this project is sent to them, and a
+            product is used here only when it is chosen in this list (the prediction uses its tested data). */}
+        <div className="sol-links" role="group" aria-label="UniVicoustic websites">
+          <a className="btn btn-secondary sol-link" href={am.brand.links.catalogue} target="_blank" rel="noopener noreferrer"
+            title="Opens the UniVicoustic product catalogue in a new tab. Nothing from this project is sent to it." aria-label="Product catalogue (opens in a new tab)">
+            <Icon name="panels" size={16} sw={2} />Product catalogue<span className="ext-arrow" aria-hidden="true">↗</span>
+          </a>
+          <a className="btn btn-secondary sol-link is-config" href={am.brand.links.configurator} target="_blank" rel="noopener noreferrer"
+            title="Opens the UniVicoustic panel and wall configurator in a new tab, where you sign in. It does not receive this room, the products or the results." aria-label="Wall configurator (opens in a new tab)">
+            <Icon name="wall" size={16} sw={2} />Wall configurator<span className="ext-arrow" aria-hidden="true">↗</span>
+          </a>
+        </div>
       </div>
       {body}
     </section>
@@ -260,7 +271,7 @@ function MountingPicker({ p, product, active, picked, richer }: { p: Project; pr
 
 /* ---------- selected product, its configurations, and the chosen configuration's α(f) ---------- */
 function ProductDetails({ sel, refBand }: { sel: any; refBand: number }) {
-  const p = sel.product, c = sel.configuration, cfgs: any[] = CAT.getAcousticConfigurations(p.id), src = CAT.getSource();
+  const p = sel.product, c = sel.configuration, cfgs: any[] = CAT.getAcousticConfigurations(p.id);
   const columns = CAT.getColumns();
   const noteFor = (defs: any[], key: string) => (defs.find(d => d.key === key) || { notes: [] }).notes;
   let detail;
@@ -288,7 +299,7 @@ function ProductDetails({ sel, refBand }: { sel: any; refBand: number }) {
         {grouped ? null : <p className="small">{'Octave-band α used by the prediction: '}{DEMO.BANDS.map((f: number, i: number) => <span key={f}>{i ? ' · ' : ''}{`${fmt.hz(f)} `}{octCell(f)}</span>)}</p>}
         <p className="small muted">{`The prediction uses one α per octave band: the mean of the three one-third-octave values inside it, at most 1.00 (as ISO 11654 forms the practical absorption coefficient).${above1 ? ' Values above 1.00 are as reported by the test, which is common in reverberation-room measurements; no surface absorbs more sound than reaches it.' : ''}`}</p>
         <FlagList flags={[...p.flags, ...c.flags]} />
-        <div className="src"><Icon name="doc" size={14} sw={1.9} /><span>{`${src.file} › ${c.source.sheet} › row ${c.source.row}${c.source.srNo != null ? ` (SR ${c.source.srNo})` : ''} · Certificate ${c.test.certificate || '—'} · ${c.test.method || 'Method not stated'}${c.test.lab ? `, ${c.test.lab}` : ''} · NRC ${c.ratings.nrc != null ? c.ratings.nrc.toFixed(2) : '—'} as per test report`}</span></div>
+        <div className="src"><Icon name="doc" size={14} sw={1.9} /><span>{`Certificate ${c.test.certificate || '—'} · ${c.test.method || 'Method not stated'}${c.test.lab ? `, ${c.test.lab}` : ''} · NRC ${c.ratings.nrc != null ? c.ratings.nrc.toFixed(2) : '—'} as per test report`}</span></div>
       </div>
     );
   } else {
@@ -348,7 +359,7 @@ function PlanCard({ p, plan, pred, a, sel }: { p: Project; plan: any; pred: any;
         {items.map(it => (
           <li className={it.id === sel.id ? 'is-active' : undefined} key={it.id}>
             <span className="sol-mini" aria-hidden="true">{solOf(it) ? <SolutionArt kind={solOf(it).kind} mm={it.product.thickness.mm} variant="mini" /> : null}</span>
-            <span className="plan-what"><b>{it.product.name}</b><span className="small muted">{[solOf(it) && solOf(it).products.length > 1 ? SOL().variantLabel(solOf(it), it.product) : null, it.complete ? amountWords(p, it) : 'Choose how it is mounted'].filter(Boolean).join(' · ')}</span></span>
+            <span className="plan-what"><b>{it.product.name}</b><span className="small muted">{[solOf(it) && solOf(it).products.length > 1 ? SOL().variantLabel(solOf(it), it.product, { type: false }) : null, it.complete ? amountWords(p, it) : 'Choose how it is mounted'].filter(Boolean).join(' · ')}</span></span>
             <span className="plan-act">
               <Btn action="editItem" value={it.id} variant="ghost" size="sm" pressed={it.id === sel.id}>Edit</Btn>
               <button type="button" className="iconbtn" data-action="removeItem" data-value={it.id} aria-label={`Remove ${it.product.name} from the plan`}><Icon name="x" size={16} sw={2} /></button>

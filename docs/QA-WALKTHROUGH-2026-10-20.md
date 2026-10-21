@@ -149,3 +149,22 @@ categories → products → one product → your selection → View results.
   longer blocks View results.
 - Works at phone width (products become compact rows); the existing calculation (prediction, verdict, amounts) is
   unchanged and reused.
+
+## Measuring flow (21 October 2026, from the review)
+
+- Six preparation ticks on every project: one "Yes, the room is ready" button ticks them all; a re-measure of the same room
+  starts with them ticked. Fixed.
+- At a new position the background check had to be started by hand before the take: Start measurement now checks the
+  background there first, then measures. Fixed.
+- Measure → Processing → Measure for every position: each take's result is worked out on the Measure screen, the next
+  position is selected, and See results appears when enough positions are measured. Fixed.
+
+## Product names (21 October 2026, from the review)
+
+- The internal file name ("tested data from NRC Master File 02.07.2026.xlsx") was shown on the product pages: now "27
+  products, each with tested sound absorption", and a version's test data names its certificate, method and lab only. Fixed.
+- Names came straight from the spreadsheet (capitals, "GEN_PENRAY 01 CLOUD"): now "Penray 01 Cloud", "Flat Round Cloud",
+  "UNIZEN Acoustic Panel", acronyms and range names as written. Fixed.
+- Seven near-identical "3D Embossed Panel-90/75/50" entries: the types of one name are one product ("3D Embossed Panel,
+  types 90, 75 and 50", and the PET one), with "Type 90 · 12 mm · 2000 GSM" … as versions. The product list does not say what
+  90, 75 and 50 mean, so the page says so rather than guessing. Fixed as far as the data allows.

@@ -385,6 +385,18 @@
     check('The description of a solution comes from its own data (UNIZEN panel: range, finish, thickness 9–25 mm, 4 versions; for walls and ceilings)',
       u && SO.summary(u) === 'UNIZEN range · PET Solid · 9–25 mm thick · 4 versions' && SO.whereText(u) === 'For walls and ceilings' && SO.search('unizen 25 mm').some(s => s.key === u.key),
       u ? `${SO.summary(u)} · ${SO.whereText(u)}` : 'missing');
+    // Names as shown: title case, acronyms and range names as written, no internal prefix; the source name is kept.
+    const nm = src => (products.find(p => p.sourceName === src) || {}).name;
+    check('Product names are shown cleaned: "GEN_PENRAY 01 CLOUD" as "Penray 01 Cloud", "FLAT ROUND CLOUD" as "Flat Round Cloud", "UNIZEN ACOUSTIC PANEL" as "UNIZEN Acoustic Panel", "PET WOOL" as "PET Wool"; every source name kept',
+      nm('GEN_PENRAY 01 CLOUD') === 'Penray 01 Cloud' && nm('FLAT ROUND CLOUD') === 'Flat Round Cloud' && nm('UNIZEN ACOUSTIC PANEL') === 'UNIZEN Acoustic Panel' && nm('PET WOOL') === 'PET Wool'
+        && products.every(p => p.sourceName && !/^GEN[_\s]/i.test(p.name) && !/_/.test(p.name)),
+      ['GEN_PENRAY 01 CLOUD', 'FLAT ROUND CLOUD', 'UNIZEN ACOUSTIC PANEL', 'PET WOOL'].map(x => `${x} → ${nm(x)}`).join(' · '));
+    // The numbered types of one name ("3D Embossed Panel-90", "-75", "-50") are one product, its types told apart.
+    const typed = products.filter(p => /^3D Embossed Panel-\d+$/.test(p.sourceName)), emb = typed.length ? SO.ofProduct(typed[0].id) : null, plain = products.find(p => p.sourceName === '3D Embossed Panel');
+    check('The types 90, 75 and 50 of "3D Embossed Panel" are one product with its types as versions ("Type 90 · 12 mm · 2000 GSM"); the plain 3D Embossed Panel stays its own product',
+      emb && emb.name === '3D Embossed Panel, types 90, 75 and 50' && typed.every(p => SO.ofProduct(p.id) === emb) && emb.products.length === typed.length && JSON.stringify(emb.types) === '["90","75","50"]'
+        && /^Type \d+ · /.test(SO.variantLabel(emb, emb.products[0])) && !/Type/.test(SO.variantLabel(emb, emb.products[0], { type: false })) && plain && SO.ofProduct(plain.id) !== emb,
+      emb ? `${emb.name}: ${emb.products.map(p => SO.variantLabel(emb, p)).join(' | ')}` : 'missing');
   }
 
   const el = document.getElementById('out');

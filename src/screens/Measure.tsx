@@ -11,16 +11,19 @@ import { LevelMeter, MicLine } from '../ui/blocks';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface MeasureModel {
   takeFor(p: Project): any; noiseRun(p: Project): boolean; evaluated(p: Project, rec: any): boolean; failedLatest(p: Project): boolean;
-  startBlocker(p: Project): string | null; noiseElsewhere(p: Project): boolean; screenState(p: Project): string; curPlan(): any; primaryFor(p: Project): PrimaryAction | null;
+  startBlocker(p: Project, auto?: boolean): string | null; noiseElsewhere(p: Project): boolean; needsNoise(p: Project): boolean; screenState(p: Project): string; curPlan(): any; primaryFor(p: Project): PrimaryAction | null;
 }
 const M = () => stageModel<MeasureModel>('measure');
 
 const HEAD: Record<string, [string, string, string, string]> = {
   mic: ['Microphone needed', 'Connect the microphone to measure. Its status is shown below.', 'neutral', 'Not connected'],
-  'not-measured': ['Measure the background first', 'The background noise is measured before the test signal, so the decay can be judged against it.', 'neutral', 'Not measured'],
+  'not-measured': ['Ready to measure', 'Press Start measurement. It checks the background noise first, then plays the test sound.', 'neutral', 'Ready'],
   'noise-elsewhere': ['Check the background here', 'This is a new position: check the background noise here first, then start the measurement.', 'neutral', 'Not measured here'],
   'noise-invalid': ['Background not usable', 'The last background measurement could not be used: the reason is shown below. Measure it again.', 'critical', 'Noise not usable'],
   'measuring-noise': ['Measuring the background', 'Keep the room quiet. The level is read from the microphone.', 'acoustic', 'Measuring'],
+  'auto-noise': ['Checking the background first', 'Keep the room quiet. The test sound follows by itself in a few seconds.', 'acoustic', 'Checking'],
+  analysing: ['Working out the result', 'Checking the recording and calculating RT60. A few seconds.', 'acoustic', 'Analysing'],
+  'all-done': ['Measuring done', 'Enough positions are measured. Press See results, or measure another position if you like.', 'good', 'Done'],
   'ready-for-rt60': ['Ready to measure', 'Start the take. This device plays the test sweep through its speaker and records the room with its microphone.', 'good', 'Ready'],
   'measuring-rt60': ['Measuring', 'Recording the room. Stay still and silent until the take is complete.', 'live', 'Recording'],
   processing: ['Analysing the recording', 'Recovering the impulse response and the decay in each band.', 'acoustic', 'Analysing'],
@@ -75,7 +78,7 @@ function NoiseRow({ p }: { p: Project }) {
       <span className="live-v">{run ? <><Spin />Checking the background…</> : n ? `${cap(ui.noiseWord(n.status))} · checked ${ui.timeOf(n.takenAt)}${n.position ? ` at ${n.position}` : ''}` : 'Not checked yet'}</span>
       {a ? <span className="small tone-critical">{`${attemptWords(a)}${n ? ' The earlier check still counts.' : ''}`}</span> : null}
       {change != null ? <span className="small tone-warn">{`${Math.abs(change)} dB ${change > 0 ? 'louder' : 'quieter'} than during the current RT60 measurement. Measure again to confirm it.`}</span> : null}
-      {M().noiseElsewhere(p) && n ? <span className="small tone-warn">{`Checked at ${n.position}. Check it again here at ${p.setup.position} before measuring.`}</span> : null}
+      {M().noiseElsewhere(p) && n ? <span className="small tone-warn">{`Checked at ${n.position}. Start measurement checks it again here first.`}</span> : null}
       <div className="hstack">{run ? <Btn action="cancelNoise" variant="ghost" size="sm" icon="x">Cancel</Btn>
         : <Btn action="measureNoise" size="sm" icon={n ? 'refresh' : 'gauge'} disabled={busy || LIVE.state.mic.status !== 'live'}>{!n ? 'Check background' : M().noiseElsewhere(p) ? 'Check here' : 'Check again'}</Btn>}</div>
     </LiveRow>
@@ -188,15 +191,26 @@ function CurrentCard({ p }: { p: Project }) {
 
 export function MeasureScreen({ ctx }: { ctx: Ctx }) {
   const p = ctx.project, m = M(), take = m.takeFor(p), rec = p.measurement.recording as any, cur = D.measured(p);
-  const st = m.screenState(p), [title, sub, tone, pill] = HEAD[st] || HEAD['ready-for-rt60'];
+  const st0 = m.screenState(p), st = st0 === 'measuring-noise' && LIVE.state.noise && LIVE.state.noise.auto ? 'auto-noise' : st0;
+  let [title, sub, tone, pill] = HEAD[st] || HEAD['ready-for-rt60'];
   const plan = m.curPlan(), phases: any[] = MEAS.phases(plan), running = !!take, sec: number = take ? take.sec : 0;
   const pos = DEMO.POSITIONS.find((x: { id: string }) => x.id === p.setup.position) || DEMO.POSITIONS[0];
   const kind = LIVE.kindOf(p), K = DEMO.DEVICE_KINDS[kind];
   const retry = p.measurement.retry;
-  const blocker = m.startBlocker(p), canStart = !blocker;
+  const blocker = m.startBlocker(p, true), canStart = !blocker;
   // The console speaks of the position selected for the next take: a take made at another position is not this one's.
   const recHere = !!rec && D.positionOf(rec) === p.setup.position, failed = m.failedLatest(p);
   const hereRow = (D.positions(p).rows as any[]).find(r => r.current), triedHere = recHere || (!!hereRow && hereRow.status !== 'not-measured');
+  // A new position: what was just done, and where to go now. A take that was not valid: why, and what to press.
+  if (st === 'noise-elsewhere') {
+    const done = cur && D.positionOf(cur) !== pos.id ? D.positionOf(cur) : null;
+    title = `${done ? `${done} done. ` : ''}Next: ${pos.id}, ${pos.name.toLowerCase()}`;
+    sub = `Move the ${K.noun} there and press Start measurement. It checks the background noise there first, then measures.`;
+    pill = 'Next position';
+  } else if (st === 'take-invalid') {
+    const why = p.processing.attempt && p.processing.attempt.reason;
+    [title, sub, tone, pill] = [`The take at ${pos.id} was not valid`, `${why ? `${why} ` : ''}Fix it, then press Retry ${pos.id} to measure again.`, 'critical', 'Not valid'];
+  }
   const stepState = (ph: any) => {
     if (!running) return recHere && !failed ? 'done' : 'idle';
     if (ph.id === 'complete') return 'idle';
@@ -261,7 +275,7 @@ export function MeasureScreen({ ctx }: { ctx: Ctx }) {
             {running
               ? <Btn action="cancelTake" icon="stop" disabled={take.phase === 'quality'}>Cancel</Btn>
               : <button type="button" className="btn btn-primary is-rec" data-action="startTake" disabled={canStart ? undefined : true}><span className="rec"><Icon name="rec" size={16} sw={2} /></span>{` ${triedHere ? 'Measure again' : 'Start measurement'}`}</button>}
-            <span className="small muted">{running ? 'Leaving this step cancels the take.' : canStart ? (cur ? 'A new take becomes the current measurement only if it is valid.' : `Uses this ${K.noun}'s own speaker and microphone.`) : blocker || ''}</span>
+            <span className="small muted">{running ? 'Leaving this step cancels the take.' : canStart ? (m.needsNoise(p) ? 'Checks the background noise here first, then measures.' : cur ? 'A new take becomes the current measurement only if it is valid.' : `Uses this ${K.noun}'s own speaker and microphone.`) : blocker || ''}</span>
           </div>
         </div>
       </Card>

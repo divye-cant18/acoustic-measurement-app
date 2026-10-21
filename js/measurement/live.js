@@ -139,15 +139,18 @@
   async function resume() { const s = AM.audioIO.current(); if (s) { try { await s.resume(); } catch (e) { /* still paused */ } state.mic.status = s.status; render(); } }
 
   /* ---------- background noise ---------- */
-  function measureNoise(p) {
-    if (state.noise || state.take) return;
+  // `after` (optional) runs once the check has ended, however it ended: the Measure step uses it to go straight on to
+  // the take after checking the background at a new position.
+  function measureNoise(p, after) {
+    if (state.noise || state.take) return false;
     const ctl = MEAS.measureNoise({
       deviceId: p.setup.deviceId, outputId: outputOf(p), context: contextOf(p), onLevel,
       onProgress: (sec, frac) => { if (state.noise) { state.noise.sec = sec; state.noise.frac = frac; notify(); } },
     });
-    state.noise = { pid: p.id, sec: 0, frac: 0, ctl };
+    state.noise = { pid: p.id, sec: 0, frac: 0, ctl, auto: !!after };
     render();
-    ctl.done.then(r => applyNoise(p, r), e => applyNoiseError(p, e)).finally(() => { state.noise = null; render(); });
+    ctl.done.then(r => applyNoise(p, r), e => applyNoiseError(p, e)).finally(() => { state.noise = null; render(); if (after) after(); });
+    return true;
   }
   const attemptOf = r => ({ status: 'invalid', takenAt: r.takenAt, leqDbfs: r.leqDbfs, spreadDb: r.spreadDb, jumpDb: r.jumpDb, driftDb: r.driftDb, reasons: r.reasons, warnings: r.warnings });
   function applyNoise(p, r) {
@@ -174,8 +177,9 @@
   function cancelNoise() { if (state.noise) { state.noise.ctl.cancel(); later('Background noise measurement cancelled.'); } }
 
   /* ---------- one take ---------- */
-  function measureRT60(p) {
-    if (state.take || state.noise) return;
+  // `after` (optional) runs once the take has ended, however it ended: the Measure step uses it to work out the result.
+  function measureRT60(p, after) {
+    if (state.take || state.noise) return false;
     const env = new Float32Array(240);
     const ctl = MEAS.measureRT60({
       deviceId: p.setup.deviceId, outputId: outputOf(p), onLevel, context: contextOf(p), levelDb: AM.analysis.sweepLevel(p.setup.sweepLevelDb),
@@ -193,7 +197,8 @@
     });
     state.take = { pid: p.id, phase: 'prepare', sec: 0, frac: 0, total: 0, seconds: null, ctl, envelope: env, levelDb: AM.analysis.sweepLevel(p.setup.sweepLevelDb) };
     render();
-    ctl.done.then(t => applyTake(p, t), e => applyTakeError(p, e)).finally(() => { state.take = null; render(); });
+    ctl.done.then(t => applyTake(p, t), e => applyTakeError(p, e)).finally(() => { state.take = null; render(); if (after) after(); });
+    return true;
   }
   function applyTake(p, take) {
     if (!isOpen(p)) return;

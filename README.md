@@ -268,7 +268,11 @@ the plan, saved with the project):
   wool and infill. Each is a collection card, as in a product catalogue: a drawing of a typical product in it, where it
   goes (walls, ceiling or both), what it is, the finishes of its products and how many there are.
 - **Products** of a category: every product with the same range and name is one product, its thicknesses, weights and
-  sizes its versions (90 catalogue entries, 31 products). A card has an original drawing of the product in a small lit
+  sizes its versions; the numbered types of one name ("3D Embossed Panel-90", "-75", "-50") are one product with
+  "Type 90" … as versions, and a note that the product list does not describe how the types differ (90 catalogue entries,
+  27 products). Names are shown in title case, with acronyms (VMT, PET, HD, NRC, 3D) and range names as written and
+  internal prefixes ("GEN_") left out; the name as listed in the source is kept as sourceName. The source file's name is
+  not shown. A card has an original drawing of the product in a small lit
   room (wall products on a wall with a chair for scale; clouds and ceiling tiles in a room seen in perspective), and a
   description put together only from its data: range, finish, thickness, number of versions, where it is applied, the
   tested NRC. On hover the card lifts, light passes over the drawing and clouds sway (no motion with reduced motion).
@@ -929,8 +933,9 @@ missing, and they are flagged in `data/import-report.md`, as are suspected decim
   at Measurement Setup) and, at the bottom, **Download PDF Report** (see Project report).
 - Official UniVicoustic websites, opened in a new tab (`ui.extLink`; the addresses are kept once, in `AM.brand.links`,
   `js/data/brand.js`):
-  - **Explore UniVicoustic Product Catalogue** (https://catalog.univicoustic.com/) at the top of Treatment's product
-    browser ("Choose a product", "Add a product to the plan", "Change the product"), where products are being discovered.
+  - **Product catalogue** (https://catalog.univicoustic.com/) and **Wall configurator**
+    (https://configurator.univicoustic.com/login): two buttons at the top right of Treatment's product browser, on every
+    view of it (all solutions, a category, a product), where products are being discovered.
   - **Open Panel & Wall Configurator** (https://configurator.univicoustic.com/login) on Final Result, below the treatment
     summary and above the project report, only when the project has a treatment plan. The configurator has its own sign-in.
 

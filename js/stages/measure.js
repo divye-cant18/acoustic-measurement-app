@@ -19,8 +19,9 @@
   const evaluated = (p, rec) => !!rec && ((p.processing.result && p.processing.result.recordingId === rec.id) || (p.processing.attempt && p.processing.attempt.recordingId === rec.id));
   const failedLatest = p => { const f = p.measurement.failed, r = p.measurement.recording; return !!f && (!r || f.takenAt > r.takenAt); };
 
-  // Why a take cannot start right now (null when it can).
-  function startBlocker(p) {
+  /* Why a take cannot start right now (null when it can). With `auto`, a background check missing at this position is
+     not a reason: Start measurement then checks the background here first and goes straight on to the take. */
+  function startBlocker(p, auto) {
     const mic = LIVE.state.mic;
     if (takeFor(p)) return 'Wait for the measurement to finish.';
     if (noiseRun(p)) return 'Wait for the background noise measurement to finish.';
@@ -38,10 +39,15 @@
     // A take recorded at another position and not processed yet would be replaced by the new one: process it first.
     const rec = p.measurement.recording;
     if (rec && rec.status === 'captured' && !evaluated(p, rec) && AM.derive.positionOf(rec) !== p.setup.position) return `Process the take recorded at ${AM.derive.positionOf(rec)} first (Process recording), so it is not replaced.`;
-    if (!p.setup.noise) return 'Measure the background noise first.';
-    if (noiseElsewhere(p)) return `Check the background noise here at ${p.setup.position} first.`;
+    if (!auto && !p.setup.noise) return 'Measure the background noise first.';
+    if (!auto && noiseElsewhere(p)) return `Check the background noise here at ${p.setup.position} first.`;
     return null;
   }
+  // Start measurement checks the background first when it has not been checked at this position.
+  const needsNoise = p => !p.setup.noise || noiseElsewhere(p);
+  // The take being worked out on this step, straight after it was recorded (Processing's job).
+  const proc = () => (W.get('processing') || {}).model || {};
+  const analysing = (p, rec) => { const j = proc().job && proc().job(); return !!(j && rec && j.recId === rec.id); };
   // The latest background check was made at another position than the one selected for the next take.
   const noiseElsewhere = p => !!(p.setup.noise && p.setup.noise.position && p.setup.noise.position !== p.setup.position);
 
@@ -54,20 +60,38 @@
     if (!p.setup.noise) return p.setup.noiseAttempt ? T.NOISE_INVALID : T.NOT_MEASURED;
     if (noiseElsewhere(p)) return 'noise-elsewhere';
     if (failedLatest(p)) return T.FAILED;
-    if (rec && !evaluated(p, rec)) return 'captured';
+    if (rec && !evaluated(p, rec)) return analysing(p, rec) ? 'analysing' : 'captured';
+    const s = AM.derive.positions(p), here = s.rows.find(r => r.current);
+    if (here && here.status === 'invalid') return 'take-invalid';
+    if (s.complete && here && here.status === 'valid') return 'all-done';
     return T.READY_FOR_RT60;
   }
   function primaryFor(p) {
     const rec = p.measurement.recording;
     if (takeFor(p)) return null;                                  // continue (disabled while running)
-    if (rec && rec.status === 'captured' && !evaluated(p, rec)) return null; // "Process recording"
+    if (noiseRun(p)) return { label: 'Checking the background', action: 'continue' }; // disabled until it has finished
+    if (rec && rec.status === 'captured' && !evaluated(p, rec)) return analysing(p, rec) ? { label: 'Working out the result', action: 'continue' } : null; // "Process recording"
     // The position selected for the next take has no valid take yet (or its latest failed): measure it.
     const here = AM.derive.positions(p).rows.find(r => r.current);
-    if (here && here.status !== 'valid' && !startBlocker(p)) return { label: here.status === 'invalid' || here.status === 'failed' ? `Retry ${here.id}` : `Measure ${here.id}`, action: 'startTake', rec: true };
+    if (here && here.status !== 'valid' && !startBlocker(p, true)) return { label: here.status === 'invalid' || here.status === 'failed' ? `Retry ${here.id}` : `Measure ${here.id}`, action: 'startTake', rec: true };
+    // Enough positions measured: straight on to the results (Processing stays there for the details of each take).
+    if (AM.derive.positions(p).complete && AM.derive.measured(p) && !failedLatest(p)) return { label: 'See results', action: 'seeResults' };
     // Nothing waiting to be processed: the step leads on to Processing, where the latest take's outcome is shown.
     const onward = rec || AM.derive.measured(p) ? { label: 'Continue to Processing', action: 'continue' } : null;
     if (AM.derive.measured(p) && !failedLatest(p)) return onward;
-    return !startBlocker(p) ? { label: rec || AM.derive.measured(p) ? 'Measure again' : 'Start measurement', action: 'startTake', rec: true } : onward;
+    return !startBlocker(p, true) ? { label: rec || AM.derive.measured(p) ? 'Measure again' : 'Start measurement', action: 'startTake', rec: true } : onward;
+  }
+
+  /* The result of a take, worked out on this step straight after it (Processing's own calculation). A valid one moves
+     the next take to the next position that still needs one. */
+  function workOut(p) {
+    const run = proc().process;
+    if (!run) return;
+    run(p).then(result => {
+      if (!result || !result.valid || S.state.project !== p || S.state.current !== 'measure') return;
+      const s = AM.derive.positions(p);
+      if (!s.complete && s.next && s.next !== p.setup.position) S.update(pp => { pp.setup.position = s.next; });
+    });
   }
 
   /* ---------- live drawing ---------- */
@@ -130,21 +154,42 @@
 
   W.define('measure', {
     // Read by the screen.
-    model: { takeFor, noiseRun, evaluated, failedLatest, startBlocker, noiseElsewhere, screenState, curPlan, primaryFor },
+    model: { takeFor, noiseRun, evaluated, failedLatest, startBlocker, noiseElsewhere, needsNoise, screenState, curPlan, primaryFor },
     canContinue: p => {
       if (takeFor(p)) return { ok: false, reason: 'Wait for the measurement to finish.' };
+      if (noiseRun(p)) return { ok: false, reason: 'Checking the background noise. Wait for it to finish.' };
       const rec = p.measurement.recording;
-      if (rec && rec.status === 'captured') return { ok: true };
+      if (rec && rec.status === 'captured') return analysing(p, rec) ? { ok: false, reason: 'Working out the result of the take. A few seconds.' } : { ok: true };
       if (AM.derive.measured(p)) return { ok: true };
       return { ok: false, reason: startBlocker(p) || 'Run the measurement first.' };
     },
     continueLabel: 'Process recording',
     actions: {
+      /* One press measures a position: the background is checked here first when it has not been (a new position),
+         then the take, then its result is worked out on this step. A valid result moves on to the next position that
+         still needs one; with enough positions, See results is offered. */
       startTake: ctx => {
-        const why = startBlocker(ctx.project);
+        const p = ctx.project, why = startBlocker(p, true);
         if (why) { S.toast(why); return; }
         if (S.state.ui.sheet && S.state.ui.sheet.kind === 'guide') S.state.ui.sheet = null; // never play the video during a take
-        LIVE.measureRT60(ctx.project);
+        const here = () => S.state.project === p && S.state.current === 'measure';
+        const take = () => {
+          const before = p.measurement.recording && p.measurement.recording.id;
+          LIVE.measureRT60(p, () => { const r = p.measurement.recording; if (here() && r && r.id !== before && r.status === 'captured') workOut(p); });
+        };
+        if (!needsNoise(p)) { take(); return; }
+        const was = p.setup.noise && p.setup.noise.takenAt;
+        LIVE.measureNoise(p, () => {
+          const n = p.setup.noise; // checked here, and usable: straight on to the take
+          if (here() && n && n.takenAt !== was && n.position === p.setup.position && !startBlocker(p)) take();
+        });
+      },
+      // Enough positions: Measurement and Processing are done, on to Results.
+      seeResults: ctx => {
+        const p = ctx.project, s = AM.derive.positions(p), chk = W.get('processing').canContinue(p);
+        if (!s.complete || !chk.ok) { S.toast(chk.ok ? `Measure ${s.need} more position${s.need > 1 ? 's' : ''} first.` : chk.reason); return; }
+        S.complete('measure'); S.complete('processing');
+        S.go('results');
       },
       cancelTake: () => LIVE.cancelTake(),
       // Selects the position for the next take (each take records it). Nothing measured changes.
