@@ -137,6 +137,10 @@ categories → products → one product → your selection → View results.
 - Drawings and cards refined after the UniVicoustic online catalogue (inspiration only, nothing copied): collection
   cards for the categories, a catalogue header with a row of facts on a product, hover motion, a deeper drawing for a
   thicker version, and a room sketch under "How much" that fills in as the slider moves.
+- Mounting (21 October, from a review): the tested ways of mounting were only behind a closed "Change how it is mounted"
+  link after adding, and the product header counted the ways over all versions. Now "How it is mounted" is always open on
+  the product page with every tested way of the version shown (drawing, plain name, absorption bars, NRC), can be picked
+  before adding, and the header counts the version's own ways.
 - A product page shows only what that product needs: versions, how it is mounted (the app's recommendation), how much
   (slider), where it goes, and the result. A version whose test has no value in a band the room is judged on is marked
   and cannot be added (found while testing: such a version stopped the app from working out the amounts of the others).

@@ -20,7 +20,9 @@
       target or measurement steps; the measurement code does not reference the surfaces
    11 a project saved before the surfaces, migrated by the app's own load
    12 the report: surfaces described, measured value unchanged, prediction after treatment with its assumptions, no
-      untreated-room prediction */
+      untreated-room prediction
+   13 how a product is mounted: every tested way shown on the product page; one picked before adding is kept, the
+      app's best stays marked and can be chosen again */
 (function () {
   'use strict';
   const results = window.ROOM_SURFACES_TEST = [];
@@ -504,6 +506,45 @@
         pdf ? `${pdf.bytes.length} bytes, ${pdf.doc.pages.length} pages; unsupported characters: ${[...(pdf.doc.unsupported || [])].join(' ') || 'none'}` : err);
     }
 
+    /* ===== 13. how a product is mounted (Treatment, through its own actions and the screen) ===== */
+    status('Mounting…');
+    {
+      const T = W.get('treatment').actions, tc = () => ({ project: S.state.project, state: S.state });
+      const ok = c => !CAT.getOctaveAbsorption(c.id, B).missing.length;
+      const multi = CAT.getProducts().find(q => q.size.options.some(o => o.areaM2 > 0) && CAT.getAcousticConfigurations(q.id).filter(ok).length >= 3);
+      const cfgs = CAT.getAcousticConfigurations(multi.id), good = cfgs.filter(ok), sol = AM.services.solutions.ofProduct(multi.id);
+      S.set('treatment', { items: [], active: null });
+      S.go('treatment');
+      T.solOpen(tc(), sol.key); T.solVariant(tc(), multi.id);
+      await sleep(400);
+      const shownBefore = document.querySelectorAll('#app #mounting .mt').length;
+      const it = () => D.treatmentItems(S.state.project).find(x => x.product.id === multi.id);
+      // Added without a pick: the app's best mounting for this room.
+      T.solAdd(tc(), multi.id);
+      await sleep(300);
+      const rec = it().recommendedConfig;
+      check('Added without a pick: the app\'s best mounting is used', rec && it().configuration.id === rec, it().configuration.label);
+      // Picked before adding: another complete mounting, which is kept when the product is added.
+      T.removeItem(tc(), it().id);
+      const want = good.find(c => c.id !== rec);
+      T.solMount(tc(), want.id);
+      T.solAdd(tc(), multi.id);
+      await sleep(400);
+      const pressed = [...document.querySelectorAll('#app #mounting .mt[aria-pressed="true"] .mt-src')].map(e => e.textContent);
+      const marked = [...document.querySelectorAll('#app #mounting .mt')].filter(b => b.querySelector('.mt-rec')).map(b => b.querySelector('.mt-src').textContent);
+      check('How it is mounted: every tested way of the version shown is on the product page, with "Let the app choose" before it is added',
+        shownBefore === cfgs.length + 1 && document.querySelectorAll('#app #mounting .mt').length === cfgs.length, `${multi.name}: ${cfgs.length} tested ways; cards before adding ${shownBefore}, after ${document.querySelectorAll('#app #mounting .mt').length}`);
+      check('A mounting picked before adding is the one used and ticked; the app\'s best is still recorded and marked, with "Use the app\'s choice"; the pick is cleared',
+        it().configuration.id === want.id && it().recommendedConfig === rec && pressed.length === 1 && pressed[0].includes(want.label)
+          && marked.length === 1 && marked[0].includes(cfgs.find(c => c.id === rec).label) && !!document.querySelector('#app #mounting .card-hr button') && S.state.ui.catalog.config == null,
+        `used ${it().configuration.label}; app's best ${cfgs.find(c => c.id === rec).label}; ticked ${pressed.join(', ')}; marked ${marked.join(', ')}`);
+      T.pickConfig(tc(), rec);
+      await sleep(300);
+      const back = it();
+      check('Choosing the app\'s mounting again: it is used, its amount worked out by the app, and the "Use the app\'s choice" button goes',
+        back.configuration.id === rec && back.amountBy === 'app' && back.quantity >= 0 && !document.querySelector('#app #mounting .card-hr button'),
+        `${back.configuration.label}, ${back.quantity} panels`);      S.set('treatment', { items: [], active: null });
+    }
     status('Done');
     document.title = `${results.filter(t => t.ok).length}/${results.length} passed`;
     return results;

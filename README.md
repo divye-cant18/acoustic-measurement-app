@@ -274,7 +274,12 @@ the plan, saved with the project):
 - **A product:** a catalogue header (category and range, name, where it goes, a row of facts from the data: finish,
   thickness, tested NRC, tested ways of mounting), its drawing drawn deeper for a thicker version, its versions (a version
   whose tests have no value in a band the room is judged in is marked and cannot be added: its effect cannot be predicted),
-  "Add to my selection", then how it is mounted and how much, with the result. "How much" has a sketch of the room that
+  then **How it is mounted**: every tested way of that version side by side, each with a cut-through drawing (wall, air
+  gap, filling, backing, panel), its name in plain words, how much of low sounds, voices and high sounds it absorbs (its
+  octave-band α) and its NRC. Before the product is added, "Let the app choose" is preselected, or a mounting can be picked
+  and is used when it is added; in the selection a pick changes the mounting at once and the amounts are worked out again,
+  the app's best for the room stays marked, and "Use the app's choice" goes back to it. A mounting without a test value in a
+  judged band cannot be picked. Then "Add to my selection", and how much, with the result. "How much" has a sketch of the room that
   fills in as the slider moves: the share of the free walls or ceiling the amount covers (the plan's other products there
   in grey), laid out tidily, not the real positions.
 - **Your selection** above it: each product with its drawing, version and amount, Edit, Remove (with Undo), Add a product,

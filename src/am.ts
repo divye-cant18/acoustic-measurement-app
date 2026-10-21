@@ -84,7 +84,7 @@ export interface UiState {
   toast: string | null; band: number; confirm: string | null; open?: Record<string, boolean>;
   // The tour of the screen (src/shell/Tour.tsx) and the Help menu on a step's top bar.
   tour?: { kind: 'home' | 'step'; i: number; at: string } | null; help?: boolean;
-  catalog: { query: string; category: string; surface: string; browsing: boolean; adding: boolean; view?: 'home' | 'category' | 'product'; cat?: string | null; group?: string | null; variant?: string | null }; [k: string]: unknown;
+  catalog: { query: string; category: string; surface: string; browsing: boolean; adding: boolean; view?: 'home' | 'category' | 'product'; cat?: string | null; group?: string | null; variant?: string | null; config?: string | null }; [k: string]: unknown;
 }
 export interface AppState { project: Project | null; projects: Project[]; current: string; ui: UiState }
 export interface Ctx { project: Project; state: AppState; store: Store; render: () => void }

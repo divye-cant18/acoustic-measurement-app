@@ -337,6 +337,34 @@ function detail(kind: string, q: Pt[]): ReactNode {
   return null;
 }
 
+/* ---------- how it is mounted: a cut through the wall, the room to the right ---------- */
+type Mount = { mounting: string | null; airGapMm: number | null; cavityFill: { material: string; thicknessMm: number | null } | null; backing: unknown };
+/** A tested mounting in section: the wall, any air gap (with its fixings and filling), a backing panel, then the
+    product, with sound arriving from the room. The gap grows with its depth in mm (compressed, deeper always wider). */
+export function MountArt({ cond }: { cond: Mount }) {
+  const id = svgId(useId()), gapMm = cond.mounting === 'Air gap' && cond.airGapMm ? cond.airGapMm : 0;
+  const gap = gapMm ? Math.min(40, 4 + Math.sqrt(gapMm) * 2) : 0, back = cond.backing ? 4 : 0, x0 = 18, known = !!cond.mounting || !!cond.backing;
+  const fillW = cond.cavityFill && gapMm ? gap * Math.min(1, (cond.cavityFill.thicknessMm || gapMm) / gapMm) : 0;
+  const px = x0 + gap + back, pw = 7, sx = px + pw + 14;
+  return (
+    <svg className="mt-art" viewBox="0 0 120 64" aria-hidden="true" focusable="false">
+      <Defs id={id} />
+      <rect x={0} y={0} width={120} height={64} fill={`url(#${id}w)`} />
+      <rect x={4} y={4} width={x0 - 4} height={56} fill={V('prop')} />
+      {Array.from({ length: 7 }, (_, k) => <path key={k} d={`M4 ${10 + k * 8}l${x0 - 4} -8`} stroke={V('prop-2')} strokeWidth={0.8} />)}
+      {gap ? <>
+        <rect x={x0} y={8} width={gap} height={5} fill={V('prop-2')} />
+        <rect x={x0} y={51} width={gap} height={5} fill={V('prop-2')} />
+        {fillW ? <><rect x={x0} y={13} width={fillW} height={38} fill={V('prop-hi')} />{Array.from({ length: 6 }, (_, k) => <path key={k} d={`M${x0 + 1} ${17 + k * 6}q${fillW / 4} -2.5 ${fillW / 2} 0t${fillW / 2 - 1} 0`} fill="none" stroke={V('prop-2')} strokeWidth={0.7} />)}</> : null}
+        <path d={`M${x0} 3.5H${x0 + gap}M${x0} 2v3M${x0 + gap} 2v3`} stroke={V('groove')} strokeWidth={0.8} />
+      </> : null}
+      {back ? <rect x={x0 + gap} y={6} width={back} height={52} fill={V('edge')} /> : null}
+      <rect x={px} y={6} width={pw} height={52} rx={0.8} fill={`url(#${id}p)`} stroke={known ? V('edge') : V('groove')} strokeWidth={0.8} strokeDasharray={known ? undefined : '2 2'} />
+      {[0, 1, 2].map(k => <path key={k} d={`M${sx + k * 7} ${22 - k * 3}q6 ${10 + k * 3} 0 ${20 + k * 6}`} fill="none" stroke={V('groove')} strokeWidth={1} strokeLinecap="round" opacity={0.7 - k * 0.18} />)}
+    </svg>
+  );
+}
+
 /** How much of the walls or ceiling an amount covers, in a room sketch: `share` is this product's part of the free
     surface there (0–1), `others` the part the plan's other products take there. The layout is tidy, not the real one. */
 export function RoomPreview({ kind, placement, share, others = 0 }: { kind: string; placement: string; share: number; others?: number }) {

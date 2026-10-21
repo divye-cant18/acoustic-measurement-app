@@ -3,22 +3,13 @@
    (js/stages/treatment.js). The prediction adds every item's own area × α band by band. */
 import { acoustics, am, CAT, D, DEMO, fmt, isNum, RA, SURF, TGT, ui } from '../lib';
 import type { Ctx, PrimaryAction, Project } from '../am';
-import { RoomPreview, SolutionArt } from '../ui/solutions';
+import { MountArt, RoomPreview, SolutionArt } from '../ui/solutions';
 import { AmountSlider, amountWords, Btn, Card, Chart, CoverageWarning, ExtLink, Icon, Kv, KvNote, Legend, More, Note, Pill, ResultPill, SelectInput, soundsAdvice, soundsText, SubH, TableWrap, whereWords } from '../ui/kit';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const variantText = (p: any) => [p.category, p.finish, p.gsm.raw && `${p.gsm.raw} GSM`, p.thickness.raw && `${p.thickness.raw} mm`, p.size.raw].filter(Boolean).join(' · ');
 const trimNum = am.util.trimNum;
 
-function configChips(c: any): string[] {
-  const k = c.condition, chips: string[] = [];
-  if (k.mounting === 'Direct fix') chips.push('Direct fix');
-  if (k.mounting === 'Air gap' && isNum(k.airGapMm)) chips.push(`Air gap ${trimNum(k.airGapMm)} mm`);
-  if (k.cavityFill) chips.push(`Fill: ${k.cavityFill.material} ${trimNum(k.cavityFill.thicknessMm)} mm`);
-  if (k.backing) chips.push(`Backing: ${k.backing.description} ${trimNum(k.backing.thicknessMm)} mm`);
-  if (k.sourceFacing) chips.push(k.sourceFacing);
-  return chips;
-}
 const FlagList = ({ flags }: { flags: any[] }) => (!flags.length ? null : (
   <ul className="flags">{flags.map((f, i) => <li className={`flag flag-${f.severity}`} key={i}><Icon name={f.severity === 'warning' ? 'alert' : 'info'} size={14} sw={2} /><span>{f.message}</span></li>)}</ul>
 ));
@@ -106,11 +97,13 @@ function ProductPage({ ctx, sol }: { ctx: Ctx; sol: any }) {
     );
   // The facts row, as in a catalogue: all from the data.
   const cat = S.CATEGORIES.find((x: any) => x.id === sol.category), thick = shown.thickness && isNum(shown.thickness.mm) ? shown.thickness.mm : null;
+  // A mounting picked before the product is added (screen state); used when it is added.
+  const cfgsShown: any[] = CAT.getAcousticConfigurations(shown.id), picked = !active && c.config && cfgsShown.some((x: any) => x.id === c.config) ? c.config : null;
   const specs: [string, string][] = [
     ['Finish', sol.finishes.join(' / ') || 'Not stated'],
     ['Thickness', mmText(sol.thickness) || 'Not stated'],
     ['Tested NRC', nrc ? nrc.replace('Tested NRC ', '') : 'Not stated'],
-    ['Mounting', nOf(sol.mountings, 'tested way')],
+    ['Mounting', nOf(cfgsShown.length, 'tested way')],
   ];
   return (
     <div className="sol-product">
@@ -128,15 +121,16 @@ function ProductPage({ ctx, sol }: { ctx: Ctx; sol: any }) {
           {gap.length ? <Note tone="warn">{`This version's test has no absorption value at ${fmt.hzList(gap)}, which this room is judged on, so its effect cannot be predicted here. Choose another version${sol.products.length > 1 ? '' : ' or another product'}.`}</Note> : null}
         </div>
       </div>
+      {gap.length ? null : <MountingPicker p={p} product={shown} active={active} picked={picked} richer={sol.products.filter((x: any) => x.id !== shown.id && CAT.getAcousticConfigurations(x.id).length > cfgsShown.length).map((x: any) => S.variantLabel(sol, x))} />}
       {active ? <>
-        <div className="grid split"><ProductDetails sel={active} refBand={DEMO.REFERENCE_BAND} /><AmountCard p={p} sel={active} pred={pred} a={a} /></div>
+        <div className="grid split"><AmountCard p={p} sel={active} pred={pred} a={a} /><ProductDetails sel={active} refBand={DEMO.REFERENCE_BAND} /></div>
         <div className="sol-actions">
           <Btn action="removeItem" value={active.id} variant="ghost" icon="trash">Remove from my selection</Btn>
           <Btn action="solHome" icon="check">Done: choose another product</Btn>
         </div>
       </> : (
         <div className="sol-add">
-          <div className="sol-add-t"><b>Not in your selection yet</b><span className="small muted">Add it, and the app picks how it is mounted and works out how much your room needs. You can change both.</span></div>
+          <div className="sol-add-t"><b>Not in your selection yet</b><span className="small muted">{picked ? 'Add it, mounted as you picked above, and the app works out how much your room needs. You can change both afterwards.' : 'Add it, and the app picks the best mounting and works out how much your room needs. You can change both afterwards.'}</span></div>
           <Btn action="solAdd" value={shown.id} variant="primary" icon="plus" reason={gap.length ? 'This version has no test data for a band this room is judged on. Choose another version.' : undefined}>Add to my selection</Btn>
         </div>
       )}
@@ -183,6 +177,87 @@ function Explorer({ ctx }: { ctx: Ctx }) {
   );
 }
 
+/* ---------- how it is mounted: every tested way for the version shown, side by side ----------
+   Each mounting is a tested configuration from the source: a cut-through drawing, its name in plain words, how much
+   it absorbs of low sounds, voices and high sounds (its octave-band α, AM.derive.SOUND_GROUPS) and its NRC. In the
+   selection a choice changes the item's mounting (pickConfig) and the amounts are worked out again; before the
+   product is added it is kept for when it is (solMount). A mounting without a test value in a band this room is
+   judged on cannot be predicted, so it cannot be chosen. */
+function mountTitle(k: any): string {
+  if (k.mounting === 'Direct fix') return k.backing ? 'Fixed flat, on a backing panel' : 'Fixed flat to the surface';
+  if (k.mounting === 'Air gap') {
+    const fill = k.cavityFill ? `, filled with ${k.cavityFill.material}${isNum(k.cavityFill.thicknessMm) ? ` (${trimNum(k.cavityFill.thicknessMm)} mm)` : ''}` : '';
+    return `${isNum(k.airGapMm) ? `${trimNum(k.airGapMm)} mm air gap` : 'Air gap'} behind it${fill}`;
+  }
+  return k.backing ? 'On a backing panel' : 'How it was tested is not stated';
+}
+const mountExtras = (k: any): string[] => [
+  k.backing ? `Backing: ${k.backing.description}${isNum(k.backing.thicknessMm) ? ` ${trimNum(k.backing.thicknessMm)} mm` : ''}` : null,
+  k.sourceFacing ? String(k.sourceFacing).replace(/^./, (ch: string) => ch.toUpperCase()) : null,
+].filter(Boolean) as string[];
+function absorbsBy(cfgId: string) {
+  const oct = CAT.getOctaveAbsorption(cfgId, DEMO.BANDS).values, groups: any[] = (D as any).SOUND_GROUPS || [];
+  return groups.map(g => { const v = g.bands.map((f: number) => oct[f]).filter(isNum); return { id: g.id, label: g.label, v: v.length ? v.reduce((s: number, x: number) => s + x, 0) / v.length : null }; });
+}
+function MountingPicker({ p, product, active, picked, richer }: { p: Project; product: any; active: any; picked: string | null; richer: string[] }) {
+  const cfgs: any[] = CAT.getAcousticConfigurations(product.id), used: number[] = D.summaryBands(p);
+  if (!cfgs.length) return null;
+  const current = active && active.configuration ? active.configuration.id : null, rec = active ? active.recommendedConfig : null, one = cfgs.length === 1;
+  const on = (id: string) => one || (active ? current === id : picked === id);
+  const sub = one ? `This version was tested one way only.${richer.length ? ` More ways were tested for ${richer.join(', ')}: choose that version above to see them.` : ''}`
+    : active ? (current && current === rec ? `${cfgs.length} tested ways for this version. The app picked the best one for your room; choose another if it will be installed differently.` : `${cfgs.length} tested ways for this version. You picked this one; the app's best for your room is marked.`)
+      : `${cfgs.length} tested ways for this version. The app picks the best one for your room when you add it, or choose one yourself if you know how it will be installed.`;
+  return (
+    <Card icon="wall" title="How it is mounted" sub={sub} cls="mt-card" id="mounting"
+      right={active && rec && current !== rec ? <Btn action="pickConfig" value={rec} size="sm" cls="btn-wrap">Use the app's choice</Btn> : null}>
+      {one ? null : <p className="small muted">An air gap or a filling behind a panel usually helps it absorb lower sounds, and needs more depth on the wall. The bars show how much of the sound each tested way absorbs.</p>}
+      <ul className="mt-grid" role="list">
+        {!active && !one ? (
+          <li>
+            <button type="button" className="mt mt-auto" data-action="solMount" data-value="" aria-pressed={!picked}>
+              <span className="mt-on" aria-hidden="true"><Icon name="check" size={13} sw={2.6} /></span>
+              <span className="mt-pic"><Icon name="seal" size={30} sw={1.6} /></span>
+              <span className="mt-body">
+                <span className="mt-title">Let the app choose</span>
+                <span className="small muted">It tries every tested way in your room and keeps the one that reaches the target with the least material.</span>
+              </span>
+            </button>
+          </li>
+        ) : null}
+        {cfgs.map(x => {
+          const miss = used.filter(f => CAT.getOctaveAbsorption(x.id, DEMO.BANDS).missing.includes(f)), warn = x.flags.filter((f: any) => f.severity === 'warning').length;
+          const extras = mountExtras(x.condition);
+          return (
+            <li key={x.id}>
+              <button type="button" className="mt" data-action={active ? 'pickConfig' : 'solMount'} data-value={x.id} aria-pressed={on(x.id)} disabled={miss.length > 0 || (one && !active)}
+                title={miss.length ? `Its test has no value at ${fmt.hzList(miss)}, which this room is judged on` : undefined}>
+                <span className="mt-on" aria-hidden="true"><Icon name="check" size={13} sw={2.6} /></span>
+                <span className="mt-pic"><MountArt cond={x.condition} /></span>
+                <span className="mt-body">
+                  <span className="mt-title">{mountTitle(x.condition)}</span>
+                  {x.id === rec ? <span className="mt-rec"><Icon name="seal" size={12} sw={2.2} />Best for this room</span> : null}
+                  {extras.length ? <span className="cfg-chips">{extras.map((t, i) => <span className="chip-sm" key={i}>{t}</span>)}</span> : null}
+                  <span className="mt-bars" aria-label="How much of the sound it absorbs">
+                    {absorbsBy(x.id).map(g => (
+                      <span className="mt-bar" key={g.id}>
+                        <span className="mt-bk">{g.label}</span>
+                        <span className="mt-track"><i style={{ width: `${g.v != null ? Math.round(Math.min(1, g.v) * 100) : 0}%` }} /></span>
+                        <span className="mt-bv">{g.v != null ? `${Math.round(Math.min(1, g.v) * 100)} %` : '—'}</span>
+                      </span>
+                    ))}
+                  </span>
+                  <span className="mt-foot">{[`NRC ${x.ratings.nrc != null ? x.ratings.nrc.toFixed(2) : '—'}`, warn ? `${warn} to check in the test data` : null, miss.length ? `no test value at ${fmt.hzList(miss)}` : null].filter(Boolean).join(' · ')}</span>
+                  <span className="mt-src">{`As tested: ${x.label}`}</span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+}
+
 /* ---------- selected product, its configurations, and the chosen configuration's α(f) ---------- */
 function ProductDetails({ sel, refBand }: { sel: any; refBand: number }) {
   const p = sel.product, c = sel.configuration, cfgs: any[] = CAT.getAcousticConfigurations(p.id), src = CAT.getSource();
@@ -217,41 +292,19 @@ function ProductDetails({ sel, refBand }: { sel: any; refBand: number }) {
       </div>
     );
   } else {
-    detail = <Note tone="warn">{`This product was tested in ${cfgs.length} configurations, and none has absorption data for every band this room is judged in. Choose the one that matches how it will be installed.`}</Note>;
+    detail = <Note tone="warn">{`This product was tested in ${cfgs.length} ways. Choose how it is mounted above.`}</Note>;
   }
-  // The mounting the app recommends for this room (AM.derive.recommendConfig): chosen for the user, can be changed.
-  const rec = sel.recommendedConfig, cfgList = (
-    <ul className="cfg-list">
-      {cfgs.map(x => {
-        const warn = x.flags.filter((f: any) => f.severity === 'warning').length, chips = configChips(x);
-        return (
-          <li key={x.id}>
-            <button type="button" className="cfg" data-action="pickConfig" data-value={x.id} aria-pressed={!!c && c.id === x.id}>
-              <span className="cfg-radio" aria-hidden="true" />
-              <span className="cfg-main"><span className="cfg-label">{x.label}{x.id === rec ? <span className="cfg-rec">Recommended for this room</span> : null}</span>{chips.length ? <span className="cfg-chips">{chips.map((t, i) => <span className="chip-sm" key={i}>{t}</span>)}</span> : null}<span className="cfg-cert">{x.test.certificate || 'No certificate number'}</span></span>
-              <span className="cfg-side">
-                <span className="cfg-nrc">{`NRC ${x.ratings.nrc != null ? x.ratings.nrc.toFixed(2) : '—'}`}</span>
-                <span className="cfg-sub">{[x.ratings.nrcClass.grade && `Class ${x.ratings.nrcClass.grade}`, x.ratings.alphaW != null && `αw ${x.ratings.alphaW.toFixed(2)}`].filter(Boolean).join(' · ')}</span>
-                {warn ? <span className="cfg-warn"><Icon name="alert" size={12} sw={2.2} />{`${warn} to check`}</span> : null}
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
   const noted = (x: any, defs: any[]) => <>{x.value || '—'}{[...x.notes, ...noteFor(defs, x.key)].map((n: string, i: number) => <KvNote key={i}>{n}</KvNote>)}</>;
+  // The tested result of the mounting in use (chosen under "How it is mounted"), then the full test data.
   return (
-    <Card icon="panels" title="How it is mounted" sub={variantText(p)} cls="card-product">
+    <Card icon="doc" title="Test results" sub={c ? `As tested: ${c.label}` : variantText(p)} cls="card-product">
       {c ? (
-        <div className="auto-mount">
-          <span className="small muted">Mounting</span>
-          <b>{c.label}</b>
-          {c.id === rec ? <Pill tone="good" text="Recommended for this room" icon="seal" /> : <Pill tone="neutral" text="Chosen by you" />}
-          {configChips(c).length ? <span className="cfg-chips">{configChips(c).map((t, i) => <span className="chip-sm" key={i}>{t}</span>)}</span> : null}
-        </div>
+        <Kv rows={[
+          ['NRC', c.ratings.nrc != null ? c.ratings.nrc.toFixed(2) : '—', 'is-strong'],
+          c.ratings.alphaW != null ? ['αw', `${c.ratings.alphaW.toFixed(2)}${c.ratings.nrcClass.grade ? ` · Class ${c.ratings.nrcClass.grade}` : ''}`] : null,
+          ['Certificate', c.test.certificate || 'No certificate number'],
+        ]} />
       ) : null}
-      {c && cfgs.length > 1 ? <More summary={`Change how it is mounted (${cfgs.length} tested ways)`}>{cfgList}</More> : c ? null : cfgList}
       <More summary="Show the test data">
         <Kv rows={[
           ['Thickness', p.thickness.mm != null ? <>{`${trimNum(p.thickness.mm)} mm`}{p.thicknessTolerance.raw ? <span className="muted">{` (${p.thicknessTolerance.raw} mm)`}</span> : null}</> : p.thickness.raw || '—'],

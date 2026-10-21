@@ -600,5 +600,5 @@
     };
   }
 
-  AM.derive = { geometry, target, aim, measured, room, positions, positionResults, positionOf: posOf, policy, summaryRT60, summaryBands, headlineMeasured, averageRT60, midAverageRT60, noiseChange, treatmentItems, treatmentSelection, treatmentPlan, planProblem, prediction, predictionMissing, predictionStarted, assessment, soundGroups, absorptionGap, treatmentForTarget, autoPlan, autoAmount, isAutoAmount, recommendConfig, treatmentRequired, noTreatment, coverage, summary, takeSummary, takeComparison, coveredBy: covered, laterTakes, diagnostics };
+  AM.derive = { geometry, target, aim, measured, room, positions, positionResults, positionOf: posOf, policy, summaryRT60, summaryBands, headlineMeasured, averageRT60, midAverageRT60, noiseChange, treatmentItems, treatmentSelection, treatmentPlan, planProblem, prediction, predictionMissing, predictionStarted, assessment, soundGroups, SOUND_GROUPS: GROUPS, absorptionGap, treatmentForTarget, autoPlan, autoAmount, isAutoAmount, recommendConfig, treatmentRequired, noTreatment, coverage, summary, takeSummary, takeComparison, coveredBy: covered, laterTakes, diagnostics };
 })(window.AM);

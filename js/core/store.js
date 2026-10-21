@@ -15,7 +15,7 @@
   const freshUi = () => ({
     navOpen: false, sheet: null, toast: null, band: AM.demo.REFERENCE_BAND, confirm: null,
     // The solutions explorer on Treatment: its view (home, category, product), category, product and version, search.
-    catalog: { query: '', category: 'All', surface: 'Any', browsing: false, adding: false, view: 'home', cat: null, group: null, variant: null },
+    catalog: { query: '', category: 'All', surface: 'Any', browsing: false, adding: false, view: 'home', cat: null, group: null, variant: null, config: null },
   });
 
   const state = { project: null, projects: [], current: 'home', ui: freshUi() };

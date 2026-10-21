@@ -44,12 +44,14 @@
     });
     if (JSON.stringify(items) !== JSON.stringify(t.items)) S.set('treatment', Object.assign({}, t, { items }));
   }
-  // A product just chosen: the app's mounting for it, then the amounts of the plan.
-  function autoFill(id) {
+  /* A product just chosen: the mounting the user picked before adding it (one of its tested ones), else the app's for this
+     room; the app's is kept as recommendedConfig either way, so it stays marked. Then the amounts of the plan. */
+  function autoFill(id, picked) {
     const it = itemOf(id);
     if (!it) return;
-    const raw = S.state.project.treatment.items[it.index], cfg = AM.derive.recommendConfig(S.state.project, it) || raw.configurationId;
-    S.set(it.path, Object.assign({}, raw, { configurationId: cfg, recommendedConfig: cfg, amountBy: 'app' }));
+    const raw = S.state.project.treatment.items[it.index], rec = AM.derive.recommendConfig(S.state.project, it) || raw.configurationId;
+    const own = picked && CAT.getAcousticConfigurations(it.product.id).some(c => c.id === picked) ? picked : null;
+    S.set(it.path, Object.assign({}, raw, { configurationId: own || rec, recommendedConfig: rec, amountBy: 'app' }));
     applyAutoPlan();
   }
 
@@ -57,7 +59,7 @@
      version). The app then chooses its mounting and the amounts (autoFill); a directly entered area belongs to the
      previous product, so it is cleared. A product made only for ceilings starts on the ceiling, one only for walls on
      the walls. */
-  function choose(ctx, id, adding) {
+  function choose(ctx, id, adding, picked) {
     const product = CAT.getProduct(id);
     if (!product) return;
     const t = ctx.project.treatment, sel = AM.derive.treatmentSelection(ctx.project);
@@ -76,8 +78,8 @@
       changed = sel.id;
     }
     const sol = AM.services.solutions.ofProduct(id);
-    catalogUi(ctx, Object.assign({ adding: false, variant: null }, sol ? { view: 'product', cat: sol.category, group: sol.key } : {}));
-    if (changed) autoFill(changed);
+    catalogUi(ctx, Object.assign({ adding: false, variant: null, config: null }, sol ? { view: 'product', cat: sol.category, group: sol.key } : {}));
+    if (changed) autoFill(changed, picked);
   }
 
   W.define('treatment', {
@@ -98,7 +100,7 @@
         const mine = AM.derive.treatmentItems(ctx.project).filter(it => sol.products.some(p => p.id === it.product.id));
         const active = mine.find(it => it.id === ctx.project.treatment.active) || mine[0];
         if (active && active.id !== ctx.project.treatment.active) S.update(pp => { pp.treatment.active = active.id; });
-        catalogUi(ctx, { view: 'product', cat: sol.category, group: key, variant: null });
+        catalogUi(ctx, { view: 'product', cat: sol.category, group: key, variant: null, config: null });
         reveal('#solutions');
       },
       // Another version (thickness, weight, size): a product in the selection changes to it, with the app's mounting and
@@ -106,10 +108,13 @@
       solVariant: (ctx, id) => {
         const sol = AM.services.solutions.ofProduct(id), sel = AM.derive.treatmentSelection(ctx.project);
         if (sel && sol && sol.products.some(p => p.id === sel.product.id)) choose(ctx, id, false);
-        else catalogUi(ctx, { variant: id });
+        else catalogUi(ctx, { variant: id, config: null });
       },
-      // Into the selection: a new item, mounted and sized by the app; the product page then shows its result.
-      solAdd: (ctx, id) => choose(ctx, id, true),
+      // Into the selection: a new item, sized by the app and mounted as picked on the product page (or as the app thinks
+      // best); the product page then shows its result.
+      solAdd: (ctx, id) => choose(ctx, id, true, ctx.state.ui.catalog.config),
+      // A mounting picked for a product not chosen yet (none: the app's choice); used when it is added.
+      solMount: (ctx, id) => catalogUi(ctx, { config: id || null }),
       // Kept for earlier links: a product chosen straight from a list.
       pickProduct: (ctx, id) => choose(ctx, id, !!ctx.state.ui.catalog.adding),
       // "Add a product": back to the categories.
