@@ -156,6 +156,18 @@
     line(x1, y1, x2, y2, { color = [0.79, 0.82, 0.81], lw = 0.6, dash } = {}) {
       this.op(`q ${color.map(n).join(' ')} RG ${n(lw)} w ${dash ? `[${dash.join(' ')}] 0 d ` : ''}${n(x1)} ${n(PAGE.h - y1)} m ${n(x2)} ${n(PAGE.h - y2)} l S Q`);
     }
+    /* A circle centred at (cx, cy) from the top, drawn as four Bézier arcs. */
+    circle(cx, cy, r, { fill, stroke, lw = 0.6 } = {}) {
+      const k = 0.5523 * r, X = cx, Y = PAGE.h - cy;
+      let s = 'q ';
+      if (fill) s += `${fill.map(n).join(' ')} rg `;
+      if (stroke) s += `${stroke.map(n).join(' ')} RG ${n(lw)} w `;
+      s += `${n(X + r)} ${n(Y)} m ${n(X + r)} ${n(Y + k)} ${n(X + k)} ${n(Y + r)} ${n(X)} ${n(Y + r)} c `;
+      s += `${n(X - k)} ${n(Y + r)} ${n(X - r)} ${n(Y + k)} ${n(X - r)} ${n(Y)} c `;
+      s += `${n(X - r)} ${n(Y - k)} ${n(X - k)} ${n(Y - r)} ${n(X)} ${n(Y - r)} c `;
+      s += `${n(X + k)} ${n(Y - r)} ${n(X + r)} ${n(Y - k)} ${n(X + r)} ${n(Y)} c ${fill && stroke ? 'B' : fill ? 'f' : 'S'} Q`;
+      this.op(s);
+    }
     /* A JPEG image: { bytes: Uint8Array, width, height } in pixels. */
     addImage(name, img) { this.images[name] = img; }
     image(name, x, y, w, h) { if (this.images[name]) this.op(`q ${n(w)} 0 0 ${n(h)} ${n(x)} ${n(PAGE.h - y - h)} cm /${name} Do Q`); }

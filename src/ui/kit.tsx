@@ -445,8 +445,8 @@ export const GoalUnreachable = ({ sel, targetRT }: { sel: Item; targetRT: number
   <Note tone="info">{`No amount of ${sel.product.name} brings the predicted average RT60 to ${fmt.s(targetRT)}, with the rest of the plan as it is: in some bands it absorbs too little, or less than the finish it covers. Combine it with another product, or choose a more absorbent configuration.`}</Note>
 );
 /** The treatment placed on a surface is larger than that surface. cov = AM.derive.coverage(p). */
-export function CoverageWarning({ cov }: { cov: { label: string; areaM2: number; count: number; surfaceM2: number; fraction: number }[] | null }) {
-  return <>{(cov || []).filter(c => c.fraction > 1).map((c, i) => (
+export function CoverageWarning({ cov }: { cov: { label: string; areaM2: number; count: number; surfaceM2: number; fraction: number; over: boolean }[] | null }) {
+  return <>{(cov || []).filter(c => c.over).map((c, i) => (
     <Note tone="warn" key={i}>{`The treatment placed on ${/^Wall \d$/.test(c.label) ? c.label : `the ${c.label.toLowerCase()}`} (${fmt.m2(c.areaM2)}${c.count > 1 ? `, ${c.count} products` : ''}) is more than the free surface there (${fmt.m2(c.surfaceM2)}: its area less doors, windows and any existing covering). Check the amounts or the placement.`}</Note>
   ))}</>;
 }

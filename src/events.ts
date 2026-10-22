@@ -40,7 +40,8 @@ const GLOBAL: Record<string, ActionFn> = {
   closeSheet: () => S.ui({ sheet: null, confirm: null }),
   openGuide: (_c, id) => { if (id && am.guides[id]) S.ui({ sheet: { kind: 'guide', id }, navOpen: false }); },
   closeGuide: () => S.ui({ sheet: null }),
-  autofill: (_c, v) => S.autofillTo(v!),
+  // The step shortcuts only work while Developer tools are turned on, and only ever fill a sample project.
+  autofill: (_c, v) => { if (S.devTools) S.autofillTo(v!, { safe: true }); },
   askReset: () => S.ui({ confirm: 'reset' }),
   cancelReset: () => S.ui({ confirm: null }),
   doReset: () => { S.resetProject(); S.toast('Project reset.'); },

@@ -353,7 +353,7 @@ function PlanCard({ p, plan, pred, a, sel }: { p: Project; plan: any; pred: any;
           <span>{n > 1 ? 'All products together' : 'With this product'}</span>
           <span className="plan-rt"><span className="small muted">{`Echo time, average ${SHORT}`}</span>{` ${fmt.s(pred.measured)} `}<Icon name="arrowR" size={15} sw={2} />{' '}<b className="plan-pred" data-watch="plan-pred">{fmt.s(pred.predicted)}</b><ResultPill v={pred.verdict} st={pred.predictedStatus || acoustics.classify(pred.predicted, a.target)} /></span>
         </div>
-      ) : <Note tone="info">{D.planProblem(p) || 'Choose a tested configuration for each product to see the combined result.'}</Note>}
+      ) : D.overfill(p) ? null : <Note tone="info">{D.planProblem(p) || 'Choose a tested configuration for each product to see the combined result.'}</Note>}
       {/* Each product in one line: what, how mounted, how much, where. */}
       <ul className="plan-list">
         {items.map(it => (

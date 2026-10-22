@@ -1707,6 +1707,7 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
 .av-verdict{display:block;font-size:26px;font-weight:700;line-height:1.15;letter-spacing:-.015em;color:var(--av-ink)}
 .av-say{margin:2px 0 0;font-size:15px;line-height:1.5;color:var(--ink)}
 .av-next{margin:0;font-size:13.5px;line-height:1.5;color:var(--ink-2)}
+.av-din{margin:2px 0 0;font-size:12.5px;line-height:1.45;color:var(--muted)}
 .av-figs{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
 .av-fig{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border-radius:var(--r);background:var(--well)}
 .av-fig.is-room{background:var(--acoustic-tint)}
@@ -1779,3 +1780,63 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
   .av-figs.is-three .av-fig{padding:10px}
   .av-figs.is-three .av-n{font-size:24px}
 }
+
+/* Assessment, under the technical details: one result line, then each band as a dot on its own allowed range
+   (src/screens/Assessment.tsx, BandRanges). Colour follows the status, and the words beside each row say it too. */
+.br-result{display:flex;gap:10px;align-items:flex-start;--br:var(--good);--br-tint:var(--good-tint)}
+.br-result.is-above{--br:var(--critical);--br-tint:var(--critical-tint)}
+.br-result.is-below,.br-result.is-none{--br:var(--warn);--br-tint:var(--warn-tint)}
+.br-ri{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--br-tint);color:var(--br)}
+.br-result b{display:block;font-size:15px;color:var(--ink)}
+.br-result p{margin:2px 0 0;font-size:14px;line-height:1.5;color:var(--ink-2)}
+.br-list{list-style:none;margin:0;padding:0}
+.br-row{display:grid;grid-template-columns:96px minmax(0,1fr) 128px;align-items:center;gap:0 14px;min-height:46px}
+.br-list .br-row+.br-row{border-top:1px solid var(--line-soft)}
+.br-k,.br-v{display:flex;flex-direction:column;line-height:1.3;min-width:0}
+.br-k b{font-size:13.5px;font-weight:600;color:var(--ink)}
+.br-k small,.br-v small{font-size:12px;color:var(--muted)}
+.br-v b{font-family:var(--font-num);font-size:14px;font-weight:600;color:var(--ink)}
+.br-track{position:relative;height:46px}
+.br-track::before{content:"";position:absolute;left:0;right:0;top:50%;height:4px;margin-top:-2px;border-radius:2px;background:var(--target-wash)}
+.br-box{position:absolute;top:50%;height:18px;margin-top:-9px;border-radius:5px;border:1px dashed var(--target-line);background:var(--target-wash)}
+.br-pref{position:absolute;top:0;bottom:0;border-left:1.5px dashed var(--muted)}
+.br-dot{position:absolute;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--ink);box-shadow:0 0 0 2px var(--surface)}
+.br-row.is-above .br-dot{background:var(--critical)}
+.br-row.is-above .br-box{border-color:var(--critical);background:var(--critical-tint)}
+.br-row.is-above .br-v small{color:var(--critical-ink);font-weight:600}
+.br-row.is-below .br-dot{background:var(--warn)}
+.br-row.is-below .br-box{border-color:var(--warn);background:var(--warn-tint)}
+.br-row.is-below .br-v small{color:var(--warn-ink);font-weight:600}
+.br-row.is-free .br-dot{background:var(--faint)}
+.br-axis{min-height:0}
+.br-track.is-axis{height:22px}
+.br-track.is-axis::before{display:none}
+.br-track.is-axis em{position:absolute;top:3px;transform:translateX(-50%);font-style:normal;font-family:var(--font-num);font-size:11px;color:var(--muted);white-space:nowrap}
+.br-track.is-axis em:first-child{transform:none}
+.br-track.is-axis em:last-child{transform:translateX(-100%)}
+.br-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:6px;font-size:12px;color:var(--muted)}
+.br-legend span{display:inline-flex;align-items:center;gap:6px}
+.br-sw{width:10px;height:10px;border-radius:50%;background:var(--ink)}
+.br-sw.is-below{background:var(--warn)}
+.br-sw.is-above{background:var(--critical)}
+.br-sw.is-box{width:16px;border-radius:3px;border:1px dashed var(--target-line);background:var(--target-wash)}
+.br-sw.is-pref{width:0;height:12px;border-radius:0;background:none;border-left:1.5px dashed var(--muted)}
+@media (max-width:560px){.br-row{grid-template-columns:58px minmax(0,1fr) 84px;gap:0 10px}.br-k small{display:none}.br-track.is-axis em.is-pref{display:none}}
+/* Predicted Result: each band now (black) and after treatment (red), joined (src/ui/bands.tsx with `from`) */
+.br-link{position:absolute;top:50%;height:2px;margin-top:-1px;background:var(--predicted)}
+.br.is-change .br-dot.is-from{background:var(--measured)}
+.br.is-change .br-dot.is-after{background:var(--predicted)}
+.br-sw.is-after{background:var(--predicted)}
+.br.is-change .br-row{grid-template-columns:96px minmax(0,1fr) 150px}
+@media (max-width:560px){.br.is-change .br-row{grid-template-columns:52px minmax(0,1fr) 104px}.br.is-change .br-v b{font-size:12px}}
+/* Predicted Result: the room's absorption at 1000 Hz as one bar, what is there and what the products add */
+.ab{display:flex;flex-direction:column;gap:6px}
+.ab-k{font-size:13px;color:var(--ink-2)}
+.ab-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}
+.ab-bar{display:flex;gap:2px;height:34px;min-width:0}
+.ab-base{display:flex;align-items:center;min-width:0;padding:0 12px;border-radius:6px;background:var(--sunken)}
+.ab-base span{font-size:13px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ab-add{flex:none;border-radius:6px;background:var(--predicted)}
+.ab-tot{font-family:var(--font-num);font-size:14px;font-weight:600;color:var(--ink);white-space:nowrap}
+.ab-add-k{justify-self:end;text-align:right;font-size:12.5px;font-weight:600;color:var(--predicted-ink)}
+.ab-rt{margin:2px 0 0;font-size:13px;color:var(--ink-2)}

@@ -50,6 +50,7 @@ function RecommendationCard({ rec, av, pol }: { rec: any; av: any; pol: any }) {
             : <Stat kind="target" label="Recommended RT60" value={rec.preferred.toFixed(2)} tag={<Tag kind="target" />} sub={`Acceptable ${rec.min.toFixed(2)}–${fmt.s(rec.max)} · every band ${pol.judgedShort} is judged`} />}
       </div>
       <p className="lead"><b>Why.</b>{` ${rec.reason}`}</p>
+      {/^din18041/.test(rec.criterion.id) ? <p className="small muted">DIN 18041 sets this target for the room in use. The app measures the room as it is, usually empty, so the result is a guide, not an official DIN check.</p> : null}
     </Card>
   );
 }

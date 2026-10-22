@@ -67,7 +67,7 @@ Phase 1 (audit) and Phase 2 (fixes) of the full application review. UX-001 to UX
 | UX-049 | Low | Global | Navigation | Nothing tells the user that work is saved automatically. | Fixed |
 | UX-050 | Low | Predicted Result | Content | “Improves 1000 Hz by 0.31 s” is unclear. | Fixed |
 | UX-051 | Low | Processing | Content | If there is no recording, Continue says “Processing is still running.” | Fixed |
-| UX-052 | Low | Sidebar | UI | “Developer tools” (demo-data shortcuts, reset) are visible to every user. | Not changed |
+| UX-052 | Low | Sidebar | UI | “Developer tools” (demo-data shortcuts, reset) are visible to every user. | Fixed |
 | UX-053 | Low | Home | UI | On Home, the context bar shows the open project's name and values, as if Home belonged to that project. | Fixed |
 | UX-054 | Low | All steps | UI | “Explain this step” is a borderless ghost button and reads as plain text. | Fixed |
 | UX-055 | Low | Treatment, Predicted Result, Final Result | Content | Product names appear in capitals (“UNIZEN ACOUSTIC PANEL”) because that is how the source lists them. | Not changed |
@@ -645,7 +645,7 @@ Phase 1 (audit) and Phase 2 (fixes) of the full application review. UX-001 to UX
 - **Actual:** Visible on every screen.
 - **User impact:** Clutter; a reset action one click away.
 - **Recommended solution:** Keep for testing (used by the team), visually secondary. Hiding it behind a setting is a product decision.
-- **Status:** Not changed. Kept on purpose: the team uses it to jump to steps with sample data and to reset projects. Hiding it behind a setting or URL flag is a product decision.
+- **Status:** Fixed (22 October 2026). The step shortcuts appear only when turned on with `?dev=1` (remembered on the device, `?dev=0` turns them off), and they only ever fill a sample project. Everyone else sees “Project options”: reset or close the project, and how its target was worked out.
 
 ### UX-053 · Low · Home
 

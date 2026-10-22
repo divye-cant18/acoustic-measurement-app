@@ -124,13 +124,18 @@ The app works with three RT60 values, never one in place of another:
    DIN 18041:2016 group A (meeting, teaching, lecture, music and sports rooms), NBC 2016 (offices and canteens, an upper
    limit at 500 Hz), EBU Tech 3276 (listening and control rooms). A category without a verified criterion gets no
    target, says why, and the project's own target can be entered with its source. Nothing is extrapolated, clamped or
-   taken from another room type.
+   taken from another room type. A criterion set from the volume needs a room size Room Setup accepts: with a length,
+   width or height outside its limits there is no target, and the Target step says which one to correct.
 2. **Measured RT60**: from the microphone measurement only (background check, sweep, deconvolution, octave bands,
    decay analysis, T20 per band with T30 as a check), at two or more measuring positions. Per band, the room's RT60 is the mean of
    the positions (docs/MULTI-POSITION.md). The room is judged by its target criterion's own band rule: for a meeting
    room under DIN 18041 group A, every band from 125 Hz to 4 kHz within its limits (250 Hz–2 kHz the target range,
    125 Hz and 4 kHz the standard's own), with the average over 250 Hz–2 kHz as its summary. The average over all bands,
-   125–4000 Hz, is shown as the overall figure (docs/AVERAGE-RT60.md).
+   125–4000 Hz, is shown as the overall figure (docs/AVERAGE-RT60.md). DIN 18041 sets its targets for the room in use
+   (80 % occupancy); the app measures the room as it is, usually empty, and converts nothing, so a verdict against a DIN
+   target is a guide, not an official DIN check. Target, Assessment and the PDF say so in one line. An empty room reads
+   longer than in use: meeting an upper limit empty holds in use too, but a band close to its lower limit may read too
+   short once the room is in use.
 3. **Predicted RT60 after treatment**: from the measured RT60 and the chosen products (Treatment, Predicted Result).
 
 The room's own (untreated) RT60 is not estimated from its dimensions or surfaces: it is measured. Room configuration,
@@ -264,8 +269,12 @@ Predicted Result leads with one card, in the same form as Assessment's verdict: 
 "Nearly on target" (the average is inside the range but a judged band is not), "Still above the target" or "Drier than
 the target"; one sentence saying what the plan does and which sounds stay off; one tip (the app's amount, a second
 product, or less treatment); and three figures (now, measured; after, estimated, drawn apart; target) on the RT60 scale.
-"Try more or less" follows. The band-by-band verdict, the calculation written out at 1000 Hz, the checks above and the
-assumptions, and the band chart and table are under **Show the technical details**.
+"Try more or less" follows. **Show the technical details** holds one result line (the bands outside their limits after
+treatment, the bands not measured, and the recommendation), the room's absorption at 1000 Hz as one bar (what is already
+in the room and what the products add, with the RT60 before and after), and every band now (black) and after treatment
+(red) on its allowed range (`src/ui/bands.tsx`, shared with Assessment). Folded below: the calculation written out at
+1000 Hz ("Show the calculation"), the checks above and the assumptions ("Assumptions and limits"), and the band-by-band
+verdict and table ("Show the numbers").
 
 **Choosing products (20 October 2026).** Treatment opens on the acoustic solutions: the catalogue grouped for choosing
 (`services/solutions.js`), in three views that keep the selection throughout (screen state `ui.catalog`; the selection is
@@ -305,7 +314,8 @@ prediction and verdict (`AM.derive`):
   picked, marked "Recommended for this room"; any other can be chosen.
 - **Amounts** (`autoPlan`): the app's products are worked out together, so a mix can take the low sounds with one product
   and the high ones with another: the fewest bands outside their limits, then the least material; within the free surface
-  where each goes (shared with the others there); whole panels. A product whose amount the user set keeps it
+  where each goes (shared with the others there, and Wall 1 counting towards the walls and the walls towards the walls
+  and ceiling); whole panels. A product whose amount the user set keeps it
   (`amountBy: 'user'`) and the app's products are worked out again around it; "Go back to the app's amount" hands it back.
   When the room already meets the target, the app suggests none.
 - **No areas on screen.** The amount is a slider in panels ("4 panels, covering about 14 % of the walls") or, for a
@@ -345,9 +355,13 @@ the quickest (worked out from the values; a group not fully measured says so ins
 two averages, the band chart, each position, "Can you trust this measurement?", the decay curve, each take and the takes
 table) is under **Show the technical details** in that card, whose summary names the all-band average and the 1000 Hz
 value. Assessment leads with the verdict and one sentence of advice, voices first, then "What to fix": each group with
-its value, too dull / just right / too echoey, and the bands that are off. The decay curve, the RT60 by octave band chart
-and table, and the band-by-band comparison are unchanged under **Show technical details** (`ui.details`, which stays
-open across re-renders and draws its charts when opened). The groups are a summary for reading; the room's RT60 compared
+its value, too dull / just right / too echoey, and the bands that are off. Its **Show technical details** holds one result
+line (each band outside its limits, with its value and the limit it misses, and the bands not measured) and every band as
+a row: its allowed range as a dashed box, the measured value as a dot coloured by status, the value and its status in
+words, and the preferred value as a dashed line through the rows. The formal explanation and band warnings are folded
+under "How is this judged?", the averages and the band table under "Show the numbers". Elsewhere, the decay curve, the
+RT60 by octave band chart and table are unchanged under **Show technical details** (`ui.details`, which stays open
+across re-renders and draws its charts when opened). The groups are a summary for reading; the room's RT60 compared
 with the target is still the six-band average.
 
 **Results and newer takes.** Results, the top bar and the report always show the CURRENT measurement. When a newer take
@@ -517,7 +531,11 @@ the decay is one straight line. T20 is reported since 20 October 2026 (before, T
 the 20 dB range its preference, and switching to T30 at 45 dB made a curved decay's result depend on the background (a
 double-slope room read 0.801 s with 45.7 dB usable and 0.677 s with 44.6 dB). Projects processed before are brought over
 to the T20 each take already kept, never re-estimated. The 60 dB fit is not used for RT60 for the same reason. A value is rejected when the decay is not
-straight (ξ = 1000·(1 − r²) above 50 ‰) or too short for the band filter (bandwidth × RT60 < 4). Quality and confidence
+straight (ξ = 1000·(1 − r²) above 50 ‰), too short for the band filter (bandwidth × RT60 < 4), or when T20 and T30
+are too far apart for one RT60 (`CRITERIA.decay.curvatureFail`): T30 more than 50 % longer than T20 (two clearly
+different slopes; the double-slope room in the validation reads up to 37 %), or more than 30 % shorter (40 % below
+500 Hz, where one decay's T20 and T30 scatter by about 10 %), which a room's own decay does not do. The band then has no
+value and says why; within those limits the value stands with a note and medium confidence. Quality and confidence
 come only from these measured properties: Good / High when ξ ≤ 10 ‰ and the T30 check is within 10 % of T20; Fair / Medium otherwise (also when there is too little decay for the check) or when the background
 changed since the noise check. Browser processing reported on: no value at all (see Input). The measurement is valid when the 1000 Hz band has a value; otherwise the result is "Unable to obtain a reliable
 RT60 measurement" and nothing is estimated. A valid take becomes the CURRENT measurement and the previous one is kept as
@@ -549,15 +567,22 @@ download prompt saves it; elsewhere it is a normal browser download. Filename:
 `Room-Acoustic-Report_<room>_<YYYY-MM-DD>.pdf`, letters, digits and hyphens only.
 
 - **Page 1:** header (brand icon and name, generation time, project and measurement references, project status),
-  key figures (measured, target, measured vs target, predicted or treatment), 1 Room, 2 Measurement (record, RT60 per
-  octave band as a table and a chart, notes and warnings), 3 Target and assessment. Without a treatment plan the report
-  then ends with the summary, next steps and limitations.
+  key figures (measured, target, measured vs target, predicted or treatment), 1 Room, 2 Measurement (positions, device,
+  browser processing, the two averages and the background in plain words; every band as a row on its allowed range, as
+  in the app: a dashed box, a dot coloured by status, the value and "just right / too echoey / too dull"; the notes said
+  once, the same note at several positions on one line), 3 Target and assessment (target, standard, verdict, the bands
+  too long or too short, band warnings, and the plain explanation; for a DIN 18041 target, one line that it is a guide,
+  not an official DIN check). Without a treatment plan the report then ends with
+  the summary in short lines (found, next), the limitations, and the details for an acoustic consultant in small print.
 - **Then (only with a treatment plan), in everyday words first:** 4 Your treatment (each product on its own row: name,
   range and variant, the tested mounting and its certificate, and how much: panels, and how much of the wall or ceiling
-  they cover), 5 Predicted outcome (labelled a model estimate: echo time measured → predicted, the verdict and which sounds
-  would still be wrong, per band, chart), 6 Summary and next steps, 7 Assumptions and limitations, 8 Details for your
-  acoustic consultant (treatment areas in m² and coverage, each configuration's octave-band α and NRC, and the
-  calculation written out at the reference band, every line adding up as printed).
+  they cover), 5 Predicted outcome (labelled a model estimate: RT60 measured → predicted, the predicted verdict and which
+  sounds would still be wrong, and every band now and after treatment on its allowed range), 6 Summary and next steps
+  (found, with the plan, next), 7 Assumptions and limitations (three plain lines), 8 Details for your acoustic consultant
+  (each position's band values, the microphone, test signal, background level and reference band's result, how the room
+  is judged and the target condition, treatment areas in m² and coverage, each configuration's octave-band α and NRC,
+  the calculation written out at the reference band, every line adding up as printed, and the model and measurement
+  limits in full).
 
 **Accuracy.** Every value comes from `AM.derive` for the project being reported: the CURRENT valid measurement (a later
 take that failed, was not valid or is not processed yet is named, never used), the target, the assessment, and the
@@ -694,7 +719,7 @@ Vercel address.
   responses of known RT60, optionally with a single device's direct sound (`directDb`), background noise, clipping,
   silence, late arrival, an unclear arrival, fluctuating noise, pink background noise, early reflections, a double-slope
   decay, gaps in the recording, a decay cut off part-way, sounds during the take, ventilation rumble, the sweep level and
-  distortion products). 62 checks.
+  distortion products); T20 and T30 too far apart for one RT60 (no value, with the reason). 70 checks.
 - `tests/sweep-level.html`: the sweep level end to end, in the whole app with a virtual device: background, a take at 0 dB,
   + through the Measure step's action, a take at +3 dB, both processed, then the stored levels and played peaks, the
   recorded level 3 dB higher, RT60 agreeing, the earlier take kept and listed, the report model and PDF, reset and the
@@ -777,7 +802,8 @@ Vercel address.
   assessment, amount or prediction, nothing in its place, no NaN anywhere); the plain-language views (low sounds, voices,
   high sounds) with the technical charts kept under Show technical details; the report with no treatment still one page,
   with a treatment plan two; a new take processed by the Processing step replacing the average without mixing takes; a
-  later take that is not valid changing nothing. Runs on open, about 15 s. 57 checks.
+  later take that is not valid changing nothing; products that do not fit on their surfaces (Wall 1 counting towards
+  the walls) giving no prediction, and the app's own amount leaving room for them. Runs on open, about 15 s. 64 checks.
 - `tests/mobile-study.html`: one synthetic room measured by the production analysis under laptop-like and phone-like
   conditions, one factor at a time, five takes each (small speaker, closer direct sound, quiet playback, unreported
   automatic gain, noise gate, dropouts removed or zero-filled, soft limiter, 44.1 kHz; level and background ladders).
@@ -809,7 +835,8 @@ Vercel address.
   and unsupported categories (none substituted, not even another room type's); missing inputs asked for; the volume
   limits at and beyond each boundary; what Room Setup offers; the Target step (empty without a criterion, the project's
   own target only with its source, no made-up starting value); projects saved earlier (room kept, an unverified target
-  kept apart and not used, review flagged); the Target and Room Setup screens. Runs on open. 47 checks. See
+  kept apart and not used, review flagged); no target from a room size Room Setup refuses; Developer tools hidden unless
+  turned on and never filling in a project of the user's; the Target and Room Setup screens. Runs on open. 54 checks. See
   docs/TARGET-CRITERIA.md.
 - `tests/virtual-room.html`: the whole application with a virtual device in a virtual room in place of the microphone and
   speaker (`tests/virtual-room.js`): getUserMedia returns the room's output; what the app plays is convolved with a
@@ -863,7 +890,9 @@ A reload of the same tab returns to the step on screen (sessionStorage). A new t
   They are always styled apart: measured = solid ink, predicted = dashed red, target = neutral wash.
 - No value is shown that was not measured: before a measurement, values read "Not measured"; a band the recording could
   not support reads "Not reliable".
-- A treatment plan is used only when every product has a tested configuration and an amount above zero.
+- A treatment plan is used only when every product has a tested configuration and an amount above zero, and the
+  products fit on their surfaces: what is on Wall 1 counts towards the walls too, and more than a surface's free area
+  gives no prediction (Treatment says which surface and by how much).
 - Measured, predicted and target values are never substituted for one another. A take the browser reports as processed
   (echo cancellation, noise suppression, automatic gain) gives no RT60.
 - The step guide explains results. It never calculates them.
@@ -939,10 +968,14 @@ missing, and they are flagged in `data/import-report.md`, as are suspected decim
 
 ## Other controls
 
-- **Developer tools** (bottom of the sidebar): jump to a step. Room Setup and Target are filled with a sample room (its
-  six surfaces, a window and a door from the material library);
-  measurement steps are never filled in, so the shortcut stops at the first step that needs a real measurement.
-  Reset or close the project.
+- **Project options** (bottom of the sidebar, with a project open): reset or close the project, and how its target was
+  worked out.
+- **Developer tools** (in place of Project options, only when turned on with `?dev=1` in the address; remembered on the
+  device, `?dev=0` turns them off): the same, plus jump to a step. The shortcuts only ever fill a sample project: from
+  any other project they open a new sample project, so a room, target, checklist or plan someone entered is never
+  replaced. Room Setup and Target are filled with a sample room (its six surfaces, a window and a door from the material
+  library); measurement steps are never filled in, so the shortcut stops at the first step that needs a real
+  measurement, at a step marked for review, or at one the sample input does not complete.
 - Projects are saved in the browser's localStorage (no account). Home lists them: pinned projects first, then the six most
   recently updated. Measurement History lists every project. Projects can be deleted (after a confirmation).
 - Final Result leads with one summary card: the room's name on the brand band (the logo, the dark rail colour and its red

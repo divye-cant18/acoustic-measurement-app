@@ -172,6 +172,11 @@
       xi: { warn: 10, fail: 50 },                  // non-linearity ξ = 1000·(1 − r²), per mille (ISO 3382-2 annex B)
       curvature: 10,       // C = 100·(T30/T20 − 1), percent (ISO 3382-2)
       curvatureLow: 25,    // below 500 Hz a shorter T30 is put down to the device only beyond this (random scatter there)
+      // T20 and T30 this far apart: no single RT60 describes the band, which then has no value. slower: T30 longer than
+      // T20 by more than this (two clearly different slopes; the double-slope room of the validation reads up to 37 %).
+      // faster: T30 shorter by more than this (a room's own decay does not speed up: the device is cutting it), and
+      // fasterLow below 500 Hz, where one decay's T20 and T30 scatter by about 10 %.
+      curvatureFail: { slower: 50, faster: 30, fasterLow: 40 },
       minBT: 4,            // bandwidth × RT60 below this the band filter limits the result (time-reversed filtering)
     },
   };

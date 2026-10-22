@@ -3,12 +3,15 @@
    target range. That is the verdict; the average is its summary, never deciding alone. Bands with their own, wider
    limits are band warnings, shown apart.
    The screen leads with the verdict in words and the room's RT60 beside its target, then what to fix for low sounds,
-   voices and high sounds (AM.derive.soundGroups, each with the bands that are off). The averages, the formal explanation,
-   the band warnings, the band chart and the table are under "Show technical details". */
+   voices and high sounds (AM.derive.soundGroups, each with the bands that are off). Under "Show technical details": one
+   result line (the bands that are off, with their value and limit, and the bands not measured), then every band as a
+   dot on its own allowed range; the formal explanation and the band warnings are folded under "How is this judged?",
+   the averages and the table under "Show the numbers". */
 import type { ReactNode } from 'react';
 import { D, fmt, RA, TGT } from '../lib';
 import type { Ctx, PrimaryAction, SoundGroup } from '../am';
-import { Chart, Details, Icon, Legend, Note, RtScale, Stat, StatusPill, TableWrap, Tag, TechH } from '../ui/kit';
+import { Details, Icon, Note, RtScale, Stat, StatusPill, TableWrap, Tag, TechH } from '../ui/kit';
+import { BandRanges, type Band } from '../ui/bands';
 
 const VERDICT: Record<string, [string, string, string]> = { within: ['good', 'Meets the target', 'check'], above: ['critical', 'Does not meet the target', 'arrowUp'], below: ['warn', 'Drier than the target', 'arrowDn'] };
 const ROLE: Record<string, string> = { primary: 'Judged, target range', edge: 'Judged, own limit', secondary: 'Warning only', info: 'No limit' };
@@ -27,6 +30,27 @@ function advice(groups: SoundGroup[]): string {
   if (echo.length) return `Voices sound clear. ${cap(list(echo))} linger, so panels that absorb ${echo.length > 1 ? 'low and high' : echo[0].id} sounds would help most.`;
   if (dry.length) return `Voices sound clear. ${cap(list(dry))} are a little dry, which needs no treatment.`;
   return 'Voices, low sounds and high sounds are all within the goal.';
+}
+
+/* ---------- the result in one line, above every band on its own allowed range (src/ui/bands.tsx) ---------- */
+/* The result in one line: the bands outside their limits, each with its value and the limit it misses, and the bands
+   that could not be measured. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function resultLine(a: any): [string, string, string] {
+  const bands: Band[] = a.bands, above = bands.filter(b => b.status === 'above'), below = bands.filter(b => b.status === 'below');
+  const missing = bands.filter(b => b.status === 'insufficient' || (b.rt == null && (b.role === 'primary' || b.role === 'edge')));
+  const hz = (xs: Band[]) => fmt.list(xs.map(b => fmt.hz(b.f)));
+  if (!a.available) return ['minus', 'Not assessed', a.reason || ''];
+  const off = [...above, ...below].sort((x, y) => x.f - y.f);
+  const say = [
+    ...(off.length > 2 ? [`${hz(off)} are ${off.every(b => b.status === 'below') ? 'below' : off.every(b => b.status === 'above') ? 'above' : 'outside'} their ranges.`]
+      : off.map(b => (b.status === 'above' ? `${fmt.hz(b.f)} is ${fmt.s(b.rt)}; it should be at most ${fmt.s(b.max)}.` : `${fmt.hz(b.f)} is ${fmt.s(b.rt)}; it needs at least ${fmt.s(b.min)}.`))),
+    missing.length ? `${hz(missing)} could not be measured.` : '',
+    off.length || missing.length ? '' : 'Every pitch it is judged on is within its range.',
+  ].filter(Boolean).join(' ');
+  const head = above.length && below.length ? `Outside the target at ${hz(off)}` : above.length ? `Too much echo at ${hz(above)}` : below.length ? `Drier than the target at ${hz(below)}`
+    : missing.length ? 'Within the target where measured' : 'Within the target at every pitch';
+  return [above.length ? 'arrowUp' : below.length ? 'arrowDn' : 'check', head, say];
 }
 
 /* ---------- what to fix: one row per sound group ---------- */
@@ -66,7 +90,7 @@ export function AssessmentScreen({ ctx }: { ctx: Ctx }) {
     : a.status === 'above' ? <><b>Treatment needed.</b>{` The next step works out how much the room needs to reach ${t.preferred != null ? fmt.s(t.preferred) : `the ${fmt.s(t.max)} limit`}.`}</>
       : a.status === 'within' ? <><b>{`Meets the target${v.complete ? '' : ' where measured'}.`}</b> Treatment is optional.</>
         : <><b>Drier than the target.</b> Adding absorption would move it further away, so treatment is not recommended.</>;
-  const tone = vd ? vd[0] : 'warn';
+  const tone = vd ? vd[0] : 'warn', line = resultLine(a);
   return (
     <>
       {a.provisional ? <Note tone="warn" icon="pin"><b>{!a.positions.complete ? `Provisional: measured at ${a.positions.valid} of the ${a.positions.required} positions needed.` : `Provisional: ${(a as any).thinBands.map((f: number) => fmt.hz(f)).join(', ')} rest${(a as any).thinBands.length > 1 ? '' : 's'} on fewer than ${a.positions.required} positions.`}</b> Measure another position in Acoustic Measurement to complete the result.</Note> : null}
@@ -79,6 +103,7 @@ export function AssessmentScreen({ ctx }: { ctx: Ctx }) {
             <span className="av-k">Verdict</span><b className="av-verdict">{verdictWord}</b>
             <p className="av-say">{a.available ? advice(groups) : <>The room cannot be assessed.{` ${a.reason || ''}`}</>}</p>
             {next ? <p className="av-next">{next}</p> : null}
+            {a.available && TGT.isDin(t) ? <p className="av-din">Measured as it is, usually empty. This is a guide, not an official DIN check.</p> : null}
           </div>
         </div>
         <div className="av-figs">
@@ -95,36 +120,40 @@ export function AssessmentScreen({ ctx }: { ctx: Ctx }) {
         {!a.available ? <p className="small">{`The room is judged in the ${pol.label.toLowerCase()}, and at least half of those bands need a value. Without them there is no verdict, no treatment amount and no prediction. Measure again in Acoustic Measurement: a quieter room, or a higher sweep level, can give the missing bands enough usable decay.`}</p> : null}
 
         <Details id="assessment-bands">
-          <div className="grid g2 stat-row">
-            <Stat kind="measured" label={`Average, ${pol.short}`} value={a.available && a.rt != null ? a.rt.toFixed(2) : '—'} unit={a.available ? 's' : ''} tag={<Tag kind="measured" />}
-              sub={a.available ? <><StatusPill status={a.summaryStatus} /><span>{`${pol.short} · ${a.summary.partial ? `${a.summary.n} of ${a.summary.total} bands` : a.summary.total === 1 ? 'measured' : `all ${a.summary.total} bands`}`}</span></> : 'Not available'} />
-            <Stat kind="measured" label="Average, all bands" value={a.average.available && a.average.value != null ? a.average.value.toFixed(2) : '—'} unit={a.average.available ? 's' : ''}
-              sub={a.average.available ? <span>{`${RA.SHORT}${a.average.partial ? ` · ${a.average.n} of ${a.average.total} bands, ${a.average.missing.map(x => fmt.hz(x.f)).join(', ')} not measured` : ''} · overall figure, not judged`}</span> : 'Not available'} />
-          </div>
-          <TechH title="Result against the target" note={a.available && vd ? ex.headline : 'Not assessed'} />
-          {a.available && vd ? <p className="small">{`${ex.headline}. ${ex.lines.join(' ')}`}</p> : null}
-          <p className="small muted">{`How it is judged: ${pol.basis}${pol.custom && pol.criterion ? " The target was adjusted by hand; the bands are those of the room's criterion." : ''}${a.available ? ` The RT60 of the room is the average over ${pol.short}, ${fmt.s(a.rt)}, across ${a.positions.valid} position${a.positions.valid > 1 ? 's' : ''}; it is a summary, and the verdict is decided band by band.` : ''}`}</p>
-          {ex.warnings.length ? <>
-            <TechH title="Band warnings" note={`These bands have their own, wider limits in ${pol.criterion || 'the criterion'}. They do not change the verdict.`} />
-            <ul className="bullets small">{ex.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
-          </> : null}
-          <TechH title="Band by band" note={`Measured RT60 in each octave band (average over the positions), against that band's limits. "Judged": the band decides the verdict, against the target range or the criterion's own limits for that band; "no limit": the criterion sets nothing there.`} />
-          <Chart type="bands" spec={{ series: [{ label: 'Measured RT60', kind: 'measured', values: a.bands.map(b => b.rt) }], target: t, limits: a.bands.map(b => ({ min: b.min, max: b.max })), unit: 's', height: 240, yTitle: 'RT60 (s)', aria: 'Measured RT60 by band against the target range' }} height={240} />
-          <Legend items={t.preferred != null ? [['measured', 'Measured RT60'], ['zone', `Target range ${TGT.rangeText(t)}`], ['pref', 'Preferred']] : [['measured', 'Measured RT60'], ['zone', `Target ${TGT.rangeText(t)}`]]} />
-          <TableWrap>
-            <table className="tbl">
-              <thead><tr><th>Band</th><th className="r">Measured</th><th className="r">Limits</th><th>Role</th><th className="r">Positions</th><th>Status</th></tr></thead>
-              <tbody>
-                {a.bands.map(b => (
-                  <tr className={b.role === 'primary' || b.role === 'edge' ? 'is-ref' : undefined} key={b.f}>
-                    <td>{fmt.hz(b.f)}</td><td className="r">{b.rt != null ? fmt.s(b.rt) : '—'}</td>
-                    <td className="r">{b.max != null ? (b.min != null ? `${b.min.toFixed(2)}–${fmt.s(b.max)}` : `≤ ${fmt.s(b.max)}`) : '—'}</td><td>{ROLE[b.role]}</td><td className="r">{`${b.n} of ${b.of}`}</td>
-                    <td>{b.status === 'insufficient' ? <span className="nr">Not measured</span> : b.status ? <StatusPill status={b.status} /> : <span className="muted">—</span>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableWrap>
+          <div className={`br-result is-${a.status || 'none'}`}><span className="br-ri" aria-hidden="true"><Icon name={line[0]} size={16} sw={2.4} /></span><div><b>{line[1]}</b><p>{line[2]}</p></div></div>
+          <p className="small muted">Each pitch against its allowed range.</p>
+          <BandRanges bands={a.bands as Band[]} preferred={t.preferred} />
+          <Details id="assessment-judged" summary="How is this judged?">
+            <TechH title="Result against the target" note={a.available && vd ? ex.headline : 'Not assessed'} />
+            {a.available && vd ? <p className="small">{`${ex.headline}. ${ex.lines.join(' ')}`}</p> : null}
+            <p className="small muted">{`How it is judged: ${pol.basis}${pol.custom && pol.criterion ? " The target was adjusted by hand; the bands are those of the room's criterion." : ''}${a.available ? ` The RT60 of the room is the average over ${pol.short}, ${fmt.s(a.rt)}, across ${a.positions.valid} position${a.positions.valid > 1 ? 's' : ''}; it is a summary, and the verdict is decided band by band.` : ''}`}</p>
+            {ex.warnings.length ? <>
+              <TechH title="Band warnings" note={`These bands have their own, wider limits in ${pol.criterion || 'the criterion'}. They do not change the verdict.`} />
+              <ul className="bullets small">{ex.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+            </> : null}
+          </Details>
+          <Details id="assessment-numbers" summary="Show the numbers">
+            <div className="grid g2 stat-row">
+              <Stat kind="measured" label={`Average, ${pol.short}`} value={a.available && a.rt != null ? a.rt.toFixed(2) : '—'} unit={a.available ? 's' : ''} tag={<Tag kind="measured" />}
+                sub={a.available ? <><StatusPill status={a.summaryStatus} /><span>{`${pol.short} · ${a.summary.partial ? `${a.summary.n} of ${a.summary.total} bands` : a.summary.total === 1 ? 'measured' : `all ${a.summary.total} bands`}`}</span></> : 'Not available'} />
+              <Stat kind="measured" label="Average, all bands" value={a.average.available && a.average.value != null ? a.average.value.toFixed(2) : '—'} unit={a.average.available ? 's' : ''}
+                sub={a.average.available ? <span>{`${RA.SHORT}${a.average.partial ? ` · ${a.average.n} of ${a.average.total} bands, ${a.average.missing.map(x => fmt.hz(x.f)).join(', ')} not measured` : ''} · overall figure, not judged`}</span> : 'Not available'} />
+            </div>
+            <TableWrap>
+              <table className="tbl">
+                <thead><tr><th>Band</th><th className="r">Measured</th><th className="r">Limits</th><th>Role</th><th className="r">Positions</th><th>Status</th></tr></thead>
+                <tbody>
+                  {a.bands.map(b => (
+                    <tr className={b.role === 'primary' || b.role === 'edge' ? 'is-ref' : undefined} key={b.f}>
+                      <td>{fmt.hz(b.f)}</td><td className="r">{b.rt != null ? fmt.s(b.rt) : '—'}</td>
+                      <td className="r">{b.max != null ? (b.min != null ? `${b.min.toFixed(2)}–${fmt.s(b.max)}` : `≤ ${fmt.s(b.max)}`) : '—'}</td><td>{ROLE[b.role]}</td><td className="r">{`${b.n} of ${b.of}`}</td>
+                      <td>{b.status === 'insufficient' ? <span className="nr">Not measured</span> : b.status ? <StatusPill status={b.status} /> : <span className="muted">—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableWrap>
+          </Details>
         </Details>
       </section>
     </>

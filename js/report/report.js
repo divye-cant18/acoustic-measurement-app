@@ -4,9 +4,12 @@
                               assumed or recalculated here: measured values come from the CURRENT valid measurement,
                               predicted values from the prediction engine for the complete treatment plan, and missing
                               values stay missing ("Not measured", "Not available", with the reason).
-     render(model, opts)   -> AM.pdf.Doc. Page 1: room, measurement, target and assessment. Page 2 (only with a
-                              treatment plan): treatment, predicted outcome (labelled a model estimate), assumptions and
-                              limitations, summary. Without a plan, the summary closes page 1.
+     render(model, opts)   -> AM.pdf.Doc. Page 1: room, measurement (a few plain rows, every band on its allowed
+                              range, the notes said once), target and assessment. Page 2 (only with a treatment plan):
+                              treatment, predicted outcome (labelled a model estimate: every band now and after), the
+                              summary in three lines, the assumptions in plain words, and the details for an acoustic
+                              consultant (each position's values, the device, the notes as recorded, the tested α, the
+                              calculation and the model). Without a plan, the summary and those details close page 1.
      filename(model)       -> "Room-Acoustic-Report_<room>_<YYYY-MM-DD>.pdf", safe characters only
      download(project)     -> builds and saves the file: through the viewer's download prompt when the page runs as a
                               published artifact, otherwise as a normal browser download. Resolves { ok, name, message }.
@@ -125,7 +128,7 @@
       plan, prediction: pred, none,
       planProblem: plan.items.length ? D.planProblem(p) : null,
       predictedStatus: pred && t ? (pred.predictedStatus || A.classify(pred.predicted, t)) : null,
-      coverage: D.coverage(p),
+      coverage: D.coverage(p), overfill: D.overfill(p),
     };
   }
   const D_POS = id => AM.demo.POSITIONS.find(x => x.id === id) || null;
@@ -199,6 +202,41 @@
       out.push('Next: choose a tested treatment in the app to see its predicted effect.');
     }
     if (M.project.review.length) out.push(`Note: ${M.project.review.join(', ')} ${M.project.review.length > 1 ? 'are' : 'is'} marked for review in the app. Review before relying on this report.`);
+    return out;
+  }
+
+  /* Notes said once: the same note at several positions ("P1: …", "P2: …", "P1, 125 Hz: … (non-linearity 22.3 ‰)") is
+     one line naming the positions, each with its own figure where the note had one. */
+  function mergeNotes(notes) {
+    const by = new Map(), out = [];
+    notes.forEach(nt => {
+      const m = /^(P\d+)(?::|,) ([\s\S]*)$/.exec(nt.text);
+      if (!m) { out.push(nt); return; }
+      const fig = /\s*\(([^()]*)\)\s*\.?$/.exec(m[2]), text = m[2].replace(/\s*\([^()]*\)\s*\.?$/, '').replace(/\.$/, ''), key = `${nt.kind}|${text}`;
+      if (!by.has(key)) { const e = { kind: nt.kind, text, ps: [] }; by.set(key, e); out.push(e); }
+      by.get(key).ps.push(fig ? `${m[1]}: ${fig[1]}` : m[1]);
+    });
+    return out.map(x => (x.ps ? { kind: x.kind, text: `${x.text} (${x.ps.some(q => q.includes(':')) ? x.ps.join('; ') : fmt.list(x.ps)}).` } : x));
+  }
+
+  /* The summary in three short lines: what was found, what the plan does, and what to do next. Where there is nothing to
+     assess (no measurement, no target, no average) the full reading says why. */
+  function shortSummary(M) {
+    const a = M.assessment, t = M.target, pr = M.prediction, full = summary(M);
+    if (!M.measurement || !a || !a.available || (!pr && !M.none)) return full;
+    const next = full.find(s => /^Next:/.test(s)), review = full.find(s => /^Note:/.test(s));
+    const fails = a.verdict.failing, hz = rs => fmt.list(rs.map(r => `${r.f} Hz`));
+    const ab = fails.filter(r => r.status === 'above'), be = fails.filter(r => r.status === 'below');
+    const where = [ab.length ? `too long at ${hz(ab)}` : '', be.length ? `too short at ${hz(be)}` : ''].filter(Boolean).join(' and ');
+    const h = a.explanation.headline, verb = /^(Does|Meets)/.test(h) ? `${h.charAt(0).toLowerCase()}${h.slice(1)}` : `is ${h.charAt(0).toLowerCase()}${h.slice(1)}`;
+    const goal = isNum(t.preferred) ? `the ${fmt.s(t.preferred)} target` : `the ${fmt.s(t.max)} limit`;
+    const out = [`Found: the room ${verb}${where ? `, ${where}` : ''} (average ${fmt.s(a.rt)} against ${goal}).`];
+    if (pr) {
+      const pv = pr.verdict, plain = pv ? soundsWords(pv.above.map(r => r.f), pv.below.map(r => r.f)) : '';
+      out.push(`With the plan: ${pr.items.length > 1 ? 'the treatment plan' : howMuch(M, pr.items[0])} would bring the average to about ${fmt.s(pr.predicted)}${M.predictedStatus === 'within' ? ', within the target' : plain ? `; ${plain}` : ''}. A model estimate, not a measurement.`);
+    }
+    if (next) out.push(next);
+    if (review) out.push(review);
     return out;
   }
 
@@ -367,13 +405,13 @@
       });
     }
 
-    function notesList(items) {
+    function notesList(items, title = 'Notes and warnings') {
       if (!items.length) return;
       const size = Z.small, lh = lineH(size), w = WD - 12;
       const heights = items.map(it => doc.wrap(it.text, size, w).length * lh + 1.5);
       need(lineH(Z.small) + 6 + heights[0]);
       y += 3;
-      doc.text(L.l, y + Z.small, 'Notes and warnings', { size: Z.small, bold: true, color: C.ink2 });
+      doc.text(L.l, y + Z.small, title, { size: Z.small, bold: true, color: C.ink2 });
       y += lineH(Z.small) + 2;
       items.forEach((it, i) => {
         need(heights[i]);
@@ -477,82 +515,137 @@
         ...wallRows, ['Floor · ceiling', `${surf('floor')} · ${ceilText}`]],
     ]);
 
+    /* Every band on one row, as on the app's screens (src/ui/bands.tsx): its allowed range as a dashed box, the value as a
+       dot coloured by its status, and the value and status in words. With `from` (the measured value): now (black) and
+       after treatment (red), joined. The preferred value is the dashed line through the rows. */
+    const WORD = { within: 'just right', above: 'too echoey', below: 'too dull' };
+    const groupOf = f => (f <= 250 ? 'low sounds' : f >= 4000 ? 'high sounds' : 'voices');
+    function bandRows(rows, preferred) {
+      const rh = 15, n = rows.length, lw = 78, vw = 132, x0 = L.l + lw, x1 = L.r - vw - 8, change = rows.some(r => isNum(r.from));
+      const top = Math.max(0.5, ...rows.map(r => Math.max(r.rt || 0, r.max || 0, r.from || 0)), preferred || 0);
+      const Mx = Math.ceil(top * 1.15 * 10) / 10, X = v => x0 + Math.max(0, Math.min(1, v / Mx)) * (x1 - x0);
+      need(n * rh + 30);
+      y += 3;
+      const yTop = y;
+      rows.forEach((r, i) => {
+        const cy = y + rh / 2, measured = isNum(r.rt) && r.status !== 'insufficient';
+        const st = measured && WORD[r.status] ? r.status : measured ? 'free' : 'none', col = st === 'above' ? C.critical : st === 'below' ? C.warn : C.ink;
+        doc.text(L.l, cy + 2.7, AM.util.fmt.hz(r.f), { size: Z.table, bold: true, color: C.ink });
+        doc.text(L.l + 38, cy + 2.5, groupOf(r.f), { size: 6.2, color: C.muted });
+        doc.line(x0, cy, x1, cy, { color: C.soft, lw: 1.6 });
+        if (isNum(r.max)) {
+          const lo = isNum(r.min) ? r.min : 0, out = st === 'above' || st === 'below';
+          doc.rect(X(lo), cy - 4.5, Math.max(1, X(r.max) - X(lo)), 9, { fill: out ? C.predictedTint : C.targetWash, stroke: st === 'above' ? C.critical : st === 'below' ? C.warn : C.faint, lw: 0.6, dash: [2, 1.6] });
+        }
+        if (change && isNum(r.from) && measured) doc.line(X(r.from), cy, X(r.rt), cy, { color: C.predicted, lw: 1.2 });
+        if (isNum(r.from)) doc.circle(X(r.from), cy, 3.1, { fill: C.ink, stroke: C.white, lw: 0.8 });
+        if (measured) doc.circle(X(r.rt), cy, 3.1, { fill: change ? C.predicted : col, stroke: C.white, lw: 0.8 });
+        const word = r.note || (measured ? (st === 'free' ? 'no limit here' : WORD[st]) : 'not measured');
+        if (measured) {
+          const val = `${isNum(r.from) ? `${r.from.toFixed(2)} → ` : ''}${fmt.s(r.rt)}`;
+          doc.text(x1 + 10, cy + 2.7, val, { size: Z.table, bold: true, color: C.ink });
+          doc.text(x1 + 10 + doc.textWidth(val, Z.table, true) + 5, cy + 2.7, word, { size: Z.small, bold: st === 'above' || st === 'below', color: st === 'free' ? C.muted : col });
+        } else doc.text(x1 + 10, cy + 2.7, isNum(r.from) ? `${fmt.s(r.from)} now · ${word}` : word, { size: Z.small, color: C.muted });
+        y += rh;
+        if (i < n - 1) doc.line(L.l, y, L.r, y, { color: C.soft, lw: 0.4 });
+      });
+      if (isNum(preferred)) doc.line(X(preferred), yTop, X(preferred), y, { color: C.muted, lw: 0.6, dash: [2, 2] });
+      doc.text(x0, y + 8, '0 s', { size: 6.2, color: C.faint });
+      doc.text(x1, y + 8, `${Mx.toFixed(1)} s`, { size: 6.2, color: C.faint, align: 'right' });
+      if (isNum(preferred)) doc.text(X(preferred), y + 8, `preferred ${fmt.s(preferred)}`, { size: 6.2, color: C.muted, align: 'center' });
+      y += 12;
+      const items = change ? [['dot', C.ink, 'Now (measured)'], ['dot', C.predicted, 'After treatment (model estimate)']] : [['dot', C.ink, 'Just right'], ['dot', C.warn, 'Too dull'], ['dot', C.critical, 'Too echoey']];
+      items.push(['box', null, 'Allowed range']);
+      let lx = L.l;
+      items.forEach(([k, c, label]) => {
+        if (k === 'dot') doc.circle(lx + 3, y + 4.3, 2.6, { fill: c }); else doc.rect(lx, y + 1.3, 8, 6, { fill: C.targetWash, stroke: C.faint, lw: 0.5, dash: [1.5, 1.2] });
+        doc.text(lx + 11, y + 6.8, label, { size: 6.4, color: C.muted });
+        lx += 11 + doc.textWidth(label, 6.4) + 12;
+      });
+      y += 11;
+    }
+
+    // What moved to the consultant's details, in small print: each position's band values, the device's details, the
+    // background level, the reference band's result, and how the target is set and judged.
+    const processingOf = mm => (mm.config && mm.config.processing ? AM.services.measurement.processingShort(mm.config.processing) : mm.settings ? AM.services.measurement.processingShort(AM.services.measurement.processingState(mm.settings, null)) : 'Not recorded');
+    function measurementDetails() {
+      if (!meas) return;
+      const mm = meas.meta, nc = mm.noiseCheck, plan = mm.plan || {}, used = meas.room.positions.map(x => x.id);
+      const small = { size: Z.small, color: C.ink2 };
+      if (used.length > 1) {
+        const per = meas.bands.map(b => `${fmt.hz(b.f)} ${b.values.map(v => (v.rt60 != null ? fmt.s(v.rt60) : '—')).join(' / ')}`).join(' · ');
+        const spread = Math.max(...meas.bands.map(b => (b.spread != null ? b.spread : 0)));
+        block(L.l, WD, `At each position (${used.join(' / ')}): ${per}. The room's value is their mean; the largest spread is ${fmt.s(spread)}.`, small);
+        y += 2;
+      }
+      block(L.l, WD, `Device: microphone ${mm.deviceLabel || 'not reported'} · ${plan.f1 ? `sine sweep ${plan.f1} Hz–${(plan.f2 / 1000).toFixed(plan.f2 % 1000 ? 1 : 0)} kHz, ${plan.seconds} s, level ${AM.ui.levelDb(plan.levelDb)}` : 'test signal not recorded'} · background ${nc && isNum(nc.bandLeqDbfs) ? `${fmt.dbfs(nc.bandLeqDbfs)} (RT60 bands)` : nc && isNum(nc.leqDbfs) ? `${fmt.dbfs(nc.leqDbfs)} (all frequencies)` : 'not measured'} · ${meas.f} Hz: ${meas.headline.method || '—'}, ${meas.headline.quality}, ${meas.headline.confidence.toLowerCase()} confidence (the reference band, where a take's validity is decided).`, small);
+      if (a || (t && t.record && t.source !== 'custom')) { y += 2; block(L.l, WD, `${a ? `How the room is judged: ${String(a.policy.brief).replace(/\.$/, '')}.` : ''}${t && t.record && t.source !== 'custom' ? ` Target condition: ${String(t.record.condition).replace(/\.$/, '')}.` : ''}`.trim(), small); }
+      y += 3;
+    }
+
     // 2 Measurement
     heading(2, 'Measurement', { text: 'MEASURED', color: C.ink }, 70);
     if (!meas) {
       kv([[['RT60', 'Not measured', { bold: true }], ['Reason', M.missing]]]);
       block(L.l, WD, 'No RT60 is reported, and no assessment or prediction is made, until the project has a valid measurement.', { size: Z.small, color: C.muted });
     } else {
-      const mm = meas.meta, lv = mm.levels || {}, nc = mm.noiseCheck, ref = meas.ref || {}, plan = mm.plan || {};
-      const noiseWord = nc ? (nc.status === 'valid' ? 'suitable' : nc.status === 'warning' ? 'suitable, measured with care' : nc.status === 'unassessed' ? 'not assessed (no signal)' : nc.status) : null;
-      // The average over the bands measured (AM.services.rt60Average) heads the right column; the reference band's result (1000 Hz,
-      // which decides validity) and its quality share one row, so the section keeps its height.
-      const av = meas.average, sv = meas.summary, P = meas.positions;
+      const mm = meas.meta, lv = mm.levels || {}, nc = mm.noiseCheck, av = meas.average, sv = meas.summary, P = meas.positions;
+      const quiet = nc ? ({ valid: 'Quiet enough', warning: 'Quiet enough, measured with care', unassessed: 'Not assessed (no signal)' }[nc.status] || nc.status) : 'Not measured';
       kv([
-        [['Positions', `${meas.room.positions.map(x => x.id).join(', ')}${P.complete ? '' : ` · ${P.count} of ${P.required}: provisional`}`, { bold: true, color: P.complete ? C.ink : C.warn }],
-          ['Latest take', `${when(meas.takenAt)} at ${meas.position ? meas.position.id : '—'}`],
+        [['Positions', `${meas.room.positions.map(x => x.id).join(', ')}${P.complete ? '' : ` · ${P.count} of ${P.required}: provisional`} · latest take ${when(meas.takenAt)}`, { bold: true, color: P.complete ? C.ink : C.warn }],
           ['Measuring device', `${meas.deviceKind || 'This device'}: built-in speaker and microphone`],
-          ['Microphone', mm.deviceLabel || 'Not reported'],
-          ['Test signal', plan.f1 ? `Sine sweep ${plan.f1} Hz–${(plan.f2 / 1000).toFixed(plan.f2 % 1000 ? 1 : 0)} kHz, ${plan.seconds} s, level ${AM.ui.levelDb(plan.levelDb)}` : 'Not recorded']],
+          // As the take recorded it: each feature reported off, on, or not reported (unknown, never shown as off).
+          ['Browser processing', processingOf(mm)]],
         [[`Average ${meas.policy.short}`, sv.available ? `${fmt.s(sv.value)}${sv.partial ? ` (${sv.n} of ${sv.total} bands, ${sv.missing.map(x => `${x.f} Hz`).join(', ')} not measured)` : ''}` : `Not available: ${sv.missing.map(x => `${x.f} Hz`).join(', ')} not reliable`, { bold: true }],
           ['Average RT60, all bands', av.available ? `${fmt.s(av.value)} (${av.partial ? `${av.n} of ${av.total} bands, ${av.missing.map(x => `${x.f} Hz`).join(', ')} not measured` : AM.services.rt60Average.SHORT})` : `Not available: ${av.missing.map(x => `${x.f} Hz`).join(', ')} not reliable`],
-          ['Background noise', `${nc && isNum(nc.bandLeqDbfs) ? `${fmt.dbfs(nc.bandLeqDbfs)} (RT60 bands), ${noiseWord}` : nc && isNum(nc.leqDbfs) ? `${fmt.dbfs(nc.leqDbfs)} (all frequencies), ${noiseWord}` : 'Not measured'}${isNum(lv.snrDb) ? ` · signal +${lv.snrDb.toFixed(0)} dB` : ''}`],
-          // As the take recorded it: each feature reported off, on, or not reported (unknown, never shown as off).
-          ['Browser processing', mm.config && mm.config.processing ? AM.services.measurement.processingShort(mm.config.processing) : mm.settings ? AM.services.measurement.processingShort(AM.services.measurement.processingState(mm.settings, null)) : 'Not recorded'],
-          [`Result at ${meas.f} Hz`, `${meas.headline.method || '—'} · ${meas.headline.quality}, ${meas.headline.confidence.toLowerCase()} confidence${meas.status === 'warning' ? ' · with warnings' : ''}`, { color: meas.status === 'warning' ? C.warn : C.ink }]],
+          ['Background noise', `${quiet}${isNum(lv.snrDb) ? ` · test signal ${lv.snrDb.toFixed(0)} dB above it` : ''}`]],
       ], { labelW: 90 });
-      // band table (the room per band, each position's value, the spread, the band against its own limits) and chart
-      const used = meas.room.positions.map(x => x.id), pw = used.length > 2 ? 34 : 40;
-      const cols = [{ title: 'Band', w: 42 }, { title: 'Room RT60', w: 46, align: 'right' }, ...used.map(id => ({ title: id, w: pw, align: 'right' })), { title: 'Spread', w: 36, align: 'right' }, { title: 'vs target', w: 78 }];
-      const ab = a ? new Map(a.bands.map(b => [b.f, b])) : new Map();
-      const rows = meas.bands.map(b => {
-        const s = ab.get(b.f);
-        return [{ t: fmt.hz(b.f), bold: b.f === meas.f }, b.rt60 != null ? { t: fmt.s(b.rt60), bold: true } : { t: 'Not reliable', color: C.warn },
-          ...b.values.map(v => (v.rt60 != null ? fmt.s(v.rt60) : { t: '—', color: C.faint })), b.spread != null ? fmt.s(b.spread) : '—',
-          s && BAND_STATUS[s.status] ? { t: `${BAND_STATUS[s.status]}${s.role === 'secondary' ? ' · own limit' : ''}`, color: STATUS[s.status].color } : s && s.role === 'info' && b.rt60 != null ? { t: 'No limit', color: C.muted } : '—'];
-      });
-      const sz = tableSize(cols, rows), tw = cols.reduce((s, c) => s + c.w, 0), ch = Math.max(sz.total, 96);
-      need(ch + 8);
-      y += 5;
-      table(L.l, y, cols, rows, sz, { highlight: i => meas.bands[i].f === meas.f });
-      bandChart(L.l + tw + 16, y, WD - tw - 16, ch, { series: [{ label: 'Measured RT60 (s)', color: C.ink, values: meas.bands.map(b => b.rt60) }], target: t, bands: meas.bands.map(b => b.f), limits: a ? meas.bands.map(b => { const r = a.bands.find(x => x.f === b.f); return r ? { min: r.min, max: r.max } : null; }) : null });
-      y += ch + 4;
-      block(L.l, WD, `Room RT60: the mean over the positions; spread: longest − shortest. Judged: every band ${meas.policy.judgedShort}, each against its own limits. ${meas.f} Hz highlighted.`, { size: Z.small, color: C.muted });
-      notesList(meas.notes);
+      bandRows(meas.bands.map(b => {
+        const s = a && a.available ? a.bands.find(x => x.f === b.f) : null;
+        return { f: b.f, rt: b.rt60, min: s ? s.min : null, max: s ? s.max : null, status: b.rt60 == null ? 'insufficient' : s ? s.status : null, note: b.rt60 != null && !s ? 'measured' : null };
+      }), t && isNum(t.preferred) && a && a.available ? t.preferred : null);
+      notesList(mergeNotes(meas.notes), 'Notes');
     }
 
-    // 3 Target and assessment
+    // 3 Target and assessment. A DIN 18041 target is for the room in use: its verdict is a guide (target.js isDin).
+    const din = AM.services.target.isDin(t);
     heading(3, 'Target and assessment', { text: 'TARGET', color: C.muted }, 60);
     if (!t) {
       kv([[['Target RT60', 'Not set', { bold: true }]]]);
       block(L.l, WD, `${M.noTarget ? `${M.noTarget} ` : 'No target is set in this project. '}The measurement is not assessed.`, { size: Z.small, color: C.muted });
     } else {
       const basis = `${t.basis || (t.source === 'custom' ? 'Set by the user' : 'Recommended from the room type and use')}${t.note ? ` · source: ${t.note}` : ''}`;
-      const left = [['Target RT60', isNum(t.preferred) ? `${fmt.s(t.preferred)} preferred · range ${range(t)}` : `Upper limit: ${range(t)}`, { bold: true }], ['Basis', basis],
-        ...(t.record && t.source !== 'custom' ? [['Condition', t.record.condition]] : []),
-        ...(a ? [['Verdict rule', a.policy.brief]] : [])];
-      const right = a && !a.available ? [
-        ['Verdict', `Not assessed: ${a.reason}`, { bold: true }],
-      ] : a ? [
-        ['Verdict', `${a.explanation.headline}${a.verdict.complete ? '' : ' (not every band measured)'}`, { bold: true, color: STATUS[a.status].color }],
-        [`Average ${a.policy.short}`, `${fmt.s(a.rt)} (${fmt.signedS(a.diff)}), a summary`],
-        ['Outside the limits', `${a.verdict.failing.length ? a.verdict.failing.map(r => `${r.f} Hz ${fmt.s(r.rt)}`).join(', ') : 'No judged band'}${a.warnings.length ? ` · band warning${a.warnings.length > 1 ? 's' : ''}: ${a.warnings.map(r => `${r.f} Hz ${fmt.s(r.rt)} (own limit ${range(r)})`).join(', ')}` : ''}`],
-      ] : [['Verdict', 'Not available: needs a valid measurement', { bold: true }]];
+      const left = [['Target RT60', isNum(t.preferred) ? `${fmt.s(t.preferred)} preferred · range ${range(t)}` : `Upper limit: ${range(t)}`, { bold: true }], ['Standard', basis]];
+      const hzOf = rs => fmt.list(rs.map(r => `${r.f} Hz`));
+      const ab = a && a.available ? a.verdict.failing.filter(r => r.status === 'above') : [], be = a && a.available ? a.verdict.failing.filter(r => r.status === 'below') : [];
+      const right = a && !a.available ? [['Verdict', `Not assessed: ${a.reason}`, { bold: true }]]
+        : a ? [
+          ['Verdict', `${a.explanation.headline}${a.verdict.complete ? '' : ' (not every band measured)'}`, { bold: true, color: STATUS[a.status].color }],
+          ...(ab.length ? [['Too long at', hzOf(ab)]] : []), ...(be.length ? [['Too short at', hzOf(be)]] : []),
+          ...(!ab.length && !be.length ? [['Outside the limits', 'No judged band']] : []),
+          ...(a.warnings.length ? [['Band warnings', a.warnings.map(r => `${r.f} Hz ${fmt.s(r.rt)} (own limit ${range(r)})`).join(', ')]] : []),
+        ] : [['Verdict', 'Not available: needs a valid measurement', { bold: true }]];
       kv([left, right]);
       if (a && a.available) { y += 2; block(L.l, WD, `${explanation(a.status)}${a.verdict.masked ? ' The average alone is inside the range, but every judged band has to be.' : ''}`, { size: Z.body, color: C.ink2 }); }
+      if (a && a.available && din) { y += 1; block(L.l, WD, 'Measured as it is, usually empty. This is a guide, not an official DIN check.', { size: Z.small, color: C.muted }); }
     }
 
     const hasPage2 = !!(pr || M.plan.items.length);
-    const limitsMeasurement = `One device's uncalibrated built-in speaker and microphone in a web browser, at ${meas ? meas.positions.count : 0} position${meas && meas.positions.count === 1 ? '' : 's'}. Evaluated as ISO 3382-2 sets out (T20/T30, noise compensation, straightness checks), but not validated against a reference instrument: no conformity with ISO 3382-2 and no measurement uncertainty are claimed. Room treated as a box (V = L × W × H).`;
+    const limitsMeasurement = `One device's uncalibrated built-in speaker and microphone in a web browser, at ${meas ? meas.positions.count : 0} position${meas && meas.positions.count === 1 ? '' : 's'}. Evaluated as ISO 3382-2 sets out (T20/T30, noise compensation, straightness checks), but not validated against a reference instrument: no conformity with ISO 3382-2 and no measurement uncertainty are claimed. Room treated as a box (V = L × W × H).${din ? ' DIN 18041 sets its targets for the room in use; no conversion to that is applied.' : ''}`;
+    const limitsShort = `Measured with one device's built-in speaker and microphone in a web browser, at ${meas ? meas.positions.count : 0} position${meas && meas.positions.count === 1 ? '' : 's'}: not a laboratory measurement; no conformity with ISO 3382-2 and no measurement uncertainty are claimed.${din ? ' DIN 18041 sets its targets for the room in use; no conversion to that is applied.' : ''}`;
 
     if (!hasPage2) {
       heading(4, 'Summary and next steps', { text: 'RECOMMENDATION', color: C.acoustic }, 40);
-      summary(M).forEach(s => { block(L.l, WD, s, { size: Z.body, color: C.ink }); y += 2; });
-      need(lineH(Z.small) + 30);
-      y += 4;
+      bullets(shortSummary(M), Z.body);
+      need(lineH(Z.small) + 24);
+      y += 3;
       doc.text(L.l, y + Z.small, 'Limitations', { size: Z.small, bold: true, color: C.ink2 });
       y += lineH(Z.small) + 2;
       bullets([limitsMeasurement]);
+      if (meas) {
+        heading(5, 'Details for your acoustic consultant', null, 30);
+        measurementDetails();
+      }
     } else {
       /* ===== page 2 ===== */
       if (doc.pages.length === 1) newPage();
@@ -567,51 +660,43 @@
         it.mode === 'units' ? { t: `${it.quantity} panel${it.quantity === 1 ? '' : 's'} of ${it.size.label}`, sub: covering(M, it) } : { t: covering(M, it).replace(/^covering/, 'Covering') }]);
       flowTable(pcols, prows, 3);
       y += 4;
-      const over = M.coverage.filter(c => c.fraction > 1);
-      if (over.length) block(L.l, WD, `More treatment than fits on ${fmt.list(over.map(c => whereW(c.placement)))}: the amounts need checking.`, { size: Z.small, color: C.warn, bold: true });
-      if (M.planProblem) block(L.l, WD, `Open issue in the plan: ${M.planProblem}`, { size: Z.small, color: C.warn, bold: true });
+      const over = M.coverage.filter(c => c.over);
+      if (over.length) block(L.l, WD, `More treatment than fits on ${fmt.list(over.map(c => whereW(c.placement)))}: the amounts need checking. There is no predicted result until it fits.`, { size: Z.small, color: C.warn, bold: true });
+      if (M.planProblem && M.planProblem !== M.overfill) block(L.l, WD, `Open issue in the plan: ${M.planProblem}`, { size: Z.small, color: C.warn, bold: true });
 
       heading(5, 'Predicted outcome', { text: 'PREDICTED · MODEL ESTIMATE', color: C.predicted }, 80);
       if (!pr) {
-        kv([[['Predicted echo time', 'Not available', { bold: true }], ['Reason', M.planProblem || 'The prediction needs a valid measurement and a complete treatment plan.']]]);
+        kv([[['Predicted RT60', 'Not available', { bold: true }], ['Reason', M.planProblem || 'The prediction needs a valid measurement and a complete treatment plan.']]]);
       } else {
         const ps = M.predictedStatus, pv = pr.verdict, plain = pv ? soundsWords(pv.above.map(r => r.f), pv.below.map(r => r.f)) : '';
         kv([[
-          [`Echo time (RT60), average ${pr.policy.short}`, `Measured ${fmt.s(pr.measured)}  →  predicted ${fmt.s(pr.predicted)} (${fmt.signedS(pr.predicted - pr.measured)})`, { bold: true, color: C.predicted }],
+          [`RT60, average ${pr.policy.short}`, `Measured ${fmt.s(pr.measured)}  →  predicted ${fmt.s(pr.predicted)} (${fmt.signedS(pr.predicted - pr.measured)})`, { bold: true, color: C.predicted }],
           ...(t ? [['Predicted verdict', `${STATUS[ps] ? STATUS[ps].long : '—'}${ps === 'within' ? ' in every band judged' : plain ? `: ${plain}` : ''}`, { bold: true, color: STATUS[ps] ? STATUS[ps].color : C.ink }]] : []),
         ]], { labelW: 120 });
-        const cols = [{ title: 'Band', w: 46 }, { title: 'Measured', w: 52, align: 'right' }, { title: 'Predicted', w: 52, align: 'right' }, { title: 'Change', w: 50, align: 'right' }, { title: 'Predicted vs target', w: 96 }];
-        const rows = pr.bands.map(b => {
-          const vr = (pr.verdictRows || []).find(r => r.f === b.f), st = t && isNum(b.predicted) ? (vr ? vr.status : AM.acoustics.classify(b.predicted, t)) : null;
-          return [fmt.hz(b.f), isNum(b.measured) ? fmt.s(b.measured) : { t: 'Not reliable', color: C.warn },
-            isNum(b.predicted) ? { t: fmt.s(b.predicted), bold: true, color: C.predicted } : '—', isNum(b.predicted) ? fmt.signedS(b.predicted - b.measured) : '—',
-            !isNum(b.measured) ? { t: 'Not measured reliably', color: C.muted } : b.missingAlpha ? { t: 'No tested α at this band', color: C.muted } : b.coveredExceedsMeasured ? { t: 'Finish values do not fit the room', color: C.warn } : st ? { t: BAND_STATUS[st], color: STATUS[st].color } : '—'];
-        });
-        const sz = tableSize(cols, rows), tw = cols.reduce((sm, c) => sm + c.w, 0), ch = Math.max(sz.total, 96);
-        need(ch + 8);
-        y += 5;
-        table(L.l, y, cols, rows, sz);
-        bandChart(L.l + tw + 16, y, WD - tw - 16, ch, { series: [{ label: 'Measured (s)', color: C.ink, values: pr.bands.map(b => b.measured) }, { label: 'Predicted (s)', color: C.predicted, values: pr.bands.map(b => b.predicted), missing: 'n/a' }], target: t, bands: pr.bands.map(b => b.f), limits: pr.verdictRows ? pr.bands.map(b => { const r = pr.verdictRows.find(x => x.f === b.f); return r ? { min: r.min, max: r.max } : null; }) : null });
-        y += ch + 4;
-        if (t && pv && pv.failing.length) block(L.l, WD, `Outside their limits: ${fmt.list(pv.failing.map(r => `${r.f} Hz ${fmt.s(r.rt)}`))}; ${isNum(t.preferred) ? `average ${fmt.signedS(pr.predicted - t.preferred)} from the preferred ${fmt.s(t.preferred)} (range ${range(t)})` : `average ${fmt.s(pr.predicted)} against the ${fmt.s(t.max)} limit`}.`, { size: Z.small, color: C.muted });
+        bandRows(pr.bands.map(b => {
+          const row = (pr.verdictRows || []).find(r => r.f === b.f), vr = row || {}, lim = { f: b.f, min: isNum(vr.min) ? vr.min : null, max: isNum(vr.max) ? vr.max : null };
+          if (!isNum(b.measured)) return Object.assign(lim, { rt: null, status: 'insufficient' });
+          if (!isNum(b.predicted) || b.missingAlpha || b.coveredExceedsMeasured) return Object.assign(lim, { rt: null, from: b.measured, status: 'insufficient', note: b.missingAlpha ? 'no tested α here' : 'finish values do not fit' });
+          // The band's own verdict row (null: no limit there); a band without one is judged against the target itself.
+          return Object.assign(lim, { rt: b.predicted, from: b.measured, status: row ? row.status : t ? AM.acoustics.classify(b.predicted, t) : null });
+        }), t && isNum(t.preferred) ? t.preferred : null);
       }
 
       heading(6, 'Summary and next steps', { text: 'RECOMMENDATION', color: C.acoustic }, 40);
-      summary(M).forEach(sv => { block(L.l, WD, sv, { size: Z.body, color: C.ink }); y += 2; });
+      bullets(shortSummary(M), Z.body);
 
       heading(7, 'Assumptions and limitations', null, 40);
       bullets([
-        ...(pr ? [
-          `Prediction after treatment: ${pr.model} model (RT60 = 0.161 × V ÷ A), starting from the measured room. The measured RT60 gives the room's equivalent absorption A0 = 0.161 × V ÷ RT60 (the relation ISO 354 uses), which includes furniture, people and air absorption; each product adds its area × its octave-band α (mean of its tested one-third-octave values, at most 1.00), band by band, less the absorption of the finish it covers where Room Setup says what that is (finish α from published or manufacturer data for the chosen material).${pr.items.some((it, k) => pr.headline && !pr.headline.items[k].coveredKnown) ? ' For a product whose covered finish is not set, that finish is not subtracted, which can overstate the effect a little.' : ''} The model assumes an even (diffuse) sound field and that the measured RT60 represents the room; panel placement and edge effects are not modelled. A band without a tested α or a reliable measured value gets no prediction. The room's own RT60 is measured, never estimated from its surfaces.`,
-          ...(pr.checks || []).map(c => c.text),
-          'The treatment has not been installed or verified. Only a new measurement after installation can confirm the result.',
-        ] : []),
-        limitsMeasurement,
+        ...(pr ? [`Prediction after treatment: an estimate from the ${pr.model} model, starting from the measured room. Panel placement and edge effects are not modelled; how it is worked out is in section 8.`,
+          'The treatment has not been installed or verified. Only a new measurement after installation can confirm the result.'] : []),
+        limitsShort,
       ]);
 
-      /* ===== the details for an acoustic consultant: areas, tested α and the calculation ===== */
+      /* ===== the details for an acoustic consultant: each position, the device, areas, tested α and the calculation ===== */
       heading(8, 'Details for your acoustic consultant', null, 60);
-      const cov = M.coverage.map(c => `${c.label}: ${fmt.m2(c.areaM2)} of ${fmt.m2(c.surfaceM2)} free (${fmt.pct(c.fraction)})${c.fraction > 1 ? ' – more than the surface holds' : ''}`).join(' · ');
+      measurementDetails();
+      y += 2;
+      const cov = M.coverage.map(c => `${c.label}: ${fmt.m2(c.areaM2)} of ${fmt.m2(c.surfaceM2)} free (${fmt.pct(c.fraction)})${c.over ? ' – more than the surface holds' : ''}`).join(' · ');
       block(L.l, WD, `Treatment areas: ${items.map(it => `#${it.no} ${fmt.m2(it.areaM2)}${it.mode === 'units' ? ` (${it.quantity} × ${trim(it.size.areaM2)} m²)` : ''} on ${it.placement}`).join('; ')}. Total in the prediction ${fmt.m2(M.plan.areaM2)}.${cov ? ` Coverage of the free surface: ${cov}.` : ''}`, { size: Z.small, color: C.ink2 });
       // Tested absorption of each configuration at the measurement bands; one line per product, # as above.
       const acols = [{ title: '#', w: 16 }, { title: 'Octave-band α of the configuration', w: 205 }, ...bands.map(f => ({ title: `α ${AM.util.fmt.hzShort(f)}`, w: 39, align: 'right' })), { title: 'NRC', w: 40, align: 'right' }];
@@ -656,6 +741,14 @@
         y += 3;
         block(L.l, WD, `Inputs as stored; results rounded to 0.01 m² Sabine and the total is the sum of the values shown. RT60 as the app calculated it, unrounded. Every band is calculated the same way; the predicted average over ${pr.policy.short} is their mean: (${pr.average.included.map(b => b.rt60.toFixed(3)).join(' + ')}) ÷ ${pr.average.n} = ${fmt.s(pr.predicted)}. The predicted verdict judges each band on its own.`, { size: Z.small, color: C.muted });
       }
+      y += 3;
+      bullets([
+        ...(pr ? [
+          `The model: RT60 = 0.161 × V ÷ A, starting from the measured room. The measured RT60 gives the room's equivalent absorption A0 = 0.161 × V ÷ RT60 (the relation ISO 354 uses), which includes furniture, people and air absorption; each product adds its area × its octave-band α (mean of its tested one-third-octave values, at most 1.00), band by band, less the absorption of the finish it covers where Room Setup says what that is (finish α from published or manufacturer data for the chosen material).${pr.items.some((it, k) => pr.headline && !pr.headline.items[k].coveredKnown) ? ' For a product whose covered finish is not set, that finish is not subtracted, which can overstate the effect a little.' : ''} The model assumes an even (diffuse) sound field and that the measured RT60 represents the room. A band without a tested α or a reliable measured value gets no prediction. The room's own RT60 is measured, never estimated from its surfaces.`,
+          ...(pr.checks || []).map(c => c.text),
+        ] : []),
+        limitsMeasurement,
+      ]);
     }
 
     // footers

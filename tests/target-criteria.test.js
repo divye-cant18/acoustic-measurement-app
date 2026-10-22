@@ -174,9 +174,10 @@
       // A5: 199 m³ outside; 25 × 20 × 20 = 10 000 m³ by the formula: 0.75 × 4 − 1 = 2.00; 50 × 30 × 20 = 30 000 m³: 2.0 s; 30 000.6 m³: outside
       const a5 = [st('Sports hall', 'Sport and exercise', EDU, 9.95, 10, 2), st('Sports hall', 'Sport and exercise', EDU, 25, 20, 20), st('Sports hall', 'Sport and exercise', EDU, 50, 30, 20), st('Sports hall', 'Sport and exercise', EDU, 50.001, 30, 20)];
       check('A5: 199 m³ → none; 10 000 m³ → 2.00 s (the formula); 30 000 m³ → 2.0 s; beyond 30 000 m³ → none', json(a5) === json(['outside', 2, 2, 'outside']), json(a5));
-      // EBU: 8.5 × 6 × 1 = 51 m³: Tm = 0.25 × 0.51^(1/3) = 0.25 × 0.79896 = 0.19974 s, not above 0.2 → none; 8 × 6.5 × 1 = 52 m³:
-      // 0.25 × 0.80415 = 0.20104 → 0.20; 409 m³: 0.25 × 1.59948 = 0.39987 → 0.40; 410 m³: 0.25 × 1.60078 = 0.40020 → none
-      const e = [st('Control room', 'Mixing and critical listening', STUDIO, 8.5, 6, 1), st('Control room', 'Mixing and critical listening', STUDIO, 8, 6.5, 1), st('Control room', 'Mixing and critical listening', STUDIO, 409, 1, 1), st('Control room', 'Mixing and critical listening', STUDIO, 410, 1, 1)];
+      // EBU, with sizes Room Setup accepts: 8.5 × 3 × 2 = 51 m³: Tm = 0.25 × 0.51^(1/3) = 0.25 × 0.79896 = 0.19974 s, not above
+      // 0.2 → none; 8 × 3.25 × 2 = 52 m³: 0.25 × 0.80415 = 0.20104 → 0.20; 40.9 × 5 × 2 = 409 m³: 0.25 × 1.59948 = 0.39987 → 0.40;
+      // 41 × 5 × 2 = 410 m³: 0.25 × 1.60078 = 0.40020 → none
+      const e = [st('Control room', 'Mixing and critical listening', STUDIO, 8.5, 3, 2), st('Control room', 'Mixing and critical listening', STUDIO, 8, 3.25, 2), st('Control room', 'Mixing and critical listening', STUDIO, 40.9, 5, 2), st('Control room', 'Mixing and critical listening', STUDIO, 41, 5, 2)];
       check('EBU Tech 3276 requires 0.2 s < Tm < 0.4 s: 51 m³ (0.1997 s) → none; 52 m³ → 0.20 s; 409 m³ → 0.40 s; 410 m³ (0.4002 s) → none', json(e) === json(['outside', 0.2, 0.4, 'outside']), json(e));
       const out = TS.availability(room(EDU, 'Classroom', 'Teaching', 10, 10, 10));
       check('Outside the conditions the user is told why and offered another category or the project\'s own target; the checks stop at the method',
@@ -230,6 +231,32 @@
       const t = p().target;
       check('A private office: the target is NBC 2016\'s upper limit (form "max", no preferred value or lower limit) and can be confirmed',
         t.form === 'max' && t.max === 0.75 && t.preferred === null && t.min === null && stg.canContinue(p()).ok && TS.complete(t) && A.derive.target(p()) === t, json(t).slice(0, 160));
+
+      // A room size Room Setup refuses gives no volume anywhere (AM.derive.geometry), so no target from it either.
+      S.set('room', Object.assign({}, p().room, { industry: CORP, type: 'Meeting room', use: 'Meetings and presentations', L: 10, W: 6, H: 1 }));
+      const badSize = stg.canContinue(p()), avBad = TS.availability(p().room);
+      check('A room height Room Setup refuses (1 m, from 1.8 m): no target, the step cannot be confirmed, and the reason names the height and its limits',
+        json(tri(p().target)) === json([null, null, null]) && !A.derive.target(p()) && !TS.recommend(p().room) && avBad.status === 'needs-input' && !badSize.ok && /room height must be 1\.8–30 m/.test(badSize.reason),
+        `${avBad.status}: ${badSize.reason}`);
+      S.set('room', Object.assign({}, p().room, { L: 409 }));
+      check('A room length Room Setup refuses (409 m, up to 100 m): no target either', json(tri(p().target)) === json([null, null, null]) && /room length must be 1–100 m/.test(stg.canContinue(p()).reason), stg.canContinue(p()).reason);
+      S.set('room', Object.assign({}, p().room, { L: 10, H: 3 }));
+      check('Corrected to 10 × 6 × 3 m: the target follows the criterion again (DIN 18041 A3, 180 m³)', json(tri(p().target)) === json([0.55, 0.44, 0.66]) && stg.canContinue(p()).ok, json(tri(p().target)));
+
+      // Developer tools from their panel (safe) never fill in a project of the user's: they open a new sample project.
+      const mine = p(), mineBefore = json({ room: mine.room, target: mine.target, completed: mine.completed, review: mine.review });
+      S.set('room.L', null);
+      const halfEntered = json({ room: mine.room, target: mine.target, completed: mine.completed, review: mine.review });
+      S.autofillTo('target', { safe: true });
+      const now = p();
+      check('Developer tools (their panel): a project of the user\'s with a half-entered room is left as it is; a new sample project is opened and filled to the step',
+        now.id !== mine.id && now.kind === 'demo' && mine.room.L === null && json({ room: mine.room, target: mine.target, completed: mine.completed, review: mine.review }) === halfEntered
+          && halfEntered !== mineBefore && W.isDone(now, 'room') && S.state.current === 'target' && /new sample project/.test(S.state.ui.toast || ''),
+        `${now.kind} ${now.id === mine.id ? '(same project)' : '(new)'}; mine L ${mine.room.L}; at ${S.state.current}; toast: ${S.state.ui.toast}`);
+      S.update(q => { q.review = ['room']; });
+      S.autofillTo('measure', { safe: true });
+      check('Developer tools stop at a step marked for review instead of marking it complete', S.state.current === 'room' && p().review.includes('room') && /marked for review/.test(S.state.ui.toast || ''), `${S.state.current}; review ${p().review.join(', ')}; ${S.state.ui.toast}`);
+      S.update(q => { q.review = []; });
     }
 
     /* ===== 7. saved projects ===== */
@@ -267,6 +294,12 @@
       S.ui({ sheet: { kind: 'tools' } });
       await sleep(150);
       const dev = document.body.textContent;
+      // Hidden unless turned on with ?dev=1 (remembered on the device): the rail then offers the project's own options.
+      const devOn = /[?&]dev=1(&|$)/.test(location.search) || (() => { try { return localStorage.getItem('am.devtools') === '1'; } catch (e) { return false; } })();
+      const railTools = [...document.querySelectorAll('.rail-tools')].map(b => b.textContent.trim()), jumps = document.querySelectorAll('[data-action="autofill"]').length;
+      check('Developer tools are hidden unless turned on (?dev=1): the rail offers "Project options" (reset, close, how the target was worked out) and no step shortcuts',
+        S.devTools === devOn && (devOn ? railTools.includes('Developer tools') && jumps > 0 : !railTools.includes('Developer tools') && railTools.includes('Project options') && jumps === 0 && /Reset project/.test(dev) && /Close project/.test(dev)),
+        `turned on: ${S.devTools}; rail: ${railTools.join(', ')}; step shortcuts: ${jumps}`);
       check('Developer tools: how this room\'s target was worked out, with its condition, the notes, the method, the references and the checks',
         /How this room's target was worked out/.test(dev) && /Condition:/.test(dev) && /Annex A/.test(dev) && /T_soll/.test(dev) && /BNB/.test(dev) && /The checks made before this target was generated/.test(dev), 'Developer tools panel');
       S.ui({ sheet: null });

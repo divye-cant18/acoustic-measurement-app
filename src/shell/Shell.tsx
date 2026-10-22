@@ -77,7 +77,10 @@ function Rail() {
           <span className="is-available"><span className="wf-mark" />Upcoming</span>
           <span className="is-locked"><span className="wf-mark" />Locked</span>
         </div>
-        <button type="button" className="rail-tools" data-action="tools"><Icon name="flask" size={16} sw={1.9} /> Developer tools</button>
+        {/* Developer tools (step shortcuts) only when turned on (?dev=1); otherwise the open project's own options. */}
+        {S.devTools
+          ? <button type="button" className="rail-tools" data-action="tools"><Icon name="flask" size={16} sw={1.9} /> Developer tools</button>
+          : p ? <button type="button" className="rail-tools" data-action="tools"><Icon name="folder" size={16} sw={1.9} /> Project options</button> : null}
       </div>
     </>
   );
@@ -216,13 +219,15 @@ function Sheet() {
     badge = <span className="tag tag-guide">Step guide</span>;
     body = <>{e.paragraphs.map((t, i) => <p key={i}>{t}</p>)}<div className="sheet-foot"><Icon name="info" size={15} sw={1.9} /><span>This guide uses this project's own numbers. It explains the results; it never calculates or changes them.</span></div></>;
   } else if (sh.kind === 'tools') {
-    title = 'Developer tools';
+    title = S.devTools ? 'Developer tools' : 'Project options';
     body = <>
-      <p>Shortcuts for reviewing one step without clicking through the ones before it. Room Setup and Target are filled with a sample room. Measurement steps are never filled in: they need a real background-noise measurement and a real take, so the shortcut stops at the first step that needs one.</p>
-      <div className="sub-h">Jump to a step</div>
-      <div className="tool-list">{W.STAGES.filter(s => s.id !== 'home').map(s => (
-        <button type="button" className="tool-row" data-action="autofill" data-value={s.id} key={s.id}><span className="wf-mark">{W.stepNo(s.id)}</span><span>{s.title}</span><Icon name="chevR" size={14} sw={2} /></button>
-      ))}</div>
+      {S.devTools ? <>
+        <p>Shortcuts for reviewing one step without clicking through the ones before it. They work on a sample project only: from any other project a new sample project is opened, so yours is never changed. Room Setup and Target are filled with a sample room. Measurement steps are never filled in: they need a real background-noise measurement and a real take, so the shortcut stops at the first step that needs one.</p>
+        <div className="sub-h">Jump to a step</div>
+        <div className="tool-list">{W.STAGES.filter(s => s.id !== 'home').map(s => (
+          <button type="button" className="tool-row" data-action="autofill" data-value={s.id} key={s.id}><span className="wf-mark">{W.stepNo(s.id)}</span><span>{s.title}</span><Icon name="chevR" size={14} sw={2} /></button>
+        ))}</div>
+      </> : null}
       {p ? <>
         <div className="sub-h">This project</div>
         {S.state.ui.confirm === 'reset'

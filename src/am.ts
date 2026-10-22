@@ -93,7 +93,7 @@ export interface Store {
   ui(patch: Partial<UiState>): void; uiSet(path: string, v: unknown): void; update(fn: (p: Project) => void): void; set(path: string, v: unknown): void;
   go(id: string): boolean; advance(): void; check(p: Project | null, s: Stage): { ok: boolean; reason?: string }; back(): void; toast(msg: string): void; history(): Project[];
   startProject(kind: string): void; startFollowUp(): void; openProject(id: string): void; closeProject(): void; resetProject(): void;
-  deleteProject(id: string): void; togglePin(id: string): void; autofillTo(id: string): void;
+  deleteProject(id: string): void; togglePin(id: string): void; autofillTo(id: string, opts?: { safe?: boolean }): void; devTools: boolean;
 }
 export interface Workflow {
   STAGES: Stage[]; PHASES: string[]; NUMBERED: number; get(id: string): Stage; idx(id: string): number; next(id: string): Stage | null;
@@ -150,12 +150,12 @@ export interface Derive {
   room(p: Project | null): RoomResult | null; positions(p: Project): Positions; positionOf(r: unknown): string; policy(p: Project | null): Policy;
   summaryRT60(p: Project | null): Average; averageRT60(p: Project | null): Average; midAverageRT60(p: Project | null): Average;
   noiseChange(p: Project): number | null; assessment(p: Project | null): Assessment | null; soundGroups(p: Project): SoundGroup[] | null;
-  prediction(p: Project): Prediction | null; predictionMissing(p: Project): string | null; predictionStarted(p: Project, current: string): boolean; planProblem(p: Project): string | null;
+  prediction(p: Project): Prediction | null; predictionMissing(p: Project): string | null; predictionStarted(p: Project, current: string): boolean; planProblem(p: Project): string | null; overfill(p: Project): string | null;
   treatmentPlan(p: Project): { items: PlanItem[]; complete: PlanItem[]; incomplete: PlanItem[]; areaM2: number }; treatmentItems(p: Project): PlanItem[];
   treatmentSelection(p: Project): PlanItem | null; treatmentForTarget(p: Project, item?: PlanItem): { areaM2: number; units: number | null; itemId: string; withOthers: boolean; meetsBands: boolean; above: number[]; below: number[] } | null;
   autoAmount(p: Project, item: PlanItem): { mode: string; quantity: number | null; areaM2: number; capped: boolean; availableM2: number | null; needed: boolean; goal: { areaM2: number; meetsBands: boolean; above: number[]; below: number[] } | null } | null;
   isAutoAmount(p: Project, item: PlanItem): boolean; recommendConfig(p: Project, item: PlanItem): string | null; summaryBands(p: Project): number[];
-  treatmentRequired(p: Project): boolean; noTreatment(p: Project): boolean; absorptionGap(p: Project): number | null; coverage(p: Project, placement?: string): { placement: string; label: string; surfaceM2: number; areaM2: number; fraction: number; count: number }[];
+  treatmentRequired(p: Project): boolean; noTreatment(p: Project): boolean; absorptionGap(p: Project): number | null; coverage(p: Project, placement?: string): { placement: string; label: string; surfaceM2: number; areaM2: number; fraction: number; count: number; over: boolean }[];
   summary(p: Project): Summary; laterTakes(p: Project): { kind: 'unprocessed' | 'invalid' | 'failed'; takenAt: string; reason: string | null }[];
   takeComparison(p: Project): { rows: TakeRow[]; spread: number | null }; diagnostics(p: Project): unknown; coveredBy(p: Project, item: PlanItem): { alpha: Record<number, number | null>; known: boolean } | null;
 }

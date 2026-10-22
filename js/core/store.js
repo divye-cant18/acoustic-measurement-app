@@ -466,21 +466,42 @@
   // Measurement history, most recently updated first.
   const history = () => state.projects.slice().sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 
+  /* Developer tools are for building and checking the app, not for measuring a room: their step shortcuts are hidden
+     unless turned on with ?dev=1 in the address (remembered on this device; ?dev=0 turns them off again). */
+  const DEV_KEY = 'am.devtools';
+  const devTools = (() => {
+    let q = null;
+    try { q = new URLSearchParams(location.search).get('dev'); } catch (e) { /* no address to read */ }
+    try {
+      if (q === '1') localStorage.setItem(DEV_KEY, '1');
+      if (q === '0') localStorage.removeItem(DEV_KEY);
+      return q === '1' || (q !== '0' && localStorage.getItem(DEV_KEY) === '1');
+    } catch (e) { return q === '1'; } // storage unavailable: on for this visit only
+  })();
+
   /* Developer tool: finish every stage before `id` with sample input, then open `id`. A stage whose demoFill returns
-     false needs real data (a microphone measurement): the tool stops there and opens that stage instead. */
-  function autofillTo(id) {
-    if (!state.project) { const np = AM.demo.newProject('demo'); state.projects.unshift(np); state.project = np; }
+     false needs real data (a microphone measurement): the tool stops there and opens that stage instead.
+     safe (the Developer tools panel): only a sample project is ever filled in. From any other project a new sample
+     project is started, so a room, target, checklist or plan someone entered is never replaced; and the tool stops at a
+     step marked for review, or one whose sample input does not check out, instead of marking it complete. */
+  function autofillTo(id, opts) {
+    const safe = !!(opts && opts.safe), fresh = safe && !(state.project && state.project.kind === 'demo');
+    if (fresh) startProject('demo');
+    else if (!state.project) { const np = AM.demo.newProject('demo'); state.projects.unshift(np); state.project = np; }
     const p = state.project;
-    let stop = null;
+    let stop = null, why = '';
     for (const s of W.STAGES.slice(0, W.idx(id))) {
-      if (!p.completed.includes(s.id) && s.demoFill && s.demoFill(p) === false) { stop = s; break; }
+      if (safe && W.needsReview(p, s.id)) { stop = s; why = 'is marked for review'; break; }
+      if (!p.completed.includes(s.id) && s.demoFill && s.demoFill(p) === false) { stop = s; why = 'needs a real measurement'; break; }
+      if (safe && !p.completed.includes(s.id) && s.canContinue && !s.canContinue(p).ok) { stop = s; why = 'does not check out with the sample input'; break; }
       complete(s.id);
     }
     state.current = stop ? stop.id : id;
     state.ui.sheet = null;
     state.ui.navOpen = false;
     emit();
-    if (stop) toast(`${stop.title} needs a real measurement. Developer tools stop here.`);
+    const said = [fresh ? 'Opened a new sample project, so no project of yours is changed.' : '', stop ? `${stop.title} ${why}. Developer tools stop here.` : ''].filter(Boolean).join(' ');
+    if (said) toast(said);
   }
 
   function toast(msg) {
@@ -490,5 +511,5 @@
     emit();
   }
 
-  AM.store = { state, load, subscribe, emit, ui, uiSet, update, set, complete, resetFrom, flagFrom, go, advance, check, back, startProject, startFollowUp, openProject, closeProject, resetProject, deleteProject, togglePin, history, autofillTo, toast };
+  AM.store = { state, load, subscribe, emit, ui, uiSet, update, set, complete, resetFrom, flagFrom, go, advance, check, back, startProject, startFollowUp, openProject, closeProject, resetProject, deleteProject, togglePin, history, autofillTo, devTools, toast };
 })(window.AM);

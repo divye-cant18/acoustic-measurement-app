@@ -58,7 +58,7 @@
       edge: { 125: dinEdge(0.65, 1.45), 4000: dinEdge(0.65, 1.2) },
       secondary: {},
       brief: 'DIN 18041 A1–A4: every band 125 Hz–4 kHz within its limits',
-      basis: 'DIN 18041:2016, use types A1–A4: the reverberation time has to lie within the tolerance band in every octave band from 125 Hz to 4 kHz: 0.8–1.2 × T_soll from 250 Hz to 2 kHz (the target range), 0.65–1.45 × T_soll at 125 Hz and 0.65–1.2 × T_soll at 4 kHz. T_soll is for the room in use, 80 % occupied; the room was measured as it is, and no conversion is applied, so an empty room is judged on the strict side.',
+      basis: 'DIN 18041:2016, use types A1–A4: the reverberation time has to lie within the tolerance band in every octave band from 125 Hz to 4 kHz: 0.8–1.2 × T_soll from 250 Hz to 2 kHz (the target range), 0.65–1.45 × T_soll at 125 Hz and 0.65–1.2 × T_soll at 4 kHz. T_soll is for the room in use, 80 % occupied; the room was measured as it is, and no conversion is applied. An empty room reads longer than the same room in use: a band that meets its upper limit empty will meet it in use too, but one close to its lower limit may read too short once the room is in use. The verdict is a guide, not an official DIN 18041 check.',
     },
     'din-a5': {
       id: 'din-a5', name: 'Speech range', primary: [250, 500, 1000, 2000], edge: {}, secondary: {},

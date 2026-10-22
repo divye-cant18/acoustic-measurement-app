@@ -1,12 +1,15 @@
 /* Step 9 · Predicted Result — measured condition + the whole treatment plan = predicted condition, compared with the
    target. Predicted values come only from AM.services.prediction (AM.derive.prediction) and are always styled apart from
    measured ones. The predicted verdict judges every band on its own: an average inside the range never hides a band
-   outside it. The screen leads with that verdict in plain words (now, after treatment, target) and the amount to try;
-   the calculation, written out for one band, and every band are under the technical details. */
+   outside it. The screen leads with that verdict in plain words (now, after treatment, target) and the amount to try.
+   Under the technical details: one result line, the room's absorption at 1000 Hz as one bar (what is already there and
+   what the products add), and every band now and after treatment on its allowed range; the calculation written out,
+   the assumptions and limits, and the band table are folded below them. */
 import type { ReactNode } from 'react';
 import { acoustics, D, fmt, TGT } from '../lib';
 import type { Ctx } from '../am';
-import { AmountSlider, Btn, Card, Chart, CoverageWarning, Details, Icon, KvNote, Legend, Note, PredPill, RtScale, soundsAdvice, soundsText, StatusPill, TableWrap, TechH } from '../ui/kit';
+import { AmountSlider, Btn, Card, CoverageWarning, Details, Icon, KvNote, Note, PredPill, RtScale, soundsAdvice, soundsText, StatusPill, TableWrap, TechH } from '../ui/kit';
+import { BandRanges, type Band } from '../ui/bands';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // What the predicted verdict says, band by band, each against its own limits (never a difference that can turn negative).
@@ -28,6 +31,26 @@ function sentence(pred: any, t: any, st: string, area: number, measuredStatus: s
   const less = st === 'below' && !v.above.length
     ? (measuredStatus === 'below' ? ' The room was already below the target range before treatment: adding absorption makes it drier still, so no treatment is recommended.' : ' Less treatment would do.') : '';
   return `${gain}, but not yet within the target: ${parts.join('; ')}.${v.masked ? ' The average alone is inside the range, but every band has to be.' : ''}${less}`;
+}
+
+/* The room's absorption at one band as a single bar: what is already in the room (from its measured RT60) and what the
+   products add, with the RT60 before and after. More absorption, shorter RT60. */
+function AbsorptionBar({ f, existing, added, total, now, after, what }: { f: number; existing: number; added: number; total: number; now: number; after: number; what: string }) {
+  const add = Math.max(0, added), whole = existing + add || 1, pct = (x: number) => `${(x / whole * 100).toFixed(2)}%`;
+  return (
+    <div className="ab">
+      <span className="ab-k">{`Absorption at ${fmt.hz(f)}`}</span>
+      <div className="ab-row">
+        <div className="ab-bar" role="img" aria-label={`${fmt.m2(existing)} already in the room${add > 0 ? `, ${fmt.m2(add)} added by the ${what}` : ''}, ${fmt.m2(total)} in all`}>
+          <span className="ab-base" style={{ width: pct(existing) }}><span>{`Already in the room · ${fmt.m2(existing)}`}</span></span>
+          {add > 0 ? <span className="ab-add" style={{ width: `max(8px, ${pct(add)})` }} /> : null}
+        </div>
+        <b className="ab-tot">{`= ${fmt.m2(total)}`}</b>
+      </div>
+      <div className="ab-row"><span className="ab-add-k">{add > 0 ? `+${fmt.m2(add)} ${what}` : `The ${what} add no absorption at ${fmt.hz(f)}: they absorb no more than the surface they cover.`}</span><span /></div>
+      <p className="ab-rt">{`RT60 at ${fmt.hz(f)}: ${fmt.s(now)} now → ${fmt.s(after)} after`}</p>
+    </div>
+  );
 }
 
 export function PredictionScreen({ ctx }: { ctx: Ctx }) {
@@ -81,6 +104,25 @@ export function PredictionScreen({ ctx }: { ctx: Ctx }) {
   const say = !area ? 'No treatment area yet, so the estimate equals the measured room.'
     : `With ${plan}, the room's RT60 should go from ${fmt.s(pred.measured)} to about ${fmt.s(pred.predicted)}. ${st === 'within' ? 'That is within the target for every pitch it is judged on.'
       : !v ? 'The target is not complete, so there is no verdict yet.' : off ? `${cap(off)}.` : 'The average is still outside the target range.'}`;
+  // The technical details in one line: the result, the bands outside their limits after treatment with their value and
+  // the limit they miss, the bands not measured, and what that means.
+  const offAfter = v ? [...v.above, ...v.below].sort((x: any, y: any) => x.f - y.f) : [], notMeasured = pred.bands.filter((b: any) => b.measured == null);
+  const line: [string, string, string] = !area ? ['minus', 'No treatment amount yet', 'The estimate equals the measured room until an amount is chosen.']
+    : [st === 'within' ? 'check' : st === 'above' ? 'arrowUp' : 'arrowDn',
+      `After treatment: ${fmt.s(pred.predicted)}, ${!v ? 'no verdict yet' : st === 'within' ? 'within the target' : st === 'above' ? (masked ? 'close to the target' : 'still above the target') : 'drier than the target'}`,
+      [...(offAfter.length > 2 ? [`${fmt.list(offAfter.map((r: any) => fmt.hz(r.f)))} would ${offAfter.every((r: any) => r.status === 'below') ? 'drop below' : offAfter.every((r: any) => r.status === 'above') ? 'stay above' : 'fall outside'} their ranges.`]
+        : offAfter.map((r: any) => (r.status === 'above' ? `${fmt.hz(r.f)} would be ${fmt.s(r.rt)}; it should be at most ${fmt.s(r.max)}.` : `${fmt.hz(r.f)} would drop to ${fmt.s(r.rt)}; it needs at least ${fmt.s(r.min)}.`))),
+        notMeasured.length ? `${fmt.list(notMeasured.map((b: any) => fmt.hz(b.f)))} could not be measured.` : '',
+        st === 'below' ? (a.status === 'below' ? 'The room was already drier than the target, so no treatment is recommended.' : 'Less treatment would do.') : '',
+        st === 'within' && !offAfter.length && !notMeasured.length ? 'Every pitch it is judged on would be within its range.' : '',
+      ].filter(Boolean).join(' ')];
+  // Every band now and after treatment, each against its own limits as the predicted verdict judges it.
+  const bandRows: Band[] = pred.bands.map((b: any) => {
+    const vr = (pred.verdictRows || []).find((r: any) => r.f === b.f) || {}, lim = { f: b.f, min: vr.min != null ? vr.min : null, max: vr.max != null ? vr.max : null, role: vr.role };
+    if (b.measured == null) return { ...lim, rt: null, status: 'insufficient' };
+    if (b.predicted == null || b.missingAlpha || b.coveredExceedsMeasured) return { ...lim, rt: null, from: b.measured, status: 'insufficient', note: b.missingAlpha ? 'no tested value here' : 'finish values do not fit' };
+    return { ...lim, rt: b.predicted, from: b.measured, status: vr.status || null };
+  });
   const tip: string | null = !area || st === 'within' ? null
     : st === 'below' ? (a.status === 'below' ? 'The room was already drier than the target before treatment, so no treatment is recommended.' : 'Less treatment would do: move the bar below to the left.')
       : goal && goal.meetsBands === false ? `${sel.product.name} alone cannot fix every pitch. ${soundsAdvice(goal.above, goal.below)}`
@@ -120,40 +162,44 @@ export function PredictionScreen({ ctx }: { ctx: Ctx }) {
 
       <section className="card pv-tech" aria-label="Technical details">
         <Details id="pred-tech" summary="Show the technical details: the calculation and every band">
-          <TechH title={`Measured, predicted and target · average RT60, ${SHORT}`} note={<PredPill status={st} />} />
-          <p className="small">{sentence(pred, t, st, area, a.status)}</p>
-
-          <TechH title="How this is calculated" note={`Simplified Sabine model, written out at ${fmt.hz(h.f)}; every band is calculated the same way.`} />
-          <div className="calc">
-            {calcRows.filter((r): r is [string, string, ReactNode, string?] => !!r).map(([key, f, val, cls], i) => (
-              <div className={`calc-r ${cls || ''}`} key={i}><span className="calc-k">{key}</span><span className="calc-f">{f}</span><span className="calc-v">{val}</span></div>
-            ))}
-          </div>
-          {(pred.checks || []).map((c: any, i: number) => <p className="small muted" key={i}>{c.text}</p>)}
-          <p className="small muted">{`A₀ is the room's equivalent absorption from the measured RT60 (the relation ISO 354 uses): furniture, people and air included. α is the octave-band value of ${items.map(it => `${multi ? `#${it.no} ` : ''}${it.configuration.label} (certificate ${it.configuration.test.certificate || '—'})`).join(', ')}: the mean of the three tested one-third-octave values in each octave, at most 1.00. The finish α is that of the surface each product covers, from Room Setup.${unknownCover.length ? ` For ${unknownCover.map(it => `${multi ? `#${it.no} ` : ''}${it.product.name}`).join(', ')} the covered finish is not set, so its own absorption is not subtracted and the effect may be overstated a little.` : ''} The model assumes an even (diffuse) sound field and that the measured RT60 represents the room; placement and edge effects of the panels are not modelled, so treat the result as an estimate.`}</p>
-
-          <TechH title="Band by band" />
-          <Chart type="bands" cls="chart-compact" spec={{ line: true, series: [{ label: 'Measured', kind: 'measured', values: pred.bands.map((b: any) => b.measured) }, { label: 'Predicted', kind: 'predicted', values: pred.bands.map((b: any) => b.predicted) }], target: t, limits: pred.verdictRows ? pred.verdictRows.map((r: any) => ({ min: r.min, max: r.max })) : undefined, unit: 's', height: 200, yTitle: 'RT60 (s)', aria: 'Measured and predicted RT60 by band' }} height={200} />
-          <Legend items={[['ln-measured', 'Measured'], ['ln-predicted', 'Predicted (modelled)'], ...(t.preferred != null ? [['zone', `Target range ${TGT.rangeText(t)}`], ['pref', 'Preferred']] : [['zone', `Target ${TGT.rangeText(t)}`]]) as [string, string][]]} />
-          <TableWrap>
-            <table className="tbl">
-              <thead><tr><th>Band</th><th className="r">Measured</th><th className="r">Predicted</th><th className="r">Change</th><th>Predicted vs target</th></tr></thead>
-              <tbody>
-                {pred.bands.map((b: any) => {
-                  // Each band against its own limits, as the verdict judges it (pred.verdictRows).
-                  const vr = (pred.verdictRows || []).find((r: any) => r.f === b.f), s = vr ? vr.status : acoustics.classify(b.predicted, t);
-                  return (
-                    <tr key={b.f}>
-                      <td>{fmt.hz(b.f)}</td><td className="r">{fmt.s(b.measured)}</td><td className="r">{fmt.s(b.predicted)}</td><td className="r">{b.predicted != null ? fmt.signedS(b.predicted - b.measured) : '—'}</td>
-                      <td>{b.measured == null ? <span className="small muted">Not measured reliably</span> : b.missingAlpha ? <span className="small muted">No tested α at this band</span>
-                        : b.coveredExceedsMeasured ? <span className="small muted">Finish values do not fit the room here</span>
-                          : s ? <><PredPill status={s} />{vr && vr.max != null ? <KvNote>{`${vr.role === 'edge' ? 'own limit' : vr.role === 'secondary' ? 'warning limit' : 'judged'} ${vr.min != null ? `${vr.min.toFixed(2)}–${fmt.s(vr.max)}` : `≤ ${fmt.s(vr.max)}`}`}</KvNote> : null}</> : <span className="small muted">No limit at this band</span>}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </TableWrap>
+          <div className={`br-result is-${area ? st : 'none'}`}><span className="br-ri" aria-hidden="true"><Icon name={line[0]} size={16} sw={2.4} /></span><div><b>{line[1]}</b><p>{line[2]}</p></div></div>
+          <AbsorptionBar f={h.f} existing={h.existingA} added={h.addedA} total={h.totalA} now={h.measured} after={h.predicted} what={multi ? 'products' : items[0] && items[0].mode === 'units' ? 'panels' : 'treatment'} />
+          <p className="small muted">Each pitch, now and after treatment, against its allowed range.</p>
+          <BandRanges bands={bandRows} preferred={t.preferred} label="Each pitch, now and after treatment, against its allowed range" />
+          <Details id="pred-calc" summary="Show the calculation">
+            <TechH title="How this is calculated" note={`Simplified Sabine model, written out at ${fmt.hz(h.f)}; every band is calculated the same way.`} />
+            <div className="calc">
+              {calcRows.filter((r): r is [string, string, ReactNode, string?] => !!r).map(([key, f, val, cls], i) => (
+                <div className={`calc-r ${cls || ''}`} key={i}><span className="calc-k">{key}</span><span className="calc-f">{f}</span><span className="calc-v">{val}</span></div>
+              ))}
+            </div>
+          </Details>
+          <Details id="pred-limits" summary="Assumptions and limits">
+            {(pred.checks || []).map((c: any, i: number) => <p className="small muted" key={i}>{c.text}</p>)}
+            <p className="small muted">{`A₀ is the room's equivalent absorption from the measured RT60 (the relation ISO 354 uses): furniture, people and air included. α is the octave-band value of ${items.map(it => `${multi ? `#${it.no} ` : ''}${it.configuration.label} (certificate ${it.configuration.test.certificate || '—'})`).join(', ')}: the mean of the three tested one-third-octave values in each octave, at most 1.00. The finish α is that of the surface each product covers, from Room Setup.${unknownCover.length ? ` For ${unknownCover.map(it => `${multi ? `#${it.no} ` : ''}${it.product.name}`).join(', ')} the covered finish is not set, so its own absorption is not subtracted and the effect may be overstated a little.` : ''} The model assumes an even (diffuse) sound field and that the measured RT60 represents the room; placement and edge effects of the panels are not modelled, so treat the result as an estimate.`}</p>
+          </Details>
+          <Details id="pred-numbers" summary="Show the numbers">
+            <p className="small">{sentence(pred, t, st, area, a.status)}</p>
+            <TableWrap>
+              <table className="tbl">
+                <thead><tr><th>Band</th><th className="r">Measured</th><th className="r">Predicted</th><th className="r">Change</th><th>Predicted vs target</th></tr></thead>
+                <tbody>
+                  {pred.bands.map((b: any) => {
+                    // Each band against its own limits, as the verdict judges it (pred.verdictRows).
+                    const vr = (pred.verdictRows || []).find((r: any) => r.f === b.f), s = vr ? vr.status : acoustics.classify(b.predicted, t);
+                    return (
+                      <tr key={b.f}>
+                        <td>{fmt.hz(b.f)}</td><td className="r">{fmt.s(b.measured)}</td><td className="r">{fmt.s(b.predicted)}</td><td className="r">{b.predicted != null ? fmt.signedS(b.predicted - b.measured) : '—'}</td>
+                        <td>{b.measured == null ? <span className="small muted">Not measured reliably</span> : b.missingAlpha ? <span className="small muted">No tested α at this band</span>
+                          : b.coveredExceedsMeasured ? <span className="small muted">Finish values do not fit the room here</span>
+                            : s ? <><PredPill status={s} />{vr && vr.max != null ? <KvNote>{`${vr.role === 'edge' ? 'own limit' : vr.role === 'secondary' ? 'warning limit' : 'judged'} ${vr.min != null ? `${vr.min.toFixed(2)}–${fmt.s(vr.max)}` : `≤ ${fmt.s(vr.max)}`}`}</KvNote> : null}</> : <span className="small muted">No limit at this band</span>}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </TableWrap>
+          </Details>
         </Details>
       </section>
     </>

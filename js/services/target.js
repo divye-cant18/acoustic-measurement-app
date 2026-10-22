@@ -124,6 +124,18 @@
     record: 'Source and conditions recorded with the target',
   };
 
+  /* The room size as Room Setup accepts it (its limits, stages/room.js): the first length, width or height outside them,
+     as a sentence, or null. A size outside them gives no volume anywhere (AM.derive.geometry), so no target from it. */
+  function sizeError(r) {
+    const st = AM.workflow && AM.workflow.get('room'), m = st && st.model;
+    if (!m) return null;
+    const bad = m.DIMS.find(([k]) => m.dimError(k, r[k]));
+    return bad ? `The room ${bad[2]} must be ${m.dimError(bad[0], r[bad[0]]).replace(/^Enter /, '')}.` : null;
+  }
+
+  // A target worked out from DIN 18041 (not the project's own): its verdict is a guide, not an official DIN check.
+  const isDin = t => !!(t && t.source !== 'custom' && t.record && /^din18041/.test(t.record.criterion));
+
   function availability(room) {
     const checks = Object.keys(CHECK_LABELS).map(id => ({ id, label: CHECK_LABELS[id], ok: null, detail: '' }));
     const at = id => checks.find(c => c.id === id);
@@ -169,8 +181,12 @@
     // 3. The reference applies to this use.
     pass('applies', `${cat.basis === 'example' ? 'Named in the reference' : 'By the use type\'s own description'}: ${cat.why}`);
 
-    // 4. Required inputs.
-    const g = AM.acoustics.geometry(r);
+    // 4. Required inputs: the volume from a room size Room Setup accepts.
+    const badSize = c.inputs.includes('volume') ? sizeError(r) : null, g = badSize ? null : AM.acoustics.geometry(r);
+    if (badSize) {
+      fail('inputs', `Room size: ${badSize}`);
+      return out('needs-input', 'Room size to check', `${ref.short} sets this target from the room's volume. ${badSize} Correct it in Room Setup.`, Object.assign({ missing: ['volume'] }, base));
+    }
     const missing = c.inputs.filter(k => k === 'volume' && !g);
     if (missing.length) {
       fail('inputs', `Missing: ${missing.map(k => INPUT_LABEL[k]).join(', ')}.`);
@@ -235,6 +251,6 @@
 
   AM.services.target = {
     kind: 'standards-based', usesFor, knownUses, offeredTypes, typeGroups, useGroups, offeredIndustries, category, availability, recommend,
-    form, complete, aim, rangeText, valueText, fullText,
+    form, complete, aim, rangeText, valueText, fullText, isDin,
   };
 })(window.AM);

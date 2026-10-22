@@ -266,9 +266,11 @@
         `technical table ${techTable}; decay chart ${!!rd.querySelector('details.tech [data-chart="decay"]')}`);
       const ah = W.get('assessment').view(ctx()).body, at = textOf(ah), ad = dom(ah);
       const fixRows = [...ad.querySelectorAll('.fix-row')];
-      check('8 Assessment leads with the verdict and one sentence of advice, then "What to fix": one row per group with its value and status; the band chart and table are under "Show technical details"',
+      const bandRows = [...ad.querySelectorAll('details.tech .br-list .br-row')];
+      check('8 Assessment leads with the verdict and one sentence of advice, then "What to fix": one row per group with its value and status; every band against its allowed range and the table are under "Show technical details"',
         /What to fix/.test(at) && fixRows.length === 3 && fixRows.every(r => /\d\.\d\ds(Tooechoey|Toodull|Justright)|Notmeasured/.test(r.textContent.replace(/\s+/g, '')))
-          && !!ad.querySelector('.av-hero .av-verdict') && (ad.querySelector('.av-say') || {}).textContent.trim().length > 20 && !!ad.querySelector('details.tech [data-chart="bands"]') && !bad(at),
+          && !!ad.querySelector('.av-hero .av-verdict') && (ad.querySelector('.av-say') || {}).textContent.trim().length > 20
+          && bandRows.length === 6 && bandRows.every(r => /\d\.\d\ds(justright|tooechoey|toodull|nolimithere)|notmeasured/.test(r.textContent.replace(/\s+/g, ''))) && !!ad.querySelector('details.tech table.tbl') && !bad(at),
         (ad.querySelector('.av-say') || {}).textContent);
     }
 
@@ -405,6 +407,32 @@
       check('9 The PDF with a treatment plan shows the predicted average in its key figure and section, the predicted verdict, and stays at two pages',
         pdf && pred && txt.includes(`PREDICTED RT60 · MODEL ESTIMATE`) && txt.includes(fmt.s(pred.predicted)) && txt.includes(`predicted ${fmt.s(pred.predicted)}`) && txt.includes('Predicted verdict') && pdf.doc.pages.length === 2 && !bad(txt),
         pdf ? `${pdf.doc.pages.length} page(s)` : err);
+
+      /* Panels that do not fit give no result. Wall 1 is part of the walls: what is on it counts towards the walls too, so
+         two products that each fit can still be too much together; and the app's own amount on the walls leaves room
+         for what is already on Wall 1. */
+      {
+        const SFc = AM.services.surfaces, u = product.size.options[sizeIndex].areaM2;
+        const free1 = SFc.coveredBy(p.room, 'Wall 1').freeM2, freeW = SFc.coveredBy(p.room, 'Walls').freeM2;
+        const n1 = Math.floor(0.9 * free1 / u), nW = Math.floor((freeW - n1 * u) / u) + 2;
+        const it = (id, placement, quantity, extra) => Object.assign({ id, productId: product.id, configurationId: cfg.id, size: String(sizeIndex), quantity, placement }, extra);
+        S.set('treatment', { items: [it('w1', 'Wall 1', n1), it('ws', 'Walls', nW)], active: 'w1' });
+        const covW = D.coverage(p, 'Walls')[0], cov1 = D.coverage(p, 'Wall 1')[0], why = D.overfill(p);
+        check('9 Two products that each fit on their own, together more than the walls hold (Wall 1 counts towards the walls): no predicted result, the reason says so, and neither Treatment nor Predicted Result continues',
+          n1 > 1 && n1 * u <= free1 && nW * u <= freeW && covW && covW.over && covW.count === 2 && close(covW.areaM2, (n1 + nW) * u, 1e-9) && cov1 && !cov1.over
+            && D.prediction(p) === null && /the walls .* is more than its free surface/.test(why || '') && D.planProblem(p) === why && D.predictionMissing(p) === why
+            && !W.get('treatment').canContinue(p).ok && !W.get('prediction').canContinue(p).ok,
+          `Wall 1: ${n1} × ${u} m² of ${free1.toFixed(2)} m²; walls: ${nW} more; together ${covW && covW.areaM2.toFixed(2)} of ${freeW.toFixed(2)} m² · ${why}`);
+        S.set('treatment', { items: [it('w1', 'Wall 1', Math.floor(free1 / u) + 1)], active: 'w1' });
+        check('9 One product larger than the wall it goes on: no predicted result', D.prediction(p) === null && /Wall 1 .* is more than its free surface/.test(D.overfill(p) || '') && !W.get('prediction').canContinue(p).ok, D.overfill(p));
+        S.set('treatment', { items: [it('w1', 'Wall 1', n1), it('ws', 'Walls', 0, { amountBy: 'app' })], active: 'ws' });
+        const plan = D.autoPlan(p), mineW = plan.ws;
+        check('9 The app\'s own amount on the walls leaves room for what is already on Wall 1 (at most the walls\' free surface less Wall 1\'s panels)',
+          mineW && close(mineW.capM2, freeW - n1 * u, 1e-6) && mineW.areaM2 <= freeW - n1 * u + 1e-9,
+          mineW ? `cap ${mineW.capM2.toFixed(2)} m² (walls ${freeW.toFixed(2)} less ${(n1 * u).toFixed(2)}); suggested ${mineW.areaM2.toFixed(2)} m²` : 'no amount');
+        S.set('treatment', { items: [it('w1', 'Wall 1', n1)], active: 'w1' });
+        check('9 Within the surface: the prediction is there again', !!D.prediction(p) && D.overfill(p) === null, D.overfill(p) || 'fits');
+      }
       S.set('treatment', { items: [], active: null });
     }
 

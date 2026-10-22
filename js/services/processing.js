@@ -20,7 +20,8 @@
    (t60) is still reported for information when the decay allows it, but never becomes the RT60, for the same reason.
    A band has no value when its decay is cut off (it drops into the background far faster than the room's own decay
    allows: analysis.js, cutoff). A band's value is then rejected when the decay is not straight (ξ = 1000·(1 − r²) above
-   50 ‰) or too short for the band filter (bandwidth × RT60 < 4). Quality and confidence come only from these measured properties:
+   50 ‰), too short for the band filter (bandwidth × RT60 < 4), or when T20 and T30 are too far apart for one RT60 (C
+   above +50 %, or below −30 %, −40 % under 500 Hz: analysis.js, curvatureFail). Quality and confidence come only from these measured properties:
      Good / High    ξ ≤ 10 ‰ and the T30 check within 10 % of T20 (the note says whether the decay slows down,
                     C > 10 %, or speeds up, C < −10 %, which points to processing)
      Fair / Medium  no T30 check (35–45 dB usable), or a straightness or curvature warning, or any warning on the take (browser processing not
@@ -110,8 +111,13 @@
     const rt = fit.T, bt = rt * b.bandwidth;
     if (bt < D.minBT) { out.path = null; out.reason = `The decay is too short to measure in this band (bandwidth × RT60 = ${bt.toFixed(1)}, at least ${D.minBT} needed).`; return out; }
     if (out.xi > D.xi.fail) { out.path = null; out.reason = `The decay is not a straight line (non-linearity ${out.xi} ‰). The room or the recording does not give a single reverberation time here.`; return out; }
-    out.rt60 = r3(rt);
     if (out.t20 != null && out.t30 != null) out.curvature = r1(100 * (out.t30 / out.t20 - 1));
+    // T20 and T30 too far apart (CRITERIA.decay.curvatureFail): no single reverberation time describes the decay, so the
+    // band is not used rather than reported with a note.
+    const CF = D.curvatureFail, C0 = out.curvature;
+    if (C0 != null && C0 > CF.slower) { out.path = null; out.reason = `T30 is ${C0} % longer than T20: the decay bends so much that no single RT60 describes it in this band (more than ${CF.slower} % apart). Measure again, or at another position.`; return out; }
+    if (C0 != null && C0 < -(b.f >= 500 ? CF.faster : CF.fasterLow)) { out.path = null; out.reason = `T30 is ${-C0} % shorter than T20: the decay speeds up towards its end, which a room's own decay does not do (more than ${b.f >= 500 ? CF.faster : CF.fasterLow} % apart). Noise suppression or a noise gate in the device or the system may be cutting it off. Measure again with it turned off.`; return out; }
+    out.rt60 = r3(rt);
     if (out.xi > D.xi.warn) out.notes.push(`Decay not perfectly straight (non-linearity ${out.xi} ‰).`);
     if (dist) out.notes.push(`Sounds during the take rose ${Math.round(dist.db)} dB above the background in this band; the evaluation still ends 10 dB above them.`);
     // A room's decay is a sum of decaying modes, so it can only flatten with time (T30 ≥ T20, apart from small random

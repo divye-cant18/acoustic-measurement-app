@@ -155,15 +155,18 @@
     // An amount of none is a problem only when the user set it: the app may find that the others are enough (autoPlan).
     const empty = plan.complete.find(i => !(i.areaM2 > 0)) && plan.complete.every(i => !(i.areaM2 > 0)) ? plan.complete[0] : plan.complete.find(i => !(i.areaM2 > 0) && i.amountBy === 'user');
     if (empty) return `Set ${empty.mode === 'units' ? 'how many panels of' : 'the area of'} #${empty.no} ${empty.product.name}, or remove it.`;
+    // More treatment than the surface it goes on (overfill): the panels do not fit, so there is nothing to predict.
+    const over = overfill(p);
+    if (over) return over;
     // The covered finishes' library absorption does not fit the measured room in a band the average needs (prediction.js).
     const raw = predictionRaw(p), clash = raw && raw.checks.find(c => c.id === 'covered-exceeds-measured' && c.bands.some(f => used.includes(f)));
-    if (clash) {
-      // More treatment than the surface it goes on: the amount is the cause, not the finishes.
-      const over = coverage(p).find(c => c.fraction > 1 + 1e-9);
-      if (over) return `The treatment on ${/^Wall \d$/.test(over.label) ? over.label : `the ${over.label.toLowerCase()}`} (${AM.util.fmt.m2(over.areaM2)}) is more than its free surface (${AM.util.fmt.m2(over.surfaceM2)}), so it cannot be predicted. Reduce the amount or change the placement.`;
-      return clash.text;
-    }
-    return null;
+    return clash ? clash.text : null;
+  }
+  // More treatment than a surface holds, as a sentence for the user (null when everything fits). A product on Wall 1 also
+  // takes room on the walls, and one on the walls on the walls and ceiling (coverage).
+  function overfill(p) {
+    const over = coverage(p).find(c => c.over);
+    return over ? `The treatment on ${/^Wall \d$/.test(over.label) ? over.label : `the ${over.label.toLowerCase()}`} (${AM.util.fmt.m2(over.areaM2)}${over.count > 1 ? `, ${over.count} products` : ''}) is more than its free surface (${AM.util.fmt.m2(over.surfaceM2)}), so it cannot be predicted. Reduce the amount or change the placement.` : null;
   }
 
   /* The RT60 after treatment: the MEASURED room with the complete treatment plan (the room's own RT60 is never
@@ -186,10 +189,11 @@
      own data) never stands in for it. verdict: the predicted bands judged by the same rule as the measured room
      (AM.services.evaluation), predictedStatus its status. allBands: the predicted average over the bands the measured
      all-band average used (stored with the report form), or null. Each item: its added absorption at the reference
-     band, and alonePredicted, the predicted summary with that item alone. */
+     band, and alonePredicted, the predicted summary with that item alone. null too while the products do not fit on
+     their surfaces (overfill): a result for panels that cannot be put up would mislead. */
   function prediction(p) {
     const r = room(p), g = geometry(p), plan = treatmentPlan(p), RA = AM.services.rt60Average, EV = AM.services.evaluation;
-    if (!r || !g || !plan.complete.length) return null;
+    if (!r || !g || !plan.complete.length || overfill(p)) return null;
     const pol = policy(p), measuredAverage = RA.ofBands(r, pol.primary);
     if (!measuredAverage.available) return null;
     const run = list => runPrediction(p, r, g, list);
@@ -215,6 +219,7 @@
     if (prediction(p) || noTreatment(p)) return null;
     if (!room(p)) return 'The prediction needs a valid measurement. Measure the room in Acoustic Measurement.';
     if (!target(p)) return 'The prediction needs a target. Set it in Target / Ideal RT60.';
+    if (!geometry(p)) return 'The prediction needs the room size. Check the length, width and height in Room Setup.';
     if (!treatmentItems(p).length) return 'Choose a product in Treatment: the room needs treatment, and the prediction is made from the products chosen there.';
     return planProblem(p) || 'The prediction needs a complete treatment plan. Check it in Treatment.';
   }
@@ -388,8 +393,15 @@
       return out === 0 ? [0, 0, total] : [out, Math.abs(avg.value - aim(t)), total];
     };
     const better = (x, y) => (x[0] !== y[0] ? x[0] < y[0] : x[0] === 0 ? x[2] < y[2] - 1e-9 : Math.abs(x[1] - y[1]) > 1e-6 ? x[1] < y[1] : x[2] < y[2] - 1e-9);
-    // The most an item can take: the free surface where it goes, less what the other products there take now.
-    const capOf = it => { const f = freeOf(it.placement); return f == null ? Math.max(4 * g.total, 1) : Math.max(0, f - items.filter(o => o.id !== it.id && o.placement === it.placement).reduce((s, o) => s + am[o.id], 0)); };
+    // The most an item can take: the free surface where it goes, less what the other products there take now; and the
+    // same for every larger placement it is part of (Wall 1 is part of the walls, the walls of the walls and ceiling).
+    const pls = SF.placementsFor(p.room), freeAt = new Map(pls.map(q => [q.value, freeOf(q.value)]));
+    const keysOf = new Map(items.map(o => [o.id, SF.placementKeys(o.placement, p.room)]));
+    const capOf = it => {
+      if (freeOf(it.placement) == null) return Math.max(4 * g.total, 1);
+      const mine = keysOf.get(it.id), caps = pls.filter(q => inside(mine, q.keys)).map(q => (freeAt.get(q.value) || 0) - items.filter(o => o.id !== it.id && inside(keysOf.get(o.id), q.keys)).reduce((s, o) => s + am[o.id], 0));
+      return Math.max(0, caps.length ? Math.min(...caps) : freeOf(it.placement));
+    };
     const unit = it => (it.mode === 'units' ? it.size.areaM2 : 0.1);
     const snap = (it, x) => { const u = unit(it), cap = capOf(it); const n = Math.floor(Math.min(x, cap) / u + 1e-9); return Math.max(0, n * u); };
     const steps = (it, n) => { const cap = capOf(it), u = unit(it), k = Math.max(1, Math.ceil(cap / u / n)); const out = []; for (let x = 0; x <= cap + 1e-9; x += k * u) out.push(snap(it, x)); out.push(snap(it, cap)); return [...new Set(out)]; };
@@ -478,13 +490,17 @@
     const g = geometry(p);
     if (!g) return [];
     const items = treatmentItems(p), SF = AM.services.surfaces;
+    // A placement holds the products put on it and on the placements inside it: the walls hold what is on each wall too.
     return SF.placementsFor(p.room).filter(pl => !placement || pl.value === placement).map(pl => {
-      const here = items.filter(i => i.placement === pl.value);
-      if (!here.length) return null;
-      const surfaceM2 = SF.coveredBy(p.room, pl.value).freeM2, areaM2 = here.reduce((s, i) => s + i.areaM2, 0);
-      return { placement: pl.value, label: pl.value, surfaceM2, areaM2, fraction: surfaceM2 ? areaM2 / surfaceM2 : 0, count: here.length };
+      if (!items.some(i => i.placement === pl.value)) return null;
+      const here = items.filter(i => inside(SF.placementKeys(i.placement, p.room), pl.keys));
+      const surfaceM2 = SF.coveredBy(p.room, pl.value).freeM2, areaM2 = here.reduce((s, i) => s + (i.areaM2 || 0), 0);
+      // over: more than the free surface (also any amount on a surface with none free).
+      return { placement: pl.value, label: pl.value, surfaceM2, areaM2, fraction: surfaceM2 ? areaM2 / surfaceM2 : 0, count: here.length, over: areaM2 > surfaceM2 * (1 + 1e-9) + 1e-9 };
     }).filter(Boolean);
   }
+  // Surfaces `a` all lie within `b` (surface keys).
+  const inside = (a, b) => a.length > 0 && a.every(k => b.includes(k));
 
   /* Takes newer than the current measurement that it does not include, newest kinds first: [{ kind, takenAt, reason }],
      kind 'unprocessed' (recorded, not processed yet), 'invalid' (processed, no valid result) or 'failed' (could not be
@@ -600,5 +616,5 @@
     };
   }
 
-  AM.derive = { geometry, target, aim, measured, room, positions, positionResults, positionOf: posOf, policy, summaryRT60, summaryBands, headlineMeasured, averageRT60, midAverageRT60, noiseChange, treatmentItems, treatmentSelection, treatmentPlan, planProblem, prediction, predictionMissing, predictionStarted, assessment, soundGroups, SOUND_GROUPS: GROUPS, absorptionGap, treatmentForTarget, autoPlan, autoAmount, isAutoAmount, recommendConfig, treatmentRequired, noTreatment, coverage, summary, takeSummary, takeComparison, coveredBy: covered, laterTakes, diagnostics };
+  AM.derive = { geometry, target, aim, measured, room, positions, positionResults, positionOf: posOf, policy, summaryRT60, summaryBands, headlineMeasured, averageRT60, midAverageRT60, noiseChange, treatmentItems, treatmentSelection, treatmentPlan, planProblem, overfill, prediction, predictionMissing, predictionStarted, assessment, soundGroups, SOUND_GROUPS: GROUPS, absorptionGap, treatmentForTarget, autoPlan, autoAmount, isAutoAmount, recommendConfig, treatmentRequired, noTreatment, coverage, summary, takeSummary, takeComparison, coveredBy: covered, laterTakes, diagnostics };
 })(window.AM);

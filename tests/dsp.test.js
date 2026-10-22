@@ -292,6 +292,18 @@
         r.bands.map(b => `${b.f}: ${(b.reason || '').slice(0, 60)}`).join(' · '));
     }
 
+    // T20 and T30 too far apart for one RT60 (CRITERIA.decay.curvatureFail): the band has no value, with the reason. Within
+    // the limits the value stays, with a note and medium confidence. One band's decision, from its two straight fits.
+    {
+      const PR = AM.services.processing, band = (f, t20, t30) => PR.decideBand({ f, supported: true, decayRangeDb: 50, noiseFloorDb: -80, peakToNoiseDb: 60, headDb: 0, bandwidth: f / Math.SQRT2, fits: { T20: { T: t20, r2: 0.9999 }, T30: { T: t30, r2: 0.9999 } } });
+      const ok = band(1000, 0.6, 0.66), bent = band(1000, 0.6, 0.87), slower = band(1000, 0.6, 0.93), faster = band(1000, 0.6, 0.4), low = band(125, 0.6, 0.4), lowFaster = band(125, 0.6, 0.33);
+      check('T20 and T30 within 10 %: the value stands (T20), high confidence', ok.rt60 === 0.6 && ok.path === 'T20' && ok.confidence === 'High', `${ok.rt60} ${ok.path} C ${ok.curvature} % ${ok.confidence}`);
+      check('T30 45 % longer than T20 (a curved decay): the value stands with a note and medium confidence', bent.rt60 === 0.6 && bent.notes.some(n => /curved/.test(n)) && bent.confidence === 'Medium', `${bent.rt60} C ${bent.curvature} %`);
+      check('T30 55 % longer than T20: no value in the band, and the reason says the two are too far apart', slower.rt60 == null && slower.path == null && /55 % longer than T20/.test(slower.reason || '') && slower.confidence === 'None', slower.reason);
+      check('T30 33 % shorter than T20 at 1000 Hz (the decay speeds up): no value, and the reason points to noise suppression', faster.rt60 == null && /shorter than T20/.test(faster.reason || '') && /noise gate|Noise suppression/.test(faster.reason || ''), faster.reason);
+      check('At 125 Hz, where T20 and T30 scatter more: 33 % shorter keeps the value with a note; 45 % shorter gives none', low.rt60 === 0.6 && low.notes.length > 0 && lowFaster.rt60 == null && /shorter than T20/.test(lowFaster.reason || ''), `${low.rt60} / ${lowFaster.reason}`);
+    }
+
     // Speech-like sounds during the take (300–3000 Hz, 15 dB above the background, every 0.8–2.5 s): read from the take's
     // own background, they are counted as noise. Before, a burst inside a decay with little margin gave 1000 Hz +12.6 %
     // and 4000 Hz +17.1 % as valid values (tests/noise-study.html). The same take without them is unaffected.
