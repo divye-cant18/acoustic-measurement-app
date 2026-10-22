@@ -1758,6 +1758,7 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
 .rs-g.is-top .rs-gw{color:var(--ink-2);font-weight:600}
 .rs-g.is-warn .rs-gw{color:var(--warn-ink);font-weight:600}
 .rs-hero .take-deck-wrap .card{box-shadow:none}
+.rs-recheck{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 @media (max-width:560px){
   .rs-hero{padding:18px 16px}
   .rs-v{font-size:46px}

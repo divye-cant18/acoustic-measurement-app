@@ -24,6 +24,9 @@
       processLatest: () => S.go('processing'),
       // The next position without a valid take, selected for the next take, then Acoustic Measurement.
       nextPosition: ctx => { const nx = AM.derive.positions(ctx.project).next; if (nx) S.update(pp => { pp.setup.position = nx; }); S.go('measure'); },
+      // A position chosen to be measured again (as often as wanted), selected for the next take, then Acoustic Measurement.
+      // Nothing measured changes until a new valid take there replaces the one in use.
+      remeasure: (ctx, v) => { if (AM.demo.POSITIONS.some(x => x.id === v)) S.update(pp => { pp.setup.position = v; }); S.go('measure'); },
       copyDiagnostics: async ctx => {
         const d = AM.derive.diagnostics(ctx.project);
         if (!d) return;

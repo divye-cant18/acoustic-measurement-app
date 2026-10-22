@@ -297,3 +297,10 @@ The positions are measured on the Measure step without going back and forth:
   moves the next take to the next position that still needs one ("P1 done. Next: P2"); a take that is not valid says
   why and offers Retry. With enough positions, See results marks Measurement and Processing done and opens Results.
   Processing stays as the place to look at each take's details.
+- **Measure any position again, as often as wanted (22 October 2026):** the positions card offers "Measure again now"
+  on the position selected for the next take (one press measures it again) and "Measure again here" on every other
+  measured position (it selects that position; move the device there, then press Measure P1 again). Each row says how
+  many takes the position has had ("2 takes"). The newest valid take at a position replaces the earlier one there (kept
+  as superseded); a take that is not valid never replaces a good one. Results offers the same from its main card:
+  "Re-check the room: Measure P1 again, Measure P2 again" opens Acoustic Measurement with that position selected. There
+  is no limit on the number of takes; the list of replaced takes keeps the latest 20.

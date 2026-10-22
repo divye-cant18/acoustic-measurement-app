@@ -330,6 +330,11 @@ export function ResultsScreen({ ctx }: { ctx: Ctx }) {
         </div>
         <p className="rs-say">{say}</p>
         <GroupTiles groups={groups} />
+        {/* Re-checking the room: any measured position can be measured again, as often as wanted (Acoustic Measurement). */}
+        <div className="rs-recheck">
+          <span className="small muted">Re-check the room:</span>
+          {s.rows.filter(r => r.status !== 'not-measured' && r.status !== 'waiting').map(r => <Btn action="remeasure" value={r.id} size="sm" icon="mic" key={r.id}>{`Measure ${r.id} again`}</Btn>)}
+        </div>
 
         <Details id="results-tech" summary={techSummary}>
           <TechH title={`Two averages, over ${where}`} />

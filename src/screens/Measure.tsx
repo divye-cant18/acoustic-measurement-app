@@ -23,7 +23,7 @@ const HEAD: Record<string, [string, string, string, string]> = {
   'measuring-noise': ['Measuring the background', 'Keep the room quiet. The level is read from the microphone.', 'acoustic', 'Measuring'],
   'auto-noise': ['Checking the background first', 'Keep the room quiet. The test sound follows by itself in a few seconds.', 'acoustic', 'Checking'],
   analysing: ['Working out the result', 'Checking the recording and calculating RT60. A few seconds.', 'acoustic', 'Analysing'],
-  'all-done': ['Measuring done', 'Enough positions are measured. Press See results, or measure another position if you like.', 'good', 'Done'],
+  'all-done': ['Measuring done', 'Enough positions are measured. Press See results, or measure any position again to re-check it.', 'good', 'Done'],
   'ready-for-rt60': ['Ready to measure', 'Start the take. This device plays the test sweep through its speaker and records the room with its microphone.', 'good', 'Ready'],
   'measuring-rt60': ['Measuring', 'Recording the room. Stay still and silent until the take is complete.', 'live', 'Recording'],
   processing: ['Analysing the recording', 'Recovering the impulse response and the decay in each band.', 'acoustic', 'Analysing'],
@@ -86,9 +86,12 @@ function NoiseRow({ p }: { p: Project }) {
 }
 
 /* The positions of the session: which are measured, the one selected for the next take, and what is still needed.
+   Any position can be measured again, as often as wanted: the newest valid take there replaces the earlier one (kept as
+   replaced), and a take that does not work never replaces a good one. Each row says how many takes it has had.
    ISO 3382-2 (4.3.1) prefers positions at least 2 m apart and 1 m from walls: the plan's distances are checked. */
-function PositionsCard({ p, busy }: { p: Project; busy: boolean }) {
+function PositionsCard({ p, busy, blocker }: { p: Project; busy: boolean; blocker: string | null }) {
   const s = D.positions(p), g = D.geometry(p);
+  const takes = D.takeComparison(p).rows, tries = (id: string) => takes.filter(t => t.position === id).length;
   const word: Record<string, [string, string, string?]> = { valid: ['good', 'Measured', 'check'], waiting: ['neutral', 'Recorded, not processed'], invalid: ['critical', 'Not valid', 'x'], failed: ['critical', 'Not used', 'x'] };
   const close: string[] = [];
   if (g) {
@@ -98,7 +101,7 @@ function PositionsCard({ p, busy }: { p: Project; busy: boolean }) {
       if (d < 2) close.push(`${used[i].id} and ${used[j].id} (${d.toFixed(1)} m)`);
     }
   }
-  const head = s.complete ? `${s.count} positions measured: the session is complete${s.next ? `. ${s.next} can be added (optional)` : ''}.` : `${s.count} of ${s.required} positions measured: ${s.need} more needed.`;
+  const head = s.complete ? `${s.count} positions measured: the session is complete${s.next ? `. ${s.next} can be added (optional)` : ''}. Any position can be measured again.` : `${s.count} of ${s.required} positions measured: ${s.need} more needed.`;
   return (
     <Card icon="pin" title="Measuring positions" sub={head} cls="card-positions"
       right={<Pill tone={s.complete ? 'good' : 'acoustic'} text={s.complete ? `${s.count} positions` : `${s.count} of ${s.required}`} icon={s.complete ? 'seal' : 'pin'} />}>
@@ -106,9 +109,14 @@ function PositionsCard({ p, busy }: { p: Project; busy: boolean }) {
         {s.rows.map(r => {
           const w = word[r.status];
           const st = w ? <Pill tone={w[0]} text={w[1]} icon={w[2]} /> : r.id === s.next && !s.complete ? <Pill tone="acoustic" text="Needed next" icon="pin" /> : <Pill tone="neutral" text={s.complete ? 'Optional' : 'Needed'} />;
-          const what = r.result ? `${fmt.s(r.result.headline.rt60)} at ${fmt.hz(r.result.headline.f)} · ${fmt.when(r.result.takenAt)}${r.issue ? ` · latest retry ${r.issue.kind === 'failed' ? 'not used' : 'not valid'}, the valid take is kept` : ''}`
-            : r.issue ? `${r.issue.kind === 'failed' ? 'Take not used' : 'Take not valid'}: ${r.issue.reason || 'see Processing'}` : r.detail;
-          const act = busy ? null : r.current ? <span className="small muted"><Icon name="pin" size={13} sw={2} /> Selected for the next take</span>
+          const n = tries(r.id), count = n > 1 ? ` · ${n} takes` : '';
+          const what = r.result ? `${fmt.s(r.result.headline.rt60)} at ${fmt.hz(r.result.headline.f)} · ${fmt.when(r.result.takenAt)}${count}${r.issue ? ` · latest retry ${r.issue.kind === 'failed' ? 'not used' : 'not valid'}, the valid take is kept` : ''}`
+            : r.issue ? `${r.issue.kind === 'failed' ? 'Take not used' : 'Take not valid'}: ${r.issue.reason || 'see Processing'}${count}` : r.detail;
+          // The position selected for the next take: measured or tried there already, it is measured again in one press.
+          const tried = r.status === 'valid' || r.status === 'invalid' || r.status === 'failed';
+          const act = busy ? null : r.current
+            ? (tried ? <Btn action="startTake" size="sm" icon="rec" variant="primary" reason={blocker || undefined}>{r.status === 'valid' ? 'Measure again now' : 'Retry now'}</Btn>
+              : <span className="small muted"><Icon name="pin" size={13} sw={2} /> Selected for the next take</span>)
             : <Btn action="usePosition" value={r.id} size="sm">{r.status === 'valid' ? 'Measure again here' : r.status === 'invalid' || r.status === 'failed' ? 'Retry here' : 'Measure here'}</Btn>;
           return (
             <li className={`pos-row is-${r.status}${r.current ? ' is-current' : ''}`} key={r.id}>
@@ -117,7 +125,7 @@ function PositionsCard({ p, busy }: { p: Project; busy: boolean }) {
           );
         })}
       </ol>
-      <p className="small muted">Measure at each position in turn: check the background there, then start the measurement. The room's result is the average of the positions. If a position does not work, measure it again or use another one.</p>
+      <p className="small muted">Measure at each position in turn. The room's result is the average of the positions. You can measure any position again, as many times as you like: the newest valid take there replaces the earlier one, and a take that does not work never replaces a good one.</p>
       {close.length ? <Note tone="info">{`${close.join(' and ')} ${close.length > 1 ? 'are each' : 'are'} less than 2 m apart in this room. Place the device as far from the other positions as you can: ideally 2 m apart and 1 m from walls.`}</Note> : null}
     </Card>
   );
@@ -203,8 +211,8 @@ export function MeasureScreen({ ctx }: { ctx: Ctx }) {
   const hereRow = (D.positions(p).rows as any[]).find(r => r.current), triedHere = recHere || (!!hereRow && hereRow.status !== 'not-measured');
   // A new position: what was just done, and where to go now. A take that was not valid: why, and what to press.
   if (st === 'noise-elsewhere') {
-    const done = cur && D.positionOf(cur) !== pos.id ? D.positionOf(cur) : null;
-    title = `${done ? `${done} done. ` : ''}Next: ${pos.id}, ${pos.name.toLowerCase()}`;
+    const done = cur && D.positionOf(cur) !== pos.id ? D.positionOf(cur) : null, again = !!hereRow && hereRow.status === 'valid';
+    title = again ? `Measure ${pos.id} again: ${pos.name.toLowerCase()}` : `${done ? `${done} done. ` : ''}Next: ${pos.id}, ${pos.name.toLowerCase()}`;
     sub = `Move the ${K.noun} there and press Start measurement. It checks the background noise there first, then measures.`;
     pill = 'Next position';
   } else if (st === 'take-invalid') {
@@ -241,7 +249,7 @@ export function MeasureScreen({ ctx }: { ctx: Ctx }) {
         </div>
       </section>
       {p.legacyNote ? <Note tone="warn" icon="alert">{p.legacyNote}</Note> : null}
-      <PositionsCard p={p} busy={running || m.noiseRun(p)} />
+      <PositionsCard p={p} busy={running || m.noiseRun(p)} blocker={blocker} />
       <div className="measure-label"><Icon name="wave" size={15} sw={2} />{` Room measurement at ${pos.id} · ${pos.name}`}</div>
       {retry && !running && !(rec && !m.evaluated(p, rec))
         ? <Note tone="warn"><b>The last take was not valid.</b>{` ${retry.reason || ''} Before measuring again, close doors and windows, switch off ventilation and air conditioning, make sure nobody talks or moves, check that the ${K.noun}'s speaker and microphone are uncovered, and turn its volume up if it can play louder without distorting.`}</Note> : null}
@@ -274,7 +282,7 @@ export function MeasureScreen({ ctx }: { ctx: Ctx }) {
           <div className="hstack">
             {running
               ? <Btn action="cancelTake" icon="stop" disabled={take.phase === 'quality'}>Cancel</Btn>
-              : <button type="button" className="btn btn-primary is-rec" data-action="startTake" disabled={canStart ? undefined : true}><span className="rec"><Icon name="rec" size={16} sw={2} /></span>{` ${triedHere ? 'Measure again' : 'Start measurement'}`}</button>}
+              : <button type="button" className="btn btn-primary is-rec" data-action="startTake" disabled={canStart ? undefined : true}><span className="rec"><Icon name="rec" size={16} sw={2} /></span>{` ${triedHere ? `Measure ${pos.id} again` : 'Start measurement'}`}</button>}
             <span className="small muted">{running ? 'Leaving this step cancels the take.' : canStart ? (m.needsNoise(p) ? 'Checks the background noise here first, then measures.' : cur ? 'A new take becomes the current measurement only if it is valid.' : `Uses this ${K.noun}'s own speaker and microphone.`) : blocker || ''}</span>
           </div>
         </div>
