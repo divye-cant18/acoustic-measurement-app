@@ -51,6 +51,7 @@ function RecommendationCard({ rec, av, pol }: { rec: any; av: any; pol: any }) {
       </div>
       <p className="lead"><b>Why.</b>{` ${rec.reason}`}</p>
       {/^din18041/.test(rec.criterion.id) ? <p className="small muted">DIN 18041 sets this target for the room in use. The app measures the room as it is, usually empty, so the result is a guide, not an official DIN check.</p> : null}
+      {rec.fit ? <p className="small muted">{rec.fit}</p> : null}
     </Card>
   );
 }

@@ -172,7 +172,7 @@
           'The app works out the volume for you. Describing the walls and the ceiling is optional, but it sharpens the treatment advice later.',
         ] },
         { id: 'target', min: 9, title: 'Target', scene: 'tourTarget', captions: [
-          'Step two: the target. From how the room is used and how big it is, the app recommends the ideal echo time, straight from acoustic standards.',
+          'Step two: the target. From how the room is used and how big it is, the app recommends the ideal echo time from published acoustic standards, where one covers the room.',
           'Have a quick look, and confirm it.',
         ] },
         { id: 'setup', min: 11, title: 'Measurement Setup', scene: 'tourSetup', captions: [

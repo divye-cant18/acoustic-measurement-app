@@ -34,6 +34,12 @@
   // No verified criterion applies: no values (an earlier version's values are kept apart by the store, never used).
   const blank = t => Object.assign({ preferred: null, min: null, max: null, form: 'range', source: 'recommended', basis: '' }, t && t.earlier ? { earlier: t.earlier } : {});
   const sameValues = (a, b) => a.preferred === b.preferred && a.min === b.min && a.max === b.max && TS.form(a) === TS.form(b);
+  /* The project's own target, adjusted from a recommendation: what it started from (adjustedFrom), so its basis can say
+     when the room no longer gives that recommendation. A target already the project's own keeps its basis. */
+  const adjusted = (t, rec) => (t.source === 'custom' ? { basis: t.basis || OWN_BASIS }
+    : rec ? { basis: `Adjusted from ${rec.basisLabel}`, adjustedFrom: { label: rec.basisLabel, preferred: rec.preferred, min: rec.min, max: rec.max } }
+      : { basis: t.basis || OWN_BASIS });
+  const EARLIER = from => `Set for the project; adjusted earlier from ${from} for the room as it was then`;
 
   // What the target should be now, unless the user has set their own.
   function followed(p) {
@@ -58,7 +64,19 @@
     // Until the user adjusts it, the project target follows the recommendation for the room as it is now (or stays
     // empty when no verified criterion applies). Called by the store whenever project data changes.
     sync(p) {
-      if (!p || p.target.source === 'custom') return false;
+      if (p && p.target.source === 'custom') {
+        // The room changed and no longer gives the recommendation this target was adjusted from: its basis says so.
+        const t = p.target, rec = TS.recommend(p.room), from = t.adjustedFrom;
+        const fromLabel = from ? from.label : /^Adjusted from /.test(t.basis || '') ? t.basis.replace(/^Adjusted from /, '') : null;
+        if (!fromLabel) return false;
+        const same = rec && rec.basisLabel === fromLabel && (!from || (rec.preferred === from.preferred && rec.min === from.min && rec.max === from.max));
+        if (same) return false;
+        const next = Object.assign({}, t, { basis: EARLIER(fromLabel) });
+        delete next.adjustedFrom;
+        p.target = next;
+        return true;
+      }
+      if (!p) return false;
       const next = followed(p);
       if (JSON.stringify(next) === JSON.stringify(p.target)) return false;
       p.target = next;
@@ -81,8 +99,8 @@
         if (!isNum(t[key])) { S.toast('Type a value first, e.g. 0.60.'); return; }
         S.set('target', Object.assign({}, t, {
           [key]: round(clamp(t[key] + Number(dir) * STEP, MIN, MAX), 2),
-          source: 'custom', basis: rec ? `Adjusted from ${rec.basisLabel}` : t.basis || OWN_BASIS,
-        }));
+          source: 'custom',
+        }, adjusted(t, rec)));
       },
       // A typed value (Enter or leaving the field). Out-of-range or non-numeric text stays in the field with a message.
       typeTarget: (ctx, v, el) => {
@@ -95,7 +113,7 @@
         delete ui.bad[el.id];
         const value = round(n, 2), rec = TS.recommend(ctx.project.room);
         if (value === t[key]) { ctx.render(); return; }
-        S.set('target', Object.assign({}, t, { [key]: value, source: 'custom', basis: rec ? `Adjusted from ${rec.basisLabel}` : t.basis || OWN_BASIS }));
+        S.set('target', Object.assign({}, t, { [key]: value, source: 'custom' }, adjusted(t, rec)));
       },
       useRecommended: ctx => { const rec = TS.recommend(ctx.project.room); if (rec) { delete ctx.project.targetNote; S.set('target', fromRecommendation(rec)); } },
       // No verified criterion: the user enters the project's own target, with its source. Nothing is filled in for them.

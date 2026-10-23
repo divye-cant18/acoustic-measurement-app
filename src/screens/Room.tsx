@@ -302,7 +302,7 @@ const withSaved = (list: string[], v: string, mark: string) => (v && !list.inclu
 
 /* Whether a target can be generated for the room as described (AM.services.target.availability). */
 function CriterionStatus({ av, rec }: { av: any; rec: any }) {
-  if (rec) return <Note tone="good" icon="seal">{`Verified criterion: ${rec.reference.short}, ${rec.criterion.name}. The target is worked out in step 2.`}</Note>;
+  if (rec) return <Note tone="good" icon="seal">{`Verified criterion: ${rec.reference.short}, ${rec.criterion.name}${rec.reference.evidence === 'primary' ? '' : ' (checked in published sources; the standard\'s own text was not available)'}. The target is worked out in step 2.`}</Note>;
   if (av.status === 'unselected') return null;
   if (av.status === 'needs-input') return <p className="small muted">{av.message}</p>;
   return <Note tone="warn">{av.message}</Note>;

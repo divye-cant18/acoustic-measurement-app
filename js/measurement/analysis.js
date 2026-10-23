@@ -169,7 +169,12 @@
       // `after` frames, within nearNoiseDb of it, falls excessDb more than the room's own decay does over that time.
       // The first frame (the direct sound) is never part of `before`.
       cutoff: { before: 3, after: 5, aboveNoiseDb: 15, nearNoiseDb: 6, excessDb: 15 },
-      xi: { warn: 10, fail: 50 },                  // non-linearity ξ = 1000·(1 − r²), per mille (ISO 3382-2 annex B)
+      xi: { warn: 10, fail: 50, failUnchecked: 35 }, // non-linearity ξ = 1000·(1 − r²), per mille (ISO 3382-2 annex B)
+      // failUnchecked: with too little decay for the T30 check (35–45 dB usable), nothing confirms the decay over 30 dB,
+      // so a T20 fit above this is not used. Synthetic scan of 515 accepted bands (rooms 0.3–1.3 s, omni, laptop and two
+      // resonant small-speaker models, two backgrounds, double-slope rooms; 22 October 2026): the two readings without a
+      // T30 check above it were 9.7 % and 14.8 % off; the highest accurate one was at 29.2 ‰. A lower limit for every band
+      // would lose accurate readings (above 20 ‰: 41 within 5 %), so where T30 is worked out the curvature check decides.
       curvature: 10,       // C = 100·(T30/T20 − 1), percent (ISO 3382-2)
       curvatureLow: 25,    // below 500 Hz a shorter T30 is put down to the device only beyond this (random scatter there)
       // T20 and T30 this far apart: no single RT60 describes the band, which then has no value. slower: T30 longer than

@@ -50,7 +50,7 @@
       issuer: 'European Broadcasting Union (EBU)',
       scope: 'Reference listening rooms and high-quality sound control rooms.',
       evidence: 'primary',
-      checkedIn: ['The EBU PDF (tech.ebu.ch, tech3276.pdf and tech3276s1.pdf); the tolerance mask read from Fig. 1 and its drawing coordinates.', 'ITU-R BS.1116-3 (02/2015), §8.2.3.1 and Figure 1, gives the same formula and the same limits in these bands.'],
+      checkedIn: ['The EBU PDF (tech.ebu.ch, tech3276.pdf and tech3276s1.pdf); the tolerance mask read from Fig. 1 and its drawing coordinates.', 'ITU-R BS.1116-3 (02/2015), §8.2.3.1, gives the same Tm formula. It does not state the 0.2–0.4 s range and asks for different floor areas, so it confirms the formula only.'],
       note: '',
     },
   };
@@ -78,8 +78,8 @@
       clause: 'Group A, use type A2 "Sprache/Vortrag": T_soll = (0.37 · lg V/m³ − 0.14) s for 50 m³ ≤ V < 5000 m³; tolerance band for A1–A4.',
       checked: 'Formula and tolerance: BNB 3.1.4; volume range: OWA DS 9558.',
     }),
-    'din18041-A2i': dinA('din18041-A2i', 'Use type "Speech/presentation, inclusive"', 0.32, -0.17, 30, 5000, {
-      clause: 'Group A, "Sprache/Vortrag inklusiv" (rooms of use type A2 for people who depend on good speech intelligibility): T_soll by the A3 formula, (0.32 · lg V/m³ − 0.17) s, up to 5000 m³; tolerance band for A1–A4.',
+    'din18041-A2i': dinA('din18041-A2i', 'Use type A3 "Speech/presentation, inclusive"', 0.32, -0.17, 30, 5000, {
+      clause: 'Group A, use type A3, "Sprache/Vortrag inklusiv" (speech and presentation for people who depend on good speech intelligibility; A3 also covers teaching and communication): T_soll = (0.32 · lg V/m³ − 0.17) s, for this use up to 5000 m³; tolerance band for A1–A4.',
       checked: 'A3 formula for this use: BNB 3.1.4; range up to 5000 m³: OWA DS 9558; the use and its examples: Nocke 2016, Table 1.',
     }),
     'din18041-A3': dinA('din18041-A3', 'Use type A3 "Teaching/communication"', 0.32, -0.17, 30, 1000, {
@@ -118,10 +118,10 @@
       id: 'ebu3276-control-room', reference: 'ebu3276', status: 'verified', name: 'Reference listening room or sound control room', method: 'ebu-tm',
       base: 0.25, v0: 100, lo: 0.2, hi: 0.4, tol: 0.05, bands: 'ebu', form: 'range',
       clause: '§2.3 Reverberation field: Tm, the mean reverberation time from 200 Hz to 4 kHz, should lie between 0.2 s and 0.4 s; Tm = 0.25 · (V/V0)^1/3 s with V0 = 100 m³ as a guide; Fig. 1, tolerance mask relative to Tm.',
-      condition: 'The room as used for listening. The criterion is set in third-octave bands measured with the room\'s own loudspeakers; Appendix 2 also asks for at least 30 m² of floor (40 m² for a reference listening room) and at most 300 m³.',
+      condition: 'The room as used for listening, with at least 30 m² of floor (40 m² for a reference listening room) and at most 300 m³ (Appendix 2): outside that size the criterion gives no target. The criterion is set in third-octave bands measured with the room\'s own loudspeakers.',
       units: 's, octave bands 125 Hz–4 kHz (the criterion: third-octave bands 63 Hz–8 kHz)', inputs: ['volume'],
       roomSize: { floorMin: 30, floorMinListening: 40, vMax: 300 },
-      checked: 'Read in the EBU PDF; ITU-R BS.1116-3 §8.2.3.1 gives the same formula and the same limits in these bands.',
+      checked: 'Read in the EBU PDF; ITU-R BS.1116-3 §8.2.3.1 gives the same Tm formula (not the 0.2–0.4 s range or the floor areas).',
     },
   };
 
@@ -181,10 +181,13 @@
   const A3_TEACH = V('din18041-A3', 'example', 'DIN 18041 names classrooms, seminar rooms and differentiation rooms as examples of use type A3, teaching and communication.');
   const A4_TEACH = V('din18041-A4', 'example', 'DIN 18041 names classrooms and seminar rooms as examples of use type A4, for learners who depend on good speech intelligibility (hearing impairment, a second language, inclusive teaching).');
   const A2_LECT = V('din18041-A2', 'example', 'DIN 18041 names lecture halls, assembly rooms and school halls as examples of use type A2, speech and presentation.');
-  const A2I_LECT = V('din18041-A2i', 'example', 'DIN 18041 names lecture halls and assembly rooms as examples of "speech/presentation, inclusive": use type A2 for listeners who depend on good speech intelligibility, set by the A3 formula.');
+  const A2I_LECT = V('din18041-A2i', 'example', 'DIN 18041 names lecture halls and assembly rooms as examples of "speech/presentation, inclusive", part of use type A3: speech and presentation for listeners who depend on good speech intelligibility.');
   const A1_MUSIC = V('din18041-A1', 'example', 'DIN 18041 names the music room with active music-making and singing as the example of use type A1, music.');
   const A5_SPORT = V('din18041-A5', 'example', 'DIN 18041 names sports and swimming halls used almost only for sport as the example of use type A5, sport.');
   const EBU_LISTEN = V('ebu3276-control-room', 'example', 'EBU Tech 3276 sets the reverberation of reference listening rooms and high-quality sound control rooms from their volume.');
+  const EBU_STUDIO = V('ebu3276-control-room', 'definition', 'A studio room used for mixing and critical listening is used as a sound control room, which EBU Tech 3276 covers. EBU Tech 3276 does not name recording or home studios.');
+  const A3_LECT_TEACH = V('din18041-A3', 'definition', 'A lecture hall used for teaching is used like the classrooms and seminar rooms DIN 18041 names as examples of use type A3. DIN 18041 lists lecture halls themselves under A2, speech and presentation.');
+  const A4_LECT_TEACH = V('din18041-A4', 'definition', 'A lecture hall used for inclusive teaching is used like the classrooms and seminar rooms DIN 18041 names as examples of use type A4. DIN 18041 lists lecture halls themselves under A2, and A4 is not for rooms over 500 m³.');
   const SPEECH_ROOM = [['Meetings and presentations', A3_MEET], ['Video calls and hybrid meetings', A4_VIDEO], ['Inclusive meetings', A4_MEET]];
 
   const CATEGORIES = {
@@ -196,7 +199,7 @@
       ['Inclusive meetings', A4_MEET],
     ],
     'Private office': [
-      ['Focused desk work', V('nbc2016-small-office', 'example', 'NBC 2016 sets a maximum for small private offices (clause 8.3.2.1). DIN 18041 gives offices only a recommended absorption (group B4, single offices B3), not a reverberation time. NBC does not define "small".')],
+      ['Focused desk work', V('nbc2016-small-office', 'example', 'NBC 2016 sets a maximum for small private offices (clause 8.3.2.1). DIN 18041 gives offices only a recommended absorption (group B4, single offices B3), not a reverberation time. NBC does not say how small a "small" office is: for a large office, NBC\'s 1.0 s for general offices may be the limit that applies, and the app keeps the stricter 0.75 s.')],
       ['Meetings and presentations', V('din18041-A3', 'definition', 'An office used mainly for meetings is communication-intensive use with several people speaking, which DIN 18041 sets as use type A3.')],
       ['Video calls and hybrid meetings', V('din18041-A4', 'definition', 'An office used mainly for video calls is used as a video-conference room, which DIN 18041 names as an example of use type A4.')],
     ],
@@ -215,15 +218,15 @@
     ],
     'Classroom': [['Teaching', A3_TEACH], ['Inclusive teaching', A4_TEACH]],
     'Lecture hall': [
-      ['Lectures and presentations', A2_LECT], ['Lectures and presentations, inclusive', A2I_LECT], ['Teaching', A3_TEACH], ['Inclusive teaching', A4_TEACH],
+      ['Lectures and presentations', A2_LECT], ['Lectures and presentations, inclusive', A2I_LECT], ['Teaching', A3_LECT_TEACH], ['Inclusive teaching', A4_LECT_TEACH],
     ],
     'Library': [['Reading and study', dinB('B3', '0.20', 'libraries (lending areas B4)')]],
     'Music room': [['Music rehearsal and performance', A1_MUSIC]],
     'Sports hall': [['Sport and exercise', A5_SPORT]],
-    'Gymnasium': [['Sport and exercise', A5_SPORT]],
-    'Recording studio': [['Mixing and critical listening', EBU_LISTEN], ['Recording', NONE.recording]],
+    'Gymnasium': [['Sport and exercise', V('din18041-A5', 'definition', 'A gymnasium used for sport and exercise is used like the sports halls DIN 18041 names as the example of use type A5; the gymnasium itself is not named.')]],
+    'Recording studio': [['Mixing and critical listening', EBU_STUDIO], ['Recording', NONE.recording]],
     'Control room': [['Mixing and critical listening', EBU_LISTEN]],
-    'Home studio': [['Mixing and critical listening', EBU_LISTEN], ['Recording', NONE.recording]],
+    'Home studio': [['Mixing and critical listening', EBU_STUDIO], ['Recording', NONE.recording]],
     'Rehearsal room': [
       ['Music rehearsal and performance', V('din18041-A1', 'definition', 'A rehearsal room is a music room with active music-making, the example DIN 18041 gives for use type A1. ISO 23591:2021 sets criteria for rehearsal rooms by type of music; its values could not be verified, so it is not used.')],
     ],

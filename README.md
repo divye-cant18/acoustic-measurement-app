@@ -122,10 +122,14 @@ The app works with three RT60 values, never one in place of another:
 1. **Target RT60**: only from a verified standard that applies to the room's category (room type and main activity),
    with the inputs it needs and within its stated conditions (Target step; `services/target.js`, docs/TARGET-CRITERIA.md):
    DIN 18041:2016 group A (meeting, teaching, lecture, music and sports rooms), NBC 2016 (offices and canteens, an upper
-   limit at 500 Hz), EBU Tech 3276 (listening and control rooms). A category without a verified criterion gets no
+   limit at 500 Hz), EBU Tech 3276 (listening and control rooms of at least 30 m² of floor and at most 300 m³; the
+   verdict says its neighbouring-band rule and its 63 Hz and 8 kHz limits are not checked). A room type the reference
+   does not name (a gymnasium, studio mixing, lecture-hall teaching, a boardroom) gets the use type that fits its use,
+   and the target says the reference does not name it. A category without a verified criterion gets no
    target, says why, and the project's own target can be entered with its source. Nothing is extrapolated, clamped or
    taken from another room type. A criterion set from the volume needs a room size Room Setup accepts: with a length,
-   width or height outside its limits there is no target, and the Target step says which one to correct.
+   width or height outside its limits there is no target, and the Target step says which one to correct. A target the
+   user adjusted from a recommendation says "adjusted earlier … for the room as it was then" once the room changes.
 2. **Measured RT60**: from the microphone measurement only (background check, sweep, deconvolution, octave bands,
    decay analysis, T20 per band with T30 as a check), at two or more measuring positions. Per band, the room's RT60 is the mean of
    the positions (docs/MULTI-POSITION.md). The room is judged by its target criterion's own band rule: for a meeting
@@ -531,7 +535,9 @@ the decay is one straight line. T20 is reported since 20 October 2026 (before, T
 the 20 dB range its preference, and switching to T30 at 45 dB made a curved decay's result depend on the background (a
 double-slope room read 0.801 s with 45.7 dB usable and 0.677 s with 44.6 dB). Projects processed before are brought over
 to the T20 each take already kept, never re-estimated. The 60 dB fit is not used for RT60 for the same reason. A value is rejected when the decay is not
-straight (ξ = 1000·(1 − r²) above 50 ‰), too short for the band filter (bandwidth × RT60 < 4), or when T20 and T30
+straight (ξ = 1000·(1 − r²) above 50 ‰, or above 35 ‰ when there is too little decay for the T30 check, so nothing
+confirms the decay over 30 dB: in a synthetic scan of 515 accepted bands the two readings in that case were 9.7 % and
+14.8 % off, and no accurate reading lay above 29.2 ‰), too short for the band filter (bandwidth × RT60 < 4), or when T20 and T30
 are too far apart for one RT60 (`CRITERIA.decay.curvatureFail`): T30 more than 50 % longer than T20 (two clearly
 different slopes; the double-slope room in the validation reads up to 37 %), or more than 30 % shorter (40 % below
 500 Hz, where one decay's T20 and T30 scatter by about 10 %), which a room's own decay does not do. The band then has no

@@ -71,7 +71,7 @@
       mask: { primary: [-0.05, 0.05], edge: { 125: [-0.05, ebuUpper(125)] } },
       edge: { 125: { min: () => null, max: () => null } }, secondary: {},
       brief: 'EBU Tech 3276: Tm 0.2–0.4 s, every band 125 Hz–4 kHz within the mask around it',
-      basis: 'EBU Tech 3276 §2.3: Tm, the room\'s own measured mean reverberation time (here 250 Hz–4 kHz), has to lie between 0.2 and 0.4 s, and every band within the tolerance mask around that Tm: ±0.05 s from 250 Hz to 4 kHz, and at 125 Hz from 0.05 s below to 0.15 s above. The volume formula gives only a guide value for Tm. The criterion is set in third-octave bands; the app\'s octave bands are compared with the mask at their centre frequency.',
+      basis: 'EBU Tech 3276 §2.3: Tm, the room\'s own measured mean reverberation time (here 250 Hz–4 kHz), has to lie between 0.2 and 0.4 s, and every band within the tolerance mask around that Tm: ±0.05 s from 250 Hz to 4 kHz, and at 125 Hz from 0.05 s below to 0.15 s above. The volume formula gives only a guide value for Tm. The criterion is set in third-octave bands; the app\'s octave bands are compared with the mask at their centre frequency. Not checked: the rule between neighbouring bands and the limits at 63 Hz and 8 kHz, which need third-octave bands the app does not measure.',
     },
     'nbc-500': {
       id: 'nbc-500', name: '500 Hz band', primary: [500], edge: {}, secondary: {},

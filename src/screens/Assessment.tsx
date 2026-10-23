@@ -103,7 +103,7 @@ export function AssessmentScreen({ ctx }: { ctx: Ctx }) {
             <span className="av-k">Verdict</span><b className="av-verdict">{verdictWord}</b>
             <p className="av-say">{a.available ? advice(groups) : <>The room cannot be assessed.{` ${a.reason || ''}`}</>}</p>
             {next ? <p className="av-next">{next}</p> : null}
-            {a.available && TGT.isDin(t) ? <p className="av-din">Measured as it is, usually empty. This is a guide, not an official DIN check.</p> : null}
+            {a.available && TGT.verdictNote(t) ? <p className="av-din">{TGT.verdictNote(t)}</p> : null}
           </div>
         </div>
         <div className="av-figs">

@@ -608,14 +608,15 @@
     }
 
     // 3 Target and assessment. A DIN 18041 target is for the room in use: its verdict is a guide (target.js isDin).
-    const din = AM.services.target.isDin(t);
+    const din = AM.services.target.isDin(t), vNote = AM.services.target.verdictNote(t);
+    const fitRec = t && t.source !== 'custom' && t.record ? AM.services.target.recommend(M.room) : null, fit = fitRec && fitRec.fit ? ' · the room type is not named in the reference: applied by its use' : '';
     heading(3, 'Target and assessment', { text: 'TARGET', color: C.muted }, 60);
     if (!t) {
       kv([[['Target RT60', 'Not set', { bold: true }]]]);
       block(L.l, WD, `${M.noTarget ? `${M.noTarget} ` : 'No target is set in this project. '}The measurement is not assessed.`, { size: Z.small, color: C.muted });
     } else {
       const basis = `${t.basis || (t.source === 'custom' ? 'Set by the user' : 'Recommended from the room type and use')}${t.note ? ` · source: ${t.note}` : ''}`;
-      const left = [['Target RT60', isNum(t.preferred) ? `${fmt.s(t.preferred)} preferred · range ${range(t)}` : `Upper limit: ${range(t)}`, { bold: true }], ['Standard', basis]];
+      const left = [['Target RT60', isNum(t.preferred) ? `${fmt.s(t.preferred)} preferred · range ${range(t)}` : `Upper limit: ${range(t)}`, { bold: true }], ['Standard', `${basis}${fit}`]];
       const hzOf = rs => fmt.list(rs.map(r => `${r.f} Hz`));
       const ab = a && a.available ? a.verdict.failing.filter(r => r.status === 'above') : [], be = a && a.available ? a.verdict.failing.filter(r => r.status === 'below') : [];
       const right = a && !a.available ? [['Verdict', `Not assessed: ${a.reason}`, { bold: true }]]
@@ -627,7 +628,7 @@
         ] : [['Verdict', 'Not available: needs a valid measurement', { bold: true }]];
       kv([left, right]);
       if (a && a.available) { y += 2; block(L.l, WD, `${explanation(a.status)}${a.verdict.masked ? ' The average alone is inside the range, but every judged band has to be.' : ''}`, { size: Z.body, color: C.ink2 }); }
-      if (a && a.available && din) { y += 1; block(L.l, WD, 'Measured as it is, usually empty. This is a guide, not an official DIN check.', { size: Z.small, color: C.muted }); }
+      if (a && a.available && vNote) { y += 1; block(L.l, WD, vNote, { size: Z.small, color: C.muted }); }
     }
 
     const hasPage2 = !!(pr || M.plan.items.length);

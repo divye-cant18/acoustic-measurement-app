@@ -137,7 +137,7 @@
     if (same) return;
     if (!TS.complete(now)) {
       p.target = Object.assign({}, now, { earlier: old });
-      p.targetNote = `The target saved with this project (${old.basis || 'an earlier recommendation'}: ${typeof old.preferred === 'number' ? old.preferred.toFixed(2) : '—'} s) came from a criterion that is not verified for this room. It is kept for the record but no longer used: choose a supported room category, or set the project's own target with its source.`;
+      p.targetNote = `The target saved with this project (${old.basis || 'an earlier recommendation'}: ${typeof old.preferred === 'number' ? old.preferred.toFixed(2) : '—'} s) ${['outside', 'needs-input'].includes(TS.availability(p.room).status) ? `no longer applies to this room: ${TS.availability(p.room).message} It is kept for the record but no longer used.` : 'came from a criterion that is not verified for this room. It is kept for the record but no longer used: choose a supported room category, or set the project\'s own target with its source.'}`;
     } else {
       p.targetNote = `The recommended target was updated to the verified criterion (${now.basis}): it was ${typeof old.preferred === 'number' ? `${old.preferred.toFixed(2)} s (${old.min != null ? old.min.toFixed(2) : '—'}–${old.max != null ? old.max.toFixed(2) : '—'} s)` : 'different'}.`;
     }

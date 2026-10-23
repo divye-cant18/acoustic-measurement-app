@@ -61,7 +61,7 @@ client's specification). Its bands are the app's default, 500 Hz–2 kHz, which 
 |---|---|---|
 | DIN 18041 "Hörsamkeit in Räumen" (Acoustic quality in rooms) | DIN · 2016-03 | **Secondary.** The standard is sold by DIN Media and was not available. Its values were read in: BNB criterion BNB_BN 3.1.4 (German federal building ministry, version 2015, stated to follow DIN 18041:2016-03): formulas A1–A5, 2.0 s above 10,000 m³, the tolerance band per octave; C. Nocke, "Die neue DIN 18041", *Lärmbekämpfung* 11 (2016) No. 2: use types and example rooms, occupied state at 80 %, 125 Hz–4 kHz, group B as A/V only; OWA brochure DS 9558: the volume range of each formula |
 | National Building Code of India 2016, Part 8 Section 4 (SP 7:2016) | Bureau of Indian Standards · 2016 | **Primary.** The BIS text (Public.Resource copy), two text layers that agree |
-| EBU Tech 3276, listening conditions | EBU · 2nd ed. 1998 (Supplement 1, 2004: no change to reverberation) | **Primary.** The EBU PDF, the tolerance mask read from Fig. 1; ITU-R BS.1116-3 §8.2.3.1 gives the same formula and limits in these bands |
+| EBU Tech 3276, listening conditions | EBU · 2nd ed. 1998 (Supplement 1, 2004: no change to reverberation) | **Primary.** The EBU PDF, the tolerance mask read from Fig. 1; ITU-R BS.1116-3 §8.2.3.1 gives the same Tm formula (not the 0.2–0.4 s range, and other floor areas), so it confirms the formula only |
 
 ## Criteria
 
@@ -69,14 +69,14 @@ client's specification). Its bands are the app's default, 500 Hz–2 kHz, which 
 |---|---|---|---|---|---|
 | DIN 18041 A1 "Music" | T_soll = (0.45 · lg V + 0.07) s | 30 m³ ≤ V < 1000 m³ | 0.8–1.2 × T_soll 250 Hz–2 kHz; 0.65–1.45 × at 125 Hz; 0.65–1.2 × at 4 kHz | Room in use, 80 % of its normal occupancy | Volume |
 | DIN 18041 A2 "Speech/presentation" | T_soll = (0.37 · lg V − 0.14) s | 50 m³ ≤ V < 5000 m³ | as A1 | as A1 | Volume |
-| DIN 18041 "Speech/presentation, inclusive" | A3 formula, (0.32 · lg V − 0.17) s | 30 m³ ≤ V < 5000 m³ | as A1 | as A1 | Volume |
+| DIN 18041 A3 "Speech/presentation, inclusive" | A3 formula, (0.32 · lg V − 0.17) s | 30 m³ ≤ V < 5000 m³ | as A1 | as A1 | Volume |
 | DIN 18041 A3 "Teaching/communication" | T_soll = (0.32 · lg V − 0.17) s | 30 m³ ≤ V < 1000 m³ (this use) | as A1 | as A1 | Volume |
 | DIN 18041 A4 "Teaching/communication, inclusive" | T_soll = (0.26 · lg V − 0.14) s | 30 m³ ≤ V < 500 m³ | as A1 | as A1 | Volume |
 | DIN 18041 A5 "Sport" | T_soll = (0.75 · lg V − 1.00) s; 2.0 s above 10,000 m³ | 200 m³ ≤ V ≤ 30,000 m³ | 0.8–1.2 × T_soll 250 Hz–2 kHz only | as A1 | Volume |
 | NBC 2016, small private offices | cl. 8.3.2.1: not more than 0.75 s | — | at 500 Hz; an upper limit only | Not stated | None |
 | NBC 2016, general offices (incl. open plan, 8.3.2.4) | cl. 8.3.2.1: not more than 1.0 s | — | at 500 Hz; an upper limit only | Not stated | None |
 | NBC 2016, canteens | cl. 8.3.2.1: recommended maximum 1.0 s | — | at 500 Hz; an upper limit only | Not stated | None |
-| EBU Tech 3276, listening and control rooms | §2.3: 0.2 s < Tm < 0.4 s; Tm = 0.25 · (V/100 m³)^⅓ s | Tm within 0.2–0.4 s | Tm ± 0.05 s 250 Hz–4 kHz; at 125 Hz −0.05 to +0.15 s (the mask's line from +0.30 s at 63 Hz to +0.05 s at 200 Hz) | Third-octave bands, the room's own loudspeakers; Appendix 2 also asks ≥ 30 m² floor (40 m² reference listening room) and ≤ 300 m³ (noted, not required) | Volume |
+| EBU Tech 3276, listening and control rooms | §2.3: 0.2 s < Tm < 0.4 s; Tm = 0.25 · (V/100 m³)^⅓ s | At least 30 m² of floor and at most 300 m³ (Appendix 2); Tm within 0.2–0.4 s | Tm ± 0.05 s 250 Hz–4 kHz; at 125 Hz −0.05 to +0.15 s (the mask's line from +0.30 s at 63 Hz to +0.05 s at 200 Hz) | Third-octave bands, the room's own loudspeakers; Appendix 2 also asks ≥ 30 m² floor (40 m² reference listening room) and ≤ 300 m³ (noted, not required) | Volume |
 
 The recommended DIN range is the tolerance at 250 Hz–2 kHz, rounded to 0.01 s; T_soll itself is kept unrounded with the
 target (`tsoll`), so the 125 Hz and 4 kHz limits are the standard's own to 0.01 s. The EBU target (changed 20 October
@@ -136,17 +136,17 @@ Generated from `js/data/targets.js` and `js/data/demo.js` (industries shortened 
 | Education | Classroom | Teaching | Verified | DIN 18041:2016-03, Use type A3 "Teaching/communication" (named example) |
 | Education | Classroom | Inclusive teaching | Verified | DIN 18041:2016-03, Use type A4 "Teaching/communication, inclusive" (named example) |
 | Education | Lecture hall | Lectures and presentations | Verified | DIN 18041:2016-03, Use type A2 "Speech/presentation" (named example) |
-| Education | Lecture hall | Lectures and presentations, inclusive | Verified | DIN 18041:2016-03, Use type "Speech/presentation, inclusive" (named example) |
-| Education | Lecture hall | Teaching | Verified | DIN 18041:2016-03, Use type A3 "Teaching/communication" (named example) |
-| Education | Lecture hall | Inclusive teaching | Verified | DIN 18041:2016-03, Use type A4 "Teaching/communication, inclusive" (named example) |
+| Education | Lecture hall | Lectures and presentations, inclusive | Verified | DIN 18041:2016-03, Use type A3 "Speech/presentation, inclusive" (named example) |
+| Education | Lecture hall | Teaching | Verified | DIN 18041:2016-03, Use type A3 "Teaching/communication" (by its use definition) |
+| Education | Lecture hall | Inclusive teaching | Verified | DIN 18041:2016-03, Use type A4 "Teaching/communication, inclusive" (by its use definition) |
 | Education | Library | Reading and study | Incomplete | DIN 18041:2016-03 places libraries (lending areas B4) in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Education | Music room | Music rehearsal and performance | Verified | DIN 18041:2016-03, Use type A1 "Music" (named example) |
 | Education | Sports hall | Sport and exercise | Verified | DIN 18041:2016-03, Use type A5 "Sport" (named example) |
-| Education | Gymnasium | Sport and exercise | Verified | DIN 18041:2016-03, Use type A5 "Sport" (named example) |
-| Recording | Recording studio | Mixing and critical listening | Verified | EBU Tech 3276, Reference listening room or sound control room (named example) |
+| Education | Gymnasium | Sport and exercise | Verified | DIN 18041:2016-03, Use type A5 "Sport" (by its use definition) |
+| Recording | Recording studio | Mixing and critical listening | Verified | EBU Tech 3276, Reference listening room or sound control room (by its use definition) |
 | Recording | Recording studio | Recording | Unsupported | No reference found sets a reverberation time for recording rooms. |
 | Recording | Control room | Mixing and critical listening | Verified | EBU Tech 3276, Reference listening room or sound control room (named example) |
-| Recording, Residential | Home studio | Mixing and critical listening | Verified | EBU Tech 3276, Reference listening room or sound control room (named example) |
+| Recording, Residential | Home studio | Mixing and critical listening | Verified | EBU Tech 3276, Reference listening room or sound control room (by its use definition) |
 | Recording, Residential | Home studio | Recording | Unsupported | No reference found sets a reverberation time for recording rooms. |
 | Recording | Rehearsal room | Music rehearsal and performance | Verified | DIN 18041:2016-03, Use type A1 "Music" (by its use definition) |
 | Hospitality | Restaurant | Dining and socialising | Incomplete | DIN 18041:2016-03 places dining rooms in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
@@ -161,13 +161,13 @@ Generated from `js/data/targets.js` and `js/data/demo.js` (industries shortened 
 | Healthcare | Therapy room | Therapy and group sessions | Verified | DIN 18041:2016-03, Use type A3 "Teaching/communication" (by its use definition) |
 | Healthcare | Therapy room | Consultation and treatment | Incomplete | DIN 18041:2016-03 places consulting and treatment rooms in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Auditoriums | Auditorium | Lectures and presentations | Verified | DIN 18041:2016-03, Use type A2 "Speech/presentation" (named example) |
-| Auditoriums | Auditorium | Lectures and presentations, inclusive | Verified | DIN 18041:2016-03, Use type "Speech/presentation, inclusive" (named example) |
+| Auditoriums | Auditorium | Lectures and presentations, inclusive | Verified | DIN 18041:2016-03, Use type A3 "Speech/presentation, inclusive" (named example) |
 | Auditoriums | Auditorium | Music rehearsal and performance | Incomplete | DIN 18041 excludes concert halls and theatres. |
 | Auditoriums | Cinema | Film screening | Incomplete | DIN 18041 excludes cinemas. |
 | Auditoriums | Place of worship | Spoken services | Unsupported | No reference found sets a reverberation time for places of worship. |
 | Auditoriums | Place of worship | Services with music and singing | Unsupported | No reference found sets a reverberation time for places of worship. |
 | Auditoriums | Community hall | Events and assemblies | Verified | DIN 18041:2016-03, Use type A2 "Speech/presentation" (named example) |
-| Auditoriums | Community hall | Lectures and presentations, inclusive | Verified | DIN 18041:2016-03, Use type "Speech/presentation, inclusive" (named example) |
+| Auditoriums | Community hall | Lectures and presentations, inclusive | Verified | DIN 18041:2016-03, Use type A3 "Speech/presentation, inclusive" (named example) |
 | Auditoriums | Community hall | Dining and socialising | Incomplete | DIN 18041:2016-03 places dining rooms in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Industrial | Exhibition hall | Exhibitions and circulation | Incomplete | DIN 18041:2016-03 places exhibition rooms (B3 when interactive or noisy) in group B2 and gives only a recommended absorption for it (A/V ≥ 0.15 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Industrial | Showroom | Exhibitions and circulation | Incomplete | DIN 18041:2016-03 places exhibition rooms (B3 when interactive or noisy) in group B2 and gives only a recommended absorption for it (A/V ≥ 0.15 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
@@ -206,6 +206,9 @@ Generated from `js/data/targets.js` and `js/data/demo.js` (industries shortened 
 | Classrooms narrowed by ANSI/ASA S12.60-2010 (0.6 / 0.7 s) to a midpoint | DIN 18041 A3/A4 alone | The 2010 edition is superseded; the midpoint was invented |
 | Homes 0.5 s (ISO 16283-1); cinemas, home cinemas and recording rooms by interpretation (EBU, DIN A1); places of worship DIN A2/A1 | Unsupported or incomplete | Not targets for those rooms; DIN 18041 excludes cinemas, churches, studios and dwellings |
 | DIN 125 Hz and 4 kHz as band warnings at 0.6–1.4 × and 0.6–1.2 × T | Judged at 0.65–1.45 × and 0.65–1.2 × T_soll | The standard's tolerance band (BNB 3.1.4), part of compliance |
+| EBU Tech 3276's room size (at least 30 m² of floor, at most 300 m³) only a note | Outside that size: no target, with the reason; the guide Tm shown inside the 0.2–0.4 s range (0.21, never the excluded 0.20) | Appendix 2 sets the rooms the criterion is for; a guide shown on an excluded limit failed its own verdict |
+| A target adjusted from a recommendation kept "Adjusted from …" after the room changed | "Set for the project; adjusted earlier from … for the room as it was then" | The room no longer gives that recommendation |
+| "Named in the reference" for lecture-hall teaching, studio and home-studio mixing and the gymnasium | Applied by the use type's description, and the target says the reference does not name the room | The references do not name those rooms |
 | EBU ±0.05 s around the formula's Tm, clamped into 0.2–0.4 s | The room's measured Tm must lie within 0.2–0.4 s; every band within the mask around the measured Tm; the formula is the guide | §2.3: Tm is the average of the measured reverberation times; the range is a requirement, not a clamp |
 
 Saved projects: the room is kept exactly as saved (industry, room type and activity, also one no longer offered). A
@@ -217,5 +220,10 @@ the finished steps that relied on it are marked for review. A target the user se
 
 - DIN 18041:2016 was checked in published sources, not in the standard. Someone holding it should confirm the volume
   ranges (from the OWA brochure only, except A4 ≤ 500 m³ and A5) and the A5 upper volume (about 30,000 m³).
-- NBC 2016 does not define "small" for private offices or "very large" offices; the user chooses the category.
+- NBC 2016 does not define "small" for private offices or "very large" offices; the user chooses the category. The
+  private office keeps the stricter 0.75 s and its explanation names NBC's 1.0 s for general offices.
+- A verdict against EBU Tech 3276 is made in octave bands 125 Hz–4 kHz: its rule between neighbouring bands and its
+  limits at 63 Hz and 8 kHz need third-octave bands and are not checked; the verdict says so.
+- Not yet used, pending a decision or a document: NBC 2016 Table 6 (schools, at 500 Hz) for classrooms, and ISO
+  23591:2021 for rehearsal rooms (its tables could not be read).
 - A fourth revision of NBC was announced in 2025 and could not be read.

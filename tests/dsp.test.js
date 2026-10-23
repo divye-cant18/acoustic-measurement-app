@@ -302,6 +302,29 @@
       check('T30 55 % longer than T20: no value in the band, and the reason says the two are too far apart', slower.rt60 == null && slower.path == null && /55 % longer than T20/.test(slower.reason || '') && slower.confidence === 'None', slower.reason);
       check('T30 33 % shorter than T20 at 1000 Hz (the decay speeds up): no value, and the reason points to noise suppression', faster.rt60 == null && /shorter than T20/.test(faster.reason || '') && /noise gate|Noise suppression/.test(faster.reason || ''), faster.reason);
       check('At 125 Hz, where T20 and T30 scatter more: 33 % shorter keeps the value with a note; 45 % shorter gives none', low.rt60 === 0.6 && low.notes.length > 0 && lowFaster.rt60 == null && /shorter than T20/.test(lowFaster.reason || ''), `${low.rt60} / ${lowFaster.reason}`);
+      // Without the T30 check (40 dB usable): ξ 41.7 ‰ (r² 0.9583) gives no value; ξ 29.2 ‰ keeps it, with a note.
+      const unchecked = (r2) => PR.decideBand({ f: 125, supported: true, decayRangeDb: 40, noiseFloorDb: -80, peakToNoiseDb: 50, headDb: 0, bandwidth: 125 / Math.SQRT2, fits: { T20: { T: 0.5, r2 }, T30: { T: 0.5, r2 } } });
+      const off = unchecked(0.9583), kept = unchecked(0.9708);
+      check('No T30 check and the decay far from straight (ξ 41.7 ‰ > 35 ‰): no value, with the reason; at 29.2 ‰ the value stands with a note',
+        off.t30 == null && off.rt60 == null && /too little decay for the T30 check/.test(off.reason || '') && kept.t30 == null && kept.rt60 === 0.5 && kept.notes.some(n => /not perfectly straight/.test(n)),
+        `${off.xi} ‰: ${off.reason} · ${kept.xi} ‰: ${kept.rt60}`);
+    }
+
+    // A resonant small speaker whose own sound rings (high-pass 900 Hz, +10 dB peak at 1.2 kHz, on the direct sound and
+    // the desk reflection of one device), in a 0.35 s room: the ringing is read as a fast decay. The 1000 Hz band gets no
+    // value (curved, or T20 and T30 too far apart), so the take is not valid and nothing from it is used.
+    {
+      const pk = (f0, Q, g) => { const A = Math.pow(10, g / 40), w = 2 * Math.PI * f0 / fs, al = Math.sin(w) / (2 * Q), c = Math.cos(w), a0 = 1 + al / A; return { b0: (1 + al * A) / a0, b1: -2 * c / a0, b2: (1 - al * A) / a0, a1: -2 * c / a0, a2: (1 - al / A) / a0 }; };
+      const spk = [DSP.rbj('highpass', 900, fs, 5), pk(1200, 6, 10)];
+      const takes = [3, 9, 15].map(seed => {
+        const dev = FIX.roomIR({ fs, seconds: 2.2, rt: 0.35, seed, directDb: 25, reflections: DESK }), n30 = Math.round(0.03 * fs);
+        const d = new Float64Array(dev.length); for (let i = 0; i < n30; i++) d[i] = dev[i];
+        const dc = DSP.filter(d, spk), ir = new Float64Array(dev.length); for (let i = 0; i < dev.length; i++) ir[i] = dc[i] + dev[i] - d[i];
+        return runTake(FIX.recordSweep({ plan, sweep, ir, peakDbfs: -10, noiseDbfs: -80, seed: seed + 3, latency: 0.05 }));
+      });
+      check('A ringing small speaker (three takes): 1000 Hz gets no value in each, with the reason, so no take is valid',
+        takes.every(r => !r.valid && r.bands.find(b => b.f === 1000).rt60 == null && !!r.bands.find(b => b.f === 1000).reason),
+        takes.map(r => { const b = r.bands.find(x => x.f === 1000); return `${r.valid ? 'valid' : 'not valid'}: ${b.rt60 == null ? (b.reason || '').slice(0, 60) : b.rt60}`; }).join(' · '));
     }
 
     // Speech-like sounds during the take (300–3000 Hz, 15 dB above the background, every 0.8–2.5 s): read from the take's

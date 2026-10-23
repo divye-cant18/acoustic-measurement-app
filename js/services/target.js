@@ -93,6 +93,9 @@
       return { ok: true, steps: [`At most ${fmt.s(c.value)} at ${c.band} Hz.`] };
     },
     'ebu-tm'(c, g) {
+      // Appendix 2: the rooms the criterion is written for (floor and volume); outside them, no target.
+      const z = c.roomSize;
+      if (g.floor < z.floorMin || g.V > z.vMax) return { ok: false, steps: [], detail: `The criterion is written for rooms with at least ${z.floorMin} m² of floor and at most ${z.vMax} m³ (Appendix 2). This room has ${fmt.m2(g.floor)} of floor and ${fmt.m3(g.V)}, so it gives no target for it.` };
       const Tm = c.base * Math.cbrt(g.V / c.v0);
       const step = `Tm = ${c.base} × (${trimNum(round(g.V, 1))} / ${c.v0})^⅓ = ${Tm.toFixed(3)} s.`;
       if (!(Tm > c.lo && Tm < c.hi)) return { ok: false, steps: [step], detail: `${step} The criterion requires ${c.lo} s < Tm < ${c.hi} s, so it gives no target for a room of ${fmt.m3(g.V)}. No value is clamped to the range.` };
@@ -106,7 +109,9 @@
     if (c.method === 'ebu-tm') {
       // §2.3: the room's own measured Tm has to lie between 0.2 and 0.4 s; the formula is the guide (the preferred value
       // and the treatment aim); every band is judged within ±tol around the MEASURED Tm (AM.services.evaluation).
-      return { form: 'range', preferred: round(res.T, 2), min: c.lo, max: c.hi,
+      // Shown at two decimals inside the open range (0.21, not 0.20, for a Tm just above 0.2 s), so a room that reaches
+      // the guide as shown passes.
+      return { form: 'range', preferred: Math.min(Math.max(round(res.T, 2), round(c.lo + 0.01, 2)), round(c.hi - 0.01, 2)), min: c.lo, max: c.hi,
         steps: [`The room's measured Tm (the mean from 250 Hz to 4 kHz) has to lie between ${c.lo} and ${c.hi} s; ${fmt.s(res.T)} is the guide for this volume. Every band is judged within ±${c.tol} s of the measured Tm (at 125 Hz −${c.tol} to +0.15 s).`] };
     }
     const [lo, hi] = c.tolerance[250];
@@ -135,6 +140,16 @@
 
   // A target worked out from DIN 18041 (not the project's own): its verdict is a guide, not an official DIN check.
   const isDin = t => !!(t && t.source !== 'custom' && t.record && /^din18041/.test(t.record.criterion));
+  const isEbu = t => !!(t && t.source !== 'custom' && t.record && /^ebu3276/.test(t.record.criterion));
+  /* What a verdict against this target does not establish, in one line (null for none): DIN 18041 sets its targets for
+     the room in use; EBU Tech 3276 has checks the app's octave bands 125 Hz–4 kHz cannot make. */
+  function verdictNote(t) {
+    if (isDin(t)) return 'Measured as it is, usually empty. This is a guide, not an official DIN check.';
+    if (isEbu(t)) return 'Checked in octave bands from 125 Hz to 4 kHz only: EBU Tech 3276\'s rule between neighbouring bands and its limits at 63 Hz and 8 kHz are not checked.';
+    return null;
+  }
+  // A room the reference does not name: its use type is applied from the use type's own description.
+  const fitNote = ref => `${ref.short} does not name this room type: the criterion is applied because the room is used as its description says. Check that the room is really used this way.`;
 
   function availability(room) {
     const checks = Object.keys(CHECK_LABELS).map(id => ({ id, label: CHECK_LABELS[id], ok: null, detail: '' }));
@@ -222,9 +237,11 @@
     if (c.method === 'maximum') notes.push(`${ref.short} gives only an upper limit, at ${c.band} Hz. There is no preferred value or lower limit: any value at or below ${fmt.s(c.value)} meets it. The app judges the ${c.band} Hz band and shows the others without a limit.`);
     if (c.method === 'ebu-tm') {
       notes.push('EBU Tech 3276 sets this criterion in third-octave bands, measured with the room\'s own loudspeakers. The app measures octave bands with the device\'s speaker and compares each with the tolerance at its centre frequency.');
-      if (g.floor < c.roomSize.floorMin || g.V > c.roomSize.vMax) notes.push(`EBU Tech 3276 also asks for at least ${c.roomSize.floorMin} m² of floor (${c.roomSize.floorMinListening} m² for a reference listening room) and at most ${c.roomSize.vMax} m³; this room has ${fmt.m2(g.floor)} and ${fmt.m3(g.V)}, so it is ${g.V > c.roomSize.vMax ? 'larger' : 'smaller'} than the rooms the criterion is written for.`);
+      if (g.floor < c.roomSize.floorMinListening) notes.push(`This room has ${fmt.m2(g.floor)} of floor: enough for a sound control room (${c.roomSize.floorMin} m²), less than EBU Tech 3276 asks of a reference listening room (${c.roomSize.floorMinListening} m²).`);
+      notes.push(verdictNote({ source: 'recommended', record: { criterion: c.id } }));
     }
     if (ref.evidence === 'secondary') notes.push(`${ref.note}`);
+    if (cat.basis === 'definition') notes.push(fitNote(ref));
     // Notes only: the surfaces and furnishing never change the target.
     const fin = AM.services.surfaces && r.surfaces ? AM.services.surfaces.finishes(r) : null;
     if (r.furnishing === 'Empty') notes.push('The room is unfurnished. Furniture and people add absorption, so it will read shorter once furnished and in use. The target does not change.');
@@ -246,11 +263,12 @@
       criterionId: c.id, criterion: c, reference: ref, source: ref, category: cat,
       basisLabel: `${ref.short}, ${c.name}`, clause: c.clause, condition: c.condition,
       reason: `${cat.why} ${summary}`, steps: a.steps, workings, notes, sources: [ref], checks: a.checks, record: t.record,
+      fit: cat.basis === 'definition' ? fitNote(ref) : null,
     });
   }
 
   AM.services.target = {
     kind: 'standards-based', usesFor, knownUses, offeredTypes, typeGroups, useGroups, offeredIndustries, category, availability, recommend,
-    form, complete, aim, rangeText, valueText, fullText, isDin,
+    form, complete, aim, rangeText, valueText, fullText, isDin, verdictNote,
   };
 })(window.AM);

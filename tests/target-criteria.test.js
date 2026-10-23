@@ -50,6 +50,8 @@
     // A target the user set: kept as theirs.
     saved('old-office-custom', { industry: CORP, type: 'Private office', use: 'Focused desk work', L: 5, W: 4, H: 3 }, { preferred: 0.6, min: 0.48, max: 0.72, source: 'custom', basis: 'Adjusted from DIN 18041:2016, Group B4, workrooms' }),
     saved('old-home-custom', { industry: RES, type: 'Living room', use: 'Living and relaxing', L: 5, W: 4, H: 2.7 }, { preferred: 0.5, min: 0.4, max: 0.6, source: 'custom', basis: 'Adjusted from ISO 16283-1, Furnished dwelling reference' }),
+    // Earlier: EBU Tech 3276 for a home studio with 24 m² of floor (the criterion's rooms have at least 30 m²).
+    saved('old-small-studio', { industry: STUDIO, type: 'Home studio', use: 'Mixing and critical listening', L: 6, W: 4, H: 2.7 }, { preferred: 0.22, min: 0.2, max: 0.4, source: 'recommended', basis: 'EBU Tech 3276, Reference listening room or sound control room' }),
   ];
   (function seed() {
     const P = 'target-criteria-test:';
@@ -174,11 +176,15 @@
       // A5: 199 m³ outside; 25 × 20 × 20 = 10 000 m³ by the formula: 0.75 × 4 − 1 = 2.00; 50 × 30 × 20 = 30 000 m³: 2.0 s; 30 000.6 m³: outside
       const a5 = [st('Sports hall', 'Sport and exercise', EDU, 9.95, 10, 2), st('Sports hall', 'Sport and exercise', EDU, 25, 20, 20), st('Sports hall', 'Sport and exercise', EDU, 50, 30, 20), st('Sports hall', 'Sport and exercise', EDU, 50.001, 30, 20)];
       check('A5: 199 m³ → none; 10 000 m³ → 2.00 s (the formula); 30 000 m³ → 2.0 s; beyond 30 000 m³ → none', json(a5) === json(['outside', 2, 2, 'outside']), json(a5));
-      // EBU, with sizes Room Setup accepts: 8.5 × 3 × 2 = 51 m³: Tm = 0.25 × 0.51^(1/3) = 0.25 × 0.79896 = 0.19974 s, not above
-      // 0.2 → none; 8 × 3.25 × 2 = 52 m³: 0.25 × 0.80415 = 0.20104 → 0.20; 40.9 × 5 × 2 = 409 m³: 0.25 × 1.59948 = 0.39987 → 0.40;
-      // 41 × 5 × 2 = 410 m³: 0.25 × 1.60078 = 0.40020 → none
-      const e = [st('Control room', 'Mixing and critical listening', STUDIO, 8.5, 3, 2), st('Control room', 'Mixing and critical listening', STUDIO, 8, 3.25, 2), st('Control room', 'Mixing and critical listening', STUDIO, 40.9, 5, 2), st('Control room', 'Mixing and critical listening', STUDIO, 41, 5, 2)];
-      check('EBU Tech 3276 requires 0.2 s < Tm < 0.4 s: 51 m³ (0.1997 s) → none; 52 m³ → 0.20 s; 409 m³ → 0.40 s; 410 m³ (0.4002 s) → none', json(e) === json(['outside', 0.2, 0.4, 'outside']), json(e));
+      // EBU Tech 3276 is written for rooms with at least 30 m² of floor and at most 300 m³ (Appendix 2): outside that, no
+      // target. 6 × 4 × 2.7 m: 24 m² of floor → none; 12 × 9 × 3.6 m = 388.8 m³ → none; 10 × 10 × 3 = 300 m³: Tm = 0.25 ×
+      // 3^(1/3) = 0.36056 → 0.36; 6 × 5 × 2 = 60 m³: 0.25 × 0.84343 = 0.21086 → 0.21; 6 × 5 × 1.8 = 54 m³: 0.25 × 0.81433 =
+      // 0.20358, shown inside the range the room's Tm has to lie in (above 0.2 s): 0.21, never the excluded 0.20.
+      const ebuSt = (L, W2, H) => st('Control room', 'Mixing and critical listening', STUDIO, L, W2, H);
+      const e = [ebuSt(6, 4, 2.7), ebuSt(12, 9, 3.6), ebuSt(10, 10, 3), ebuSt(6, 5, 2), ebuSt(6, 5, 1.8)];
+      const smallStudio = TS.availability(room(STUDIO, 'Home studio', 'Mixing and critical listening', 6, 4, 2.7));
+      check('EBU Tech 3276 only for rooms of at least 30 m² of floor and at most 300 m³: 24 m² of floor → none; 388.8 m³ → none; 300 m³ → 0.36 s; 60 m³ → 0.21 s; 54 m³ (Tm 0.2036 s) → 0.21 s, never the excluded 0.20; a small home studio is told why',
+        json(e) === json(['outside', 'outside', 0.36, 0.21, 0.21]) && smallStudio.status === 'outside' && /at least 30 m² of floor and at most 300 m³/.test(smallStudio.message), `${json(e)} · ${smallStudio.message}`);
       const out = TS.availability(room(EDU, 'Classroom', 'Teaching', 10, 10, 10));
       check('Outside the conditions the user is told why and offered another category or the project\'s own target; the checks stop at the method',
         /from 30 m³ up to 1000 m³/.test(out.message) && /Choose another main activity/.test(out.message) && json(out.checks.map(c => c.ok)) === json([true, true, true, true, false, null]), out.message);
@@ -202,6 +208,29 @@
         `${TS.usesFor('Banquet hall')} · ${TS.usesFor('Recording studio')}`);
     }
 
+    /* ===== 5b. labels that say no more than the sources ===== */
+    status('Labels…');
+    {
+      const cat = (t, u) => TS.category(t, u);
+      const named = [['Control room', 'Mixing and critical listening'], ['Meeting room', 'Meetings and presentations'], ['Sports hall', 'Sport and exercise'], ['Lecture hall', 'Lectures and presentations'], ['Classroom', 'Teaching']];
+      const described = [['Lecture hall', 'Teaching'], ['Lecture hall', 'Inclusive teaching'], ['Recording studio', 'Mixing and critical listening'], ['Home studio', 'Mixing and critical listening'], ['Gymnasium', 'Sport and exercise'], ['Boardroom', 'Meetings and presentations'], ['Therapy room', 'Therapy and group sessions'], ['Banquet hall', 'Events and assemblies']];
+      check('"Named in the reference" only where the reference names the room: lecture-hall teaching, studio and home-studio mixing and the gymnasium are applied by their use (as the boardroom, therapy groups and banquet events already were)',
+        named.every(([t, u]) => cat(t, u).basis === 'example') && described.every(([t, u]) => cat(t, u).basis === 'definition'), described.map(([t, u]) => `${t}: ${cat(t, u).basis}`).join(' · '));
+      const gym = TS.recommend(room(EDU, 'Gymnasium', 'Sport and exercise', 20, 12, 7)), hall = TS.recommend(room(EDU, 'Sports hall', 'Sport and exercise', 20, 12, 7));
+      check('A room the reference does not name says so with its target; one it names does not; the values are the same',
+        gym && /does not name this room type/.test(gym.fit || '') && gym.notes.includes(gym.fit) && hall && hall.fit === null && json(tri(gym)) === json(tri(hall)), gym ? gym.fit : 'no target');
+      const a2iL = TS.recommend(room(EDU, 'Lecture hall', 'Lectures and presentations, inclusive', 12, 10, 5));
+      check('"Speech/presentation, inclusive" is shown as part of use type A3, its values unchanged', /^Use type A3 /.test(a2iL.criterion.name) && /use type A3/.test(a2iL.clause) && json(tri(a2iL)) === json([0.72, 0.58, 0.86]), a2iL.criterion.name);
+      const ebuRef = A.targetData.REFERENCES.ebu3276;
+      check('ITU-R BS.1116-3 is said to confirm the Tm formula only, not the 0.2–0.4 s range or the floor areas', ebuRef.checkedIn.some(x => /BS\.1116-3/.test(x) && /formula only/.test(x)) && !ebuRef.checkedIn.some(x => /same limits/.test(x)), ebuRef.checkedIn.join(' | '));
+      const bigOffice = TS.recommend(room(CORP, 'Private office', 'Focused desk work', 8, 6, 3));
+      check('Private office: NBC does not say how small "small" is, and its 1.0 s for general offices is named for a large office; the value stays 0.75 s', bigOffice.max === 0.75 && /does not say how small/.test(bigOffice.reason) && /1\.0 s for general offices/.test(bigOffice.reason), bigOffice.reason);
+      const ctlR = room(STUDIO, 'Control room', 'Mixing and critical listening', 7, 5, 3), ctl = TS.recommend(ctlR), meet = TS.recommend(room(CORP, 'Meeting room', 'Meetings and presentations', 10, 6, 3)), offT = TS.recommend(room(CORP, 'Private office', 'Focused desk work', 5, 4, 3));
+      check('What a verdict does not establish is said with it: DIN (the room in use), EBU (neighbouring bands, 63 Hz and 8 kHz not checked); nothing for NBC or the project\'s own target',
+        /not an official DIN check/.test(TS.verdictNote(meet)) && /63 Hz and 8 kHz are not checked/.test(TS.verdictNote(ctl)) && TS.verdictNote(offT) === null && TS.verdictNote(Object.assign({}, meet, { source: 'custom' })) === null && /63 Hz and 8 kHz/.test(EV.policyFor(ctlR, ctl).basis),
+        TS.verdictNote(ctl));
+    }
+
     /* ===== 6. the Target step ===== */
     status('Target step…');
     const stg = W.get('target'), act = stg.actions, ctx = () => ({ project: S.state.project, state: S.state, render() {} });
@@ -211,6 +240,16 @@
       const p = () => S.state.project;
       S.set('room', Object.assign({}, p().room, { industry: CORP, type: 'Meeting room', use: 'Meetings and presentations', L: 10, W: 6, H: 3 }));
       check('The project target follows the verified criterion, with its record', json(tri(p().target)) === json([0.55, 0.44, 0.66]) && p().target.source === 'recommended' && p().target.record && p().target.record.criterion === 'din18041-A3', json(p().target).slice(0, 200));
+      act.nudge(ctx(), 'preferred|1');
+      const adj = p().target;
+      S.set('room', Object.assign({}, p().room, { L: 12 }));
+      const moved = p().target;
+      check('A target adjusted from DIN 18041 A3 keeps its values when the room changes, and its basis then says it was adjusted earlier, for the room as it was',
+        adj.source === 'custom' && /^Adjusted from DIN 18041:2016-03, Use type A3/.test(adj.basis) && !!adj.adjustedFrom && moved.source === 'custom' && moved.preferred === adj.preferred
+          && /adjusted earlier from DIN 18041:2016-03, Use type A3 .* for the room as it was then/.test(moved.basis) && !moved.adjustedFrom,
+        `${adj.basis} → ${moved.basis}`);
+      act.useRecommended(ctx());
+      S.set('room', Object.assign({}, p().room, { L: 10 }));
       S.set('room', Object.assign({}, p().room, { industry: HOSP, type: 'Restaurant', use: 'Dining and socialising' }));
       const cc = stg.canContinue(p());
       check('Changed to a restaurant: the target is emptied (no value kept from the meeting room) and the step cannot be confirmed, with the reason',
@@ -274,6 +313,10 @@
       const rt = get('old-retail');
       check('A retail store saved with "Meetings and presentations": the industry, room type and activity are kept as saved; no target; the room step still checks out',
         rt && rt.room.industry === IND && rt.room.type === 'Retail store' && rt.room.use === 'Meetings and presentations' && !A.derive.target(rt) && W.get('room').canContinue(rt).ok, rt ? `${rt.room.use}; ${json(W.get('room').canContinue(rt))}` : 'not loaded');
+      const ss = get('old-small-studio');
+      check('A home studio saved with an EBU target and now smaller than the criterion\'s rooms: the target is set aside, and the note gives the room size as the reason, not "not verified"',
+        ss && json(tri(ss.target)) === json([null, null, null]) && /no longer applies to this room: .*at least 30 m² of floor/.test(ss.targetNote || '') && !/not verified/.test(ss.targetNote || '') && ss.review.includes('target'),
+        ss ? ss.targetNote : 'not loaded');
       const oc = get('old-office-custom'), hc = get('old-home-custom');
       check('Targets the user set are kept as theirs; where no criterion applies any more, the earlier basis is kept as the source',
         oc && json(tri(oc.target)) === json([0.6, 0.48, 0.72]) && oc.target.source === 'custom' && !oc.targetNote && hc && json(tri(hc.target)) === json([0.5, 0.4, 0.6]) && /earlier version/.test(hc.target.note) && !W.get('target').model.problem(hc.target, true),
@@ -321,7 +364,7 @@
       S.go('room');
       await sleep(150);
       check('Room Setup, the classroom: the verified criterion is named beside the room\'s description, and the summary shows the recommended RT60 with its reference',
-        /Verified criterion: DIN 18041:2016-03, Use type A3/.test(app.textContent) && /0\.56 s/.test(app.querySelector('.card-summary').textContent) && /DIN 18041:2016-03/.test(app.querySelector('.card-summary').textContent), 'status and summary');
+        /Verified criterion: DIN 18041:2016-03, Use type A3 "Teaching\/communication" \(checked in published sources/.test(app.textContent) && /0\.56 s/.test(app.querySelector('.card-summary').textContent) && /DIN 18041:2016-03/.test(app.querySelector('.card-summary').textContent), 'status and summary');
     }
 
     status('Done');
