@@ -65,8 +65,8 @@
     {
       const names = D.INDUSTRIES.map(i => i.name);
       const want = ['Corporate offices and meeting rooms', 'Education and training facilities', 'Recording and music studios', 'Hospitality and restaurants', 'Healthcare facilities',
-        'Auditoriums and performance spaces', 'Industrial and commercial facilities', 'Residential spaces', 'Other / custom industry'];
-      check('The nine industries of the brief, in its order', json(names) === json(want), names.join(' · '));
+        'Auditoriums and performance spaces', 'Industrial and commercial facilities', 'Residential spaces', 'Government and civic', 'Transport', 'Sports and recreation', 'Other / custom industry'];
+      check('The nine industries of the brief and the three added from the Vicoustic room list, in order', json(names) === json(want), names.join(' · '));
       check('Every industry offers "Other" as a room type; the custom industry offers only it',
         D.INDUSTRIES.every(i => i.types[i.types.length - 1] === 'Other') && json(D.roomTypesFor('Other / custom industry')) === json(['Other']), D.INDUSTRIES.map(i => i.types.length).join(', '));
       const studio = D.roomTypesFor('Recording and music studios');
@@ -81,9 +81,9 @@
       // Every room type is offered (2026-10-20): those with a verified criterion first, the others grouped as having no
       // verified RT60 target; "Other" last, with no activity.
       const res = TS.typeGroups('Residential spaces');
-      check('Every room type is offered: those with a verified criterion first, the rest grouped as having no verified RT60 target (homes: the home studio, then living room, bedroom, home theatre and "Other"); "Other" offers no activity',
+      check('Every room type is offered: those with a verified criterion first, the rest grouped as having no verified RT60 target (homes: the home studio, then living room, bedroom, home theatre, home office and "Other"); "Other" offers no activity',
         offered.every(t => TS.usesFor(t).length) && notOffered.every(t => !TS.usesFor(t).length) && !TS.usesFor('Other').length
-          && json(res.target) === json(['Home studio']) && json(res.none) === json(['Living room', 'Bedroom', 'Home theatre', 'Other']),
+          && json(res.target) === json(['Home studio']) && json(res.none) === json(['Living room', 'Bedroom', 'Home theatre', 'Home office', 'Other']),
         `${offered.length} with a target; without: ${notOffered.join(', ')}`);
       const moved = [['Corporate / Office', 'Conference room', 'Corporate offices and meeting rooms'], ['Media & Entertainment', 'Cinema', 'Auditoriums and performance spaces'],
         ['Media & Entertainment', 'Recording studio', 'Recording and music studios'], ['Public & Worship', 'Exhibition hall', 'Industrial and commercial facilities'],
@@ -186,6 +186,12 @@
       const types = [...new Set(D.INDUSTRIES.flatMap(i => i.types))].filter(t => t !== 'Other');
       const missing = types.filter(t => { const l = RF.ROOM_MATERIALS[t]; return !l || kinds.some(k => !l[k] || !l[k].length || l[k].some(id => !SF.typeOf(k, id))); });
       check('Every room type has its own list of the walls, floors and ceilings common in it, each a type in the list', !missing.length, missing.join(', ') || `${types.length} room types`);
+      // The three types added from the Vicoustic room list (26 October 2026): each has six measured bands and a manufacturer source.
+      const added = [['wall', 'felt-panels'], ['wall', 'bass-absorber'], ['ceiling', 'hygiene-tiles']].map(([k, id]) => { const m = SF.material(SF.typeOf(k, id).material); return { k, id, m, src: m && AM.materialData.SOURCES[m.source] }; });
+      check('Felt or PET panels, low-frequency absorbers and hygiene ceiling tiles: six measured bands each and a manufacturer source; examination rooms list hygiene tiles, control centres low-frequency absorbers',
+        added.every(a => a.m && a.m.alpha.length === 6 && a.m.alpha.every(v => typeof v === 'number') && a.src && /^https:/.test(a.src.url) && a.m.quality === 'manufacturer')
+          && RF.ROOM_MATERIALS['Examination room'].ceiling.includes('hygiene-tiles') && RF.ROOM_MATERIALS['Monitoring / control centre'].wall.includes('bass-absorber') && RF.COVER_TYPES.wall.includes('felt-panels'),
+        added.map(a => `${a.id}: ${a.m ? json(a.m.alpha) : 'none'} (${a.src ? a.src.short : 'no source'})`).join(' · '));
       const lobby = SF.typesFor('floor', { type: 'Hotel lobby', industry: 'Hospitality and restaurants' }), mine = SF.typesFor('wall', { type: 'Other', industry: 'Industrial and commercial facilities' });
       check('The common types come first: a hotel lobby\'s floors start with marble, granite or Kota stone; a room type the user names uses its industry\'s list; "Something else" is always last',
         lobby.common[0].id === 'stone' && /hotel lobby/.test(lobby.label) && mine.common[0].id === 'block-bare' && mine.label === 'Common in this industry' && lobby.rest[lobby.rest.length - 1].id === 'other' && !lobby.common.some(t => t.id === 'other'),
@@ -402,7 +408,8 @@
       check('"Add a wall" on the screen: Wall 6 appears, open, with its length field', p().room.wallKeys.includes('wall6') && w6 && w6.open && !!app.querySelector('#surf-wall6-len'), json(p().room.wallKeys));
       app.querySelector('#surf-wall6-type-glass').click();
       await sleep(60);
-      const w6c = app.querySelector('#surf-card-wall6'), plain = [...w6c.querySelector('.surf-b').childNodes].filter(n => !(n.classList && n.classList.contains('surf-exact'))).map(n => n.textContent).join(' ');
+      // The card's text without the optional exact type (wherever it is: on a wall, inside "More details").
+      const w6c = app.querySelector('#surf-card-wall6'), plainOf = el => { const c = el.cloneNode(true); c.querySelectorAll('.surf-exact').forEach(x => x.remove()); return c.textContent; }, plain = plainOf(w6c.querySelector('.surf-b'));
       check('"What is this wall?" on the screen: one click on "Glass wall or glass partition" records it with its typical data, says how much sound it absorbs in words, and shows no sizes in millimetres outside the optional exact type',
         p().room.surfaces.wall6.type === 'glass' && p().room.surfaces.wall6.material === 'hall-heavy-plate-glass' && app.querySelector('#surf-wall6-type-glass').getAttribute('aria-pressed') === 'true'
           && /Hard: reflects almost all sound/.test(w6c.querySelector('.surf-sound').textContent) && /typical values/.test(w6c.querySelector('.surf-sound').textContent) && !/\d\s?mm\b/.test(plain) && !app.querySelector('#surf-wall6-con'),
@@ -412,6 +419,19 @@
       check('Ticking "Air conditioner" on Wall 6: recorded and shown as ticked; no size, position or clearance fields',
         json(p().room.surfaces.wall6.equipment) === json(['ac']) && app.querySelector('#surf-wall6-eq-ac').getAttribute('aria-pressed') === 'true' && !app.querySelector('#surf-card-wall6 [id*="clearance"], #surf-card-wall6 [id$="-x"], #surf-card-wall6 [id$="-c"]'),
         json(p().room.surfaces.wall6.equipment));
+      // Regression (26 October 2026): the "Other" equipment button and the box saying what it is shared one id, so after
+      // each keystroke the screen put the cursor back on the button, and a space typed next ticked "Other" off, with the text.
+      app.querySelector('#surf-wall6-eq-other').click();
+      await sleep(60);
+      const more6 = app.querySelector('#surf-card-wall6 details.surf-more');
+      if (more6 && !more6.open) { more6.querySelector('summary').click(); await sleep(60); }
+      const otherBox = app.querySelector('#surf-wall6-eq-other-name');
+      if (otherBox) { otherBox.focus(); otherBox.value = 'F'; otherBox.dispatchEvent(new Event('input', { bubbles: true })); }
+      await sleep(60);
+      const ids = [...app.querySelectorAll('[id]')].map(e => e.id), dup = [...new Set(ids.filter((x, i) => ids.indexOf(x) !== i))];
+      check('"Other" ticked on Wall 6: the box saying what it is has its own id and keeps the cursor while typing; no id is used twice on the Room screen',
+        !!otherBox && document.activeElement && document.activeElement.id === 'surf-wall6-eq-other-name' && p().room.surfaces.wall6.equipmentOther === 'F' && !dup.length,
+        `focused ${document.activeElement && document.activeElement.id}; stored ${p().room.surfaces.wall6.equipmentOther}; used twice: ${dup.join(', ') || 'none'}`);
       check('A rectangular room asks no wall sizes for walls 1–4 (they follow the room); the added wall asks its own', !app.querySelector('#surf-wall1-len') && !app.querySelector('#surf-wall1-ht') && !!app.querySelector('#surf-wall6-len'), 'wall 1: none; wall 6: length');
       const ind = app.querySelector('#room-industry');
       ind.value = 'Healthcare facilities';

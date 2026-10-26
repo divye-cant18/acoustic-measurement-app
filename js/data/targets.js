@@ -157,6 +157,17 @@
     'Services with music and singing': { id: 'services-music' },
     'Living and relaxing': { id: 'living' },
     'Sleeping and relaxing': { id: 'sleeping' },
+    'Calls and focused work': { id: 'calls-focus' },
+    'Staff work and coordination': { id: 'staff-work' },
+    'Circulation and waiting': { id: 'circulation-waiting' },
+    'Circulation and shopping': { id: 'circulation-shopping' },
+    'Spoken drama and performance': { id: 'drama' },
+    'Flexible performance and rehearsal': { id: 'flexible-performance' },
+    'Monitoring and control work': { id: 'monitoring' },
+    'Remote work and calls': { id: 'remote-work' },
+    'Formal proceedings and debate': { id: 'proceedings' },
+    'Formal proceedings, inclusive': { id: 'proceedings-inclusive', hint: 'For listeners who depend on clear speech: hearing impairment, a second language, inclusive use.' },
+    'Waiting and announcements': { id: 'waiting-announcements' },
   };
 
   /* Categories without a verified criterion: no target, and the reason shown to the user. */
@@ -169,6 +180,10 @@
     music: { status: 'incomplete', references: ['din18041', 'is2526'], reason: 'DIN 18041 excludes concert halls and theatres. IS 2526:1963 (clause 6.1, Fig. 1) gives the optimum reverberation time for music halls only as a graph at 500 Hz, with no table or formula to read a value from, and NBC 2016 refers to it for auditoria.' },
     cinema: { status: 'incomplete', references: ['din18041', 'is2526'], reason: 'DIN 18041 excludes cinemas. IS 2526:1963 (clause 6.1, Fig. 1) has a curve for motion picture theatres, but only as a graph at 500 Hz, with no table or formula to read a value from.' },
     warehouse: { status: 'unsupported', references: [], reason: 'No reference found sets a reverberation time or an absorption for warehouses.' },
+    theatre: { status: 'unsupported', references: ['din18041'], reason: 'DIN 18041 excludes theatres, and no other verified reference found sets a reverberation time for them.' },
+    booth: { status: 'unsupported', references: [], reason: 'No reference found sets a reverberation time for phone booths or focus pods (small enclosures inside a room).' },
+    hotelRoom: { status: 'unsupported', references: [], reason: 'No reference found sets a reverberation time for hotel guest rooms.' },
+    nurseStation: { status: 'unsupported', references: ['din18041'], reason: 'No reference found sets a reverberation time for nurse stations. DIN 18041 gives rooms like these only a recommended absorption (group B) and does not name them.' },
   };
 
   /* Room type → its categories (main activity → criterion), most common first: the first verified one is the default.
@@ -189,6 +204,9 @@
   const A3_LECT_TEACH = V('din18041-A3', 'definition', 'A lecture hall used for teaching is used like the classrooms and seminar rooms DIN 18041 names as examples of use type A3. DIN 18041 lists lecture halls themselves under A2, speech and presentation.');
   const A4_LECT_TEACH = V('din18041-A4', 'definition', 'A lecture hall used for inclusive teaching is used like the classrooms and seminar rooms DIN 18041 names as examples of use type A4. DIN 18041 lists lecture halls themselves under A2, and A4 is not for rooms over 500 m³.');
   const SPEECH_ROOM = [['Meetings and presentations', A3_MEET], ['Video calls and hybrid meetings', A4_VIDEO], ['Inclusive meetings', A4_MEET]];
+  const A2_CIVIC = V('din18041-A2', 'example', 'DIN 18041 names court rooms and council chambers (Gerichts- und Ratssaal) as examples of use type A2, speech and presentation.');
+  const A2I_CIVIC = V('din18041-A2i', 'example', 'DIN 18041 names court rooms and council chambers among the examples of "speech/presentation, inclusive", part of use type A3: speech and presentation for listeners who depend on good speech intelligibility.');
+  const A5_POOL = V('din18041-A5', 'example', 'DIN 18041 names swimming halls used almost only for sport as an example of use type A5, sport.');
 
   const CATEGORIES = {
     'Conference room': SPEECH_ROOM,
@@ -221,8 +239,20 @@
       ['Lectures and presentations', A2_LECT], ['Lectures and presentations, inclusive', A2I_LECT], ['Teaching', A3_LECT_TEACH], ['Inclusive teaching', A4_LECT_TEACH],
     ],
     'Library': [['Reading and study', dinB('B3', '0.20', 'libraries (lending areas B4)')]],
+    'Lecture theatre': [['Lectures and presentations', A2_LECT], ['Lectures and presentations, inclusive', A2I_LECT]],
+    'Computer lab': [
+      ['Teaching', V('din18041-A3', 'definition', 'A computer lab used for teaching is used like the classrooms DIN 18041 names as examples of use type A3. DIN 18041 also lists laboratories in group B, so check that the room is used mainly for teaching.')],
+      ['Inclusive teaching', V('din18041-A4', 'definition', 'A computer lab used for inclusive teaching is used like the classrooms DIN 18041 names as examples of use type A4 (not for rooms over 500 m³).')],
+    ],
+    'Music practice room': [['Music rehearsal and performance', A1_MUSIC]],
+    'School hall': [
+      ['Events and assemblies', V('din18041-A2', 'example', 'DIN 18041 names school halls (Schulaula) and assembly rooms as examples of use type A2, speech and presentation.')],
+      ['Lectures and presentations, inclusive', V('din18041-A2i', 'example', 'DIN 18041 names school halls among the examples of "speech/presentation, inclusive", part of use type A3: speech and presentation for listeners who depend on good speech intelligibility.')],
+    ],
     'Music room': [['Music rehearsal and performance', A1_MUSIC]],
     'Sports hall': [['Sport and exercise', A5_SPORT]],
+    'Swimming pool hall': [['Sport and exercise', A5_POOL]],
+    'Gym / fitness studio': [['Sport and exercise', V('din18041-A5', 'definition', 'A fitness studio used for sport and exercise is used like the sports halls DIN 18041 names for use type A5; the studio itself is not named.')]],
     'Gymnasium': [['Sport and exercise', V('din18041-A5', 'definition', 'A gymnasium used for sport and exercise is used like the sports halls DIN 18041 names as the example of use type A5; the gymnasium itself is not named.')]],
     'Recording studio': [['Mixing and critical listening', EBU_STUDIO], ['Recording', NONE.recording]],
     'Control room': [['Mixing and critical listening', EBU_LISTEN]],
@@ -238,9 +268,18 @@
       ['Dining and socialising', dinB('B3', '0.20', 'dining rooms')],
     ],
     'Hotel lobby': [['Waiting and arrival', dinB('B2', '0.15', 'entrance halls and circulation areas used for waiting')]],
+    'Event room': [
+      ['Meetings and presentations', V('din18041-A3', 'example', 'DIN 18041 names conference venue rooms (Tagungsraum) and conference rooms as examples of use type A3, teaching and communication.')],
+      ['Events and assemblies', V('din18041-A2', 'example', 'DIN 18041 names assembly rooms (Versammlungsraum) as examples of use type A2, speech and presentation.')],
+      ['Video calls and hybrid meetings', A4_VIDEO],
+    ],
+    'Hotel guest room': [['Sleeping and relaxing', NONE.hotelRoom]],
     'Consultation room': [['Consultation and treatment', dinB('B3', '0.20', 'consulting, examination and treatment rooms')]],
     'Waiting area': [['Waiting and arrival', dinB('B3', '0.20', 'patient waiting rooms')]],
     'Patient room': [['Patient care and rest', dinB('B3', '0.20', 'patient bedrooms and rest rooms')]],
+    'Examination room': [['Consultation and treatment', dinB('B3', '0.20', 'examination and treatment rooms')]],
+    'Nurse station': [['Staff work and coordination', NONE.nurseStation]],
+    'Corridor': [['Circulation and waiting', dinB('B3', '0.20', 'circulation areas with places to wait in hospitals and care facilities')]],
     'Therapy room': [
       ['Therapy and group sessions', V('din18041-A3', 'definition', 'Group sessions are communication-intensive use with several people speaking, which DIN 18041 sets as use type A3 (its examples include group rooms in care facilities).')],
       ['Consultation and treatment', dinB('B3', '0.20', 'consulting and treatment rooms')],
@@ -249,6 +288,9 @@
       ['Lectures and presentations', A2_LECT], ['Lectures and presentations, inclusive', A2I_LECT], ['Music rehearsal and performance', NONE.music],
     ],
     'Cinema': [['Film screening', NONE.cinema]],
+    'Drama theatre': [['Spoken drama and performance', NONE.theatre]],
+    'Concert hall': [['Music rehearsal and performance', NONE.music]],
+    'Black box theatre': [['Flexible performance and rehearsal', NONE.theatre]],
     'Place of worship': [['Spoken services', NONE.worship], ['Services with music and singing', NONE.worship]],
     'Community hall': [
       ['Events and assemblies', V('din18041-A2', 'example', 'DIN 18041 names community halls and assembly rooms as examples of use type A2, speech and presentation.')],
@@ -261,11 +303,17 @@
       ['Reception and service desk', dinB('B4', '0.25', 'reception and counter areas with a permanent workplace')],
     ],
     'Retail store': [['Sales and customer service', dinB('B3', '0.20', 'sales rooms')]],
+    'Shopping mall common area': [['Circulation and shopping', dinB('B2', '0.15', 'entrance halls and circulation areas with places to stay')]],
+    'Monitoring / control centre': [['Monitoring and control work', dinB('B5', '0.30', 'control centres and security centres')]],
     'Workshop': [['Workshop and manual work', dinB('B5', '0.30', 'workshops and other work rooms with a lot of noise')]],
     'Warehouse': [['Storage and logistics', NONE.warehouse]],
     'Living room': [['Living and relaxing', NONE.dwelling], ['Film and TV viewing', NONE.dwelling]],
     'Bedroom': [['Sleeping and relaxing', NONE.dwelling]],
     'Home theatre': [['Film and TV viewing', NONE.dwelling]],
+    'Home office': [['Remote work and calls', NONE.dwelling]],
+    'Council chamber / courtroom': [['Formal proceedings and debate', A2_CIVIC], ['Formal proceedings, inclusive', A2I_CIVIC]],
+    'Airport / railway waiting hall': [['Waiting and announcements', dinB('B2', '0.15', 'counter halls and entrance halls with waiting areas')]],
+    'Phone booth / focus pod': [['Calls and focused work', NONE.booth]],
   };
 
   /* Checked and not used for targets (docs/TARGET-CRITERIA.md has the details and sources). */

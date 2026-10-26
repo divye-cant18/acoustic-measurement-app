@@ -784,6 +784,67 @@ details.surf>.surf-h .surf-area{flex:none;white-space:nowrap;padding-left:8px}
 .surf-eq{display:flex;flex-direction:column;gap:8px}
 .surf-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px;border-top:1px solid var(--line-soft);padding-top:10px}
 .surf-confirm{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-left:auto}
+/* a wall in parts (Room Setup): seen face-on, one row per part, its doors and windows; the rest under "More details" */
+.look-defs{position:absolute;width:0;height:0;overflow:hidden}
+.wparts{display:flex;flex-direction:column;gap:8px}
+.wstrip{width:100%;height:auto;display:block;border-radius:8px;background:var(--well)}
+.wstrip-part{stroke:var(--raised);stroke-width:2}
+.wstrip-door{fill:#FBF9F8;stroke:#8A8180}
+.wstrip-window{fill:#EEF6F8;stroke:#8A8180}
+.wstrip-l rect{fill:rgba(255,255,255,.9)}
+.wstrip-l text{font-family:var(--font);font-size:12px;font-weight:600;fill:#231E1F}
+.wstrip-dim{stroke:var(--faint)}
+.wstrip-dim-t{font-family:var(--font-num);font-size:11px;fill:var(--muted)}
+.wpart{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:6px 10px;align-items:end}
+.wpart>.sw{width:22px;height:22px;border-radius:6px;align-self:center;border:1px solid var(--line-soft)}
+.wpart-main{display:flex;flex-direction:column;gap:4px;min-width:0}
+.wpart>.field{width:120px}
+.wpart-rest{font-family:var(--font-num);text-align:right;align-self:center;grid-column:3 / span 2;white-space:nowrap}
+.wpart-data{display:inline-flex;align-items:flex-end;gap:7px;font-size:12px}
+.wbars{display:inline-flex;align-items:flex-end;gap:2px;height:16px;padding:0 2px;border-bottom:1px solid var(--line);flex:none}
+.wbars i{display:block;width:4px;background:var(--muted);border-radius:1px 1px 0 0}
+.wparts-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding-top:8px;border-top:1px solid var(--line-soft)}
+.wparts-steps{display:flex;flex-wrap:wrap;gap:6px 14px;margin-left:auto}
+.wstep{display:inline-flex;align-items:center;gap:8px}
+.stepper-sm button{width:32px;height:32px}
+.stepper-sm output{min-width:28px;font-size:13.5px}
+.surf-more{border-top:1px solid var(--line-soft);padding-top:6px}
+.surf-more>summary{cursor:pointer;font-size:13.5px;font-weight:600;color:var(--ink-2);padding:4px 0}
+.surf-more-b{display:flex;flex-direction:column;gap:10px;padding-top:6px}
+/* the room in 3D (Room summary): it builds up as the room is entered and turns to the surface being edited; on Room
+   Setup the summary column is a little wider so the room can be seen at a good size */
+@media (min-width:1181px){.main.is-room .split{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}}
+.room3d{display:flex;flex-direction:column;gap:8px}
+.v-head{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap}
+.v-acts{display:inline-flex;gap:2px;margin-left:auto}
+.viewer{position:relative;height:clamp(320px,52vh,520px);border-radius:var(--r);overflow:hidden;border:1px solid var(--line-soft);background:radial-gradient(120% 90% at 50% 30%,var(--raised) 0%,var(--well) 55%,var(--sunken) 100%)}
+.viewer canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+.viewer canvas:active{cursor:grabbing}
+.v-labels{position:absolute;inset:0;pointer-events:none}
+.badge3d{pointer-events:auto;border:1.5px solid #8A8180;background:rgba(255,255,255,.92);color:#423B3C;border-radius:999px;min-width:26px;height:26px;padding:0 8px;font:600 12px var(--font-num);cursor:pointer;box-shadow:0 2px 8px rgba(35,30,31,.15);transition:background-color var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
+.badge3d.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.badge3d.soft{font:600 10.5px var(--font);height:22px;border-color:rgba(138,129,128,.5);opacity:.75}
+.badge3d.soft:hover,.badge3d.soft.on{opacity:1}
+.v-size{position:absolute;left:10px;top:8px;font:600 11.5px var(--font-num);color:#423B3C;background:rgba(255,255,255,.8);padding:3px 8px;border-radius:7px;pointer-events:none}
+.v-tip{position:absolute;pointer-events:none;background:#231E1F;color:#fff;font-size:12px;padding:5px 9px;border-radius:7px;opacity:0;white-space:nowrap;z-index:3;transition:opacity var(--t-fast) var(--ease)}
+.v-tip.show{opacity:1}
+.v-hint{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:11.5px;color:#6B6263;background:rgba(255,255,255,.8);padding:4px 10px;border-radius:999px;transition:opacity .4s;pointer-events:none;white-space:nowrap}
+.v-hint.gone{opacity:0}
+.v-msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;font:600 13px var(--font);color:#423B3C;background:rgba(255,255,255,.9);padding:8px 14px;border-radius:999px;white-space:nowrap}
+.v-size:empty,.v-msg:empty{display:none}
+.v-follow{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2);cursor:pointer}
+.v-legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--ink-2)}
+.v-legend>span{display:inline-flex;align-items:center;gap:6px}
+.v-legend .sw{width:14px;height:14px;border-radius:4px;border:1px solid var(--line-soft);flex:none}
+.v-legend em{font-style:normal;font-family:var(--font-num);color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.v-hint,.badge3d{transition:none}}
+@media (max-width:560px){
+  .viewer{height:clamp(260px,46vh,380px)}
+  .wpart{grid-template-columns:22px minmax(0,1fr) auto}
+  .wpart>.field{grid-column:2}
+  .wpart-rest{grid-column:2 / span 2;text-align:left}
+  .wparts-steps{margin-left:0}
+}
 .q-fields{gap:12px}
 
 /* ---------- target ---------- */

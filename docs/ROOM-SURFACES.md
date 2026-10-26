@@ -47,24 +47,40 @@ change. Their surfaces, measurements and history are kept as they are.
 - **Openings** (walls only): doors, windows and open doorways with their material, width, height and number. Doors and
   windows are left for the user to choose; an open doorway gets the open area (α 1.00 by definition).
 - **Room summary**: volume, areas, occupancy, "Surfaces described n of 6", the recommended target. No RT60 estimate.
+- **Walls in parts (26 October 2026)**: each wall card first shows the wall face-on to scale, one row per part (what it
+  is, its width; the wall's own type takes the width left) with "Split the wall", and doors and windows with − and +
+  (one more starts at a standard 0.9 × 2.1 m door or 1.2 × 1.2 m window, changeable). Everything else on the wall
+  (name, the type buttons, the exact library entry, a covering, opening sizes and types, equipment) is under "More
+  details". Each type has its own colour and pattern (`src/ui/looks.ts`), always with its name beside it.
+- **The room in 3D** (`src/ui/room3d.ts`, three.js 0.160.0, bundled): in the Room summary, built up as the room is
+  entered (the floor once the length and width are in, the walls with the height), with each wall's parts, doors and
+  windows and the floor and ceiling in their types' colours. It turns to the surface being edited, a click on a wall
+  opens its card, and walls nearer the camera lower themselves. Doors and windows are placed where they usually are
+  (their positions are not recorded); added walls (Wall 5 and up) are listed, not drawn. Without WebGL, the flat
+  sketch.
 
 ## 2. The material library (`js/data/materials.js`)
 
-231 materials from 30 sources, gathered on 12 October 2026 by fetching each page or PDF and reading the values from it
+233 materials from 32 sources, gathered on 12 October 2026 by fetching each page or PDF and reading the values from it
 (HTML tables parsed from the raw page, PDFs from their extracted text). Values seen only in a search-result summary were
 not used. Two Rockfon pages were checked again by hand afterwards (Sonar, five rows; Koral Tenor): all values matched.
-In the app they are used to describe the room and for the α of the finish a product covers.
+Two entries were added on 26 October 2026 for types of the Vicoustic room list: Rockfon CleanSpace Pro 20 mm, 200 mm
+suspension (hygiene ceiling tiles; αp 0.40/0.90/1.00/0.95/1.00/1.00, Rockfon UK product page) and Ecophon Akusto Wall C
+Extra Bass, 80 mm (low-frequency wall absorber; αp 0.65/1.00/0.95/1.00/1.00/1.00, the Ecophon system page, matching its
+Akusto leaflets). Types for which no sourced octave-band data was found (hygienic PVC or HPL walls, solid metal
+cladding, epoxy floors, a slatted ceiling) were not added. In the app the library is used to describe the room and
+for the α of the finish a product covers.
 
 | Surface | Categories (families) |
 |---|---|
-| Walls (142) | Masonry and concrete (brick, concrete block, concrete, stone and lime, tiles and marble) · Plaster and plasterboard · Wood and boards (timber and board linings, slotted and perforated wood, cork) · Curtains and fabrics (curtains and drapes, fabric and felt) · Glass · Acoustic panels and absorbers |
+| Walls (143) | Masonry and concrete (brick, concrete block, concrete, stone and lime, tiles and marble) · Plaster and plasterboard · Wood and boards (timber and board linings, slotted and perforated wood, cork) · Curtains and fabrics (curtains and drapes, fabric and felt) · Glass · Acoustic panels and absorbers |
 | Floors (65) | Carpet (carpet, carpet tiles) · Hard floors (concrete, stone/marble/tiles, timber floor, parquet) · Resilient floors (linoleum and vinyl, rubber and cork) · Access floors |
-| Ceilings (68) | Concrete and plaster · Timber and metal · Suspended acoustic ceilings (acoustic ceiling tiles, perforated metal, perforated plasterboard) · Acoustic panels and absorbers |
+| Ceilings (69) | Concrete and plaster · Timber and metal · Suspended acoustic ceilings (acoustic ceiling tiles, perforated metal, perforated plasterboard) · Acoustic panels and absorbers |
 | Openings (13) | Doors (1: solid wooden door) · Windows and glazed doors (11 glazing types) · Open areas (1) |
 
 | Class | Count | Meaning |
 |---|---|---|
-| manufacturer | 48 | A named product tested to ISO 354 (αp per ISO 11654, octave, 0.05 steps) or ASTM C423 (the one-third-octave value at the octave centre), mounting stated |
+| manufacturer | 50 | A named product tested to ISO 354 (αp per ISO 11654, octave, 0.05 steps) or ASTM C423 (the one-third-octave value at the octave centre), mounting stated |
 | published | 20 | A reference table with its citation: Hall, *Musical Acoustics* 2nd ed. Table 15.1 (via HyperPhysics); Approved Document E Table 7.1 (no 125 Hz column) |
 | compilation | 162 | Widely reproduced tables without an original citation: Acoustical Surfaces, the acoustic.ua PDF, pyroomacoustics (citing Vorländer, *Auralization*, 2008), sengpielaudio, Commercial Acoustics |
 | definition | 1 | Open doorway or gap: 1 m² of opening = 1 sabin |
@@ -96,6 +112,13 @@ The six add up to the room's surface 2(LW + LH + WH). Within one surface: openin
 number) come off the gross, never more than the wall; solid = gross − openings; the covering takes its share (0–100 %,
 outside values limited and reported) of the solid area; the finish keeps the rest. Every m² is in exactly one part;
 nothing is negative. A covering with a material but no share, or a share but no material, is reported.
+
+A wall in sections (`sections [{ id, type, material, widthM }]`, from its left end): the finish area left after the
+openings and the covering is shared by width: each section its width's share, the wall's own type the rest. Where the
+doors, windows and covering are is not recorded, so they come off every part alike. Sections wider than the wall are
+counted up to it and reported; one without a width is not counted and is asked for. A section of acoustic treatment
+already fitted (acoustic panels, felt or PET panels, low-frequency absorbers) is not free for a new product; the other
+parts are, and what a product covers is their α weighted by area. A wall without sections is exactly as before.
 
 ## 4. Prediction after treatment (`services/prediction.js`)
 
@@ -144,7 +167,7 @@ The prediction is an estimate. Only a measurement after installation confirms it
 
 ## 6. Saving and migration
 
-The surfaces are stored with the project (`room.surfaces`: `material`, `cover {material, pct}`, `openings [...]`,
+The surfaces are stored with the project (`room.surfaces`: `material`, `cover {material, pct}`, `openings [...]`, on walls `sections [...]`,
 `origin`, `legacy`) and reopen exactly as entered. Projects saved before the surfaces are migrated on load
 (`store.migrate` → `surfaces.fromLegacy`): an earlier single choice fills a surface only where it names one material
 (`LEGACY` in `materials.js`: walls "Brick", floor "Vinyl", "Tile", "Concrete", ceiling "Concrete"), marked to check;
@@ -173,6 +196,11 @@ pass** (12 October 2026):
 - The target unchanged by the surfaces; measurement isolation (same recording → same result; stored measurement
   untouched; review flags only on Treatment/Predicted/Final; no reference in the 12 measurement files).
 - Migration of two projects saved before the surfaces.
+- A wall in sections (26 October 2026; 68 of 68 checks pass): parts by width with a door (7.0275 + 8.433 + 12.6495 +
+  1.89 = 30 m²), free area without the fitted panels (19.677 m²), the α covered (0.0575 / 0.7), the room's free wall area,
+  the description, missing data named per section, sections wider than the wall, a section without its width or 0 m
+  wide, a wall without sections unchanged; on the screen: a part's type, "Split the wall", a section's width, doors and
+  windows + and −, the strip, removing a section.
 - Report and PDF: surfaces described, no `roomModel`, measured value unchanged, the prediction after treatment from the
   measured room with its assumptions; the PDF says "Prediction after treatment … starting from the measured room" and has
   no room model, no predicted existing RT60 and no unsupported characters.

@@ -111,6 +111,11 @@ frequency, and says so.
 
 Generated from `js/data/targets.js` and `js/data/demo.js` (industries shortened to their first word).
 
+The rooms of the Vicoustic room list (Vicoustic_Advisor_Room_Materials_and_Types.xlsx) were added on 26 October 2026,
+with three industries (government and civic, transport, sports and recreation). Each takes a target only where DIN
+18041 names the room or its use (council chambers and court rooms A2, swimming halls A5, school halls A2, a computer lab
+by its teaching use A3/A4); the others say why there is none (DIN 18041 group B, theatres excluded, no reference found).
+
 | Industry | Room type | Main activity | Status | Criterion, or why there is none |
 |---|---|---|---|---|
 | Corporate | Conference room | Meetings and presentations | Verified | DIN 18041:2016-03, Use type A3 "Teaching/communication" (named example) |
@@ -133,16 +138,24 @@ Generated from `js/data/targets.js` and `js/data/demo.js` (industries shortened 
 | Corporate, Education | Training room | Video calls and hybrid meetings | Verified | DIN 18041:2016-03, Use type A4 "Teaching/communication, inclusive" (named example) |
 | Corporate, Education | Training room | Inclusive teaching | Verified | DIN 18041:2016-03, Use type A4 "Teaching/communication, inclusive" (named example) |
 | Corporate | Staff canteen | Dining and socialising | Verified | NBC 2016 Part 8 Sec. 4, Canteens (named example) |
+| Corporate | Phone booth / focus pod | Calls and focused work | Unsupported | No reference found sets a reverberation time for phone booths or focus pods (small enclosures inside a room). |
 | Education | Classroom | Teaching | Verified | DIN 18041:2016-03, Use type A3 "Teaching/communication" (named example) |
 | Education | Classroom | Inclusive teaching | Verified | DIN 18041:2016-03, Use type A4 "Teaching/communication, inclusive" (named example) |
 | Education | Lecture hall | Lectures and presentations | Verified | DIN 18041:2016-03, Use type A2 "Speech/presentation" (named example) |
 | Education | Lecture hall | Lectures and presentations, inclusive | Verified | DIN 18041:2016-03, Use type A3 "Speech/presentation, inclusive" (named example) |
 | Education | Lecture hall | Teaching | Verified | DIN 18041:2016-03, Use type A3 "Teaching/communication" (by its use definition) |
 | Education | Lecture hall | Inclusive teaching | Verified | DIN 18041:2016-03, Use type A4 "Teaching/communication, inclusive" (by its use definition) |
+| Education | Lecture theatre | Lectures and presentations | Verified | DIN 18041:2016-03, Use type A2 "Speech/presentation" (named example) |
+| Education | Lecture theatre | Lectures and presentations, inclusive | Verified | DIN 18041:2016-03, Use type A3 "Speech/presentation, inclusive" (named example) |
+| Education | Computer lab | Teaching | Verified | DIN 18041:2016-03, Use type A3 "Teaching/communication" (by its use definition) |
+| Education | Computer lab | Inclusive teaching | Verified | DIN 18041:2016-03, Use type A4 "Teaching/communication, inclusive" (by its use definition) |
 | Education | Library | Reading and study | Incomplete | DIN 18041:2016-03 places libraries (lending areas B4) in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Education | Music room | Music rehearsal and performance | Verified | DIN 18041:2016-03, Use type A1 "Music" (named example) |
-| Education | Sports hall | Sport and exercise | Verified | DIN 18041:2016-03, Use type A5 "Sport" (named example) |
-| Education | Gymnasium | Sport and exercise | Verified | DIN 18041:2016-03, Use type A5 "Sport" (by its use definition) |
+| Education | Music practice room | Music rehearsal and performance | Verified | DIN 18041:2016-03, Use type A1 "Music" (named example) |
+| Education | School hall | Events and assemblies | Verified | DIN 18041:2016-03, Use type A2 "Speech/presentation" (named example) |
+| Education | School hall | Lectures and presentations, inclusive | Verified | DIN 18041:2016-03, Use type A3 "Speech/presentation, inclusive" (named example) |
+| Education, Sports | Sports hall | Sport and exercise | Verified | DIN 18041:2016-03, Use type A5 "Sport" (named example) |
+| Education, Sports | Gymnasium | Sport and exercise | Verified | DIN 18041:2016-03, Use type A5 "Sport" (by its use definition) |
 | Recording | Recording studio | Mixing and critical listening | Verified | EBU Tech 3276, Reference listening room or sound control room (by its use definition) |
 | Recording | Recording studio | Recording | Unsupported | No reference found sets a reverberation time for recording rooms. |
 | Recording | Control room | Mixing and critical listening | Verified | EBU Tech 3276, Reference listening room or sound control room (named example) |
@@ -154,33 +167,51 @@ Generated from `js/data/targets.js` and `js/data/demo.js` (industries shortened 
 | Hospitality | Bar | Dining and socialising | Incomplete | DIN 18041:2016-03 places dining rooms in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Hospitality | Banquet hall | Events and assemblies | Verified | DIN 18041:2016-03, Use type A2 "Speech/presentation" (by its use definition) |
 | Hospitality | Banquet hall | Dining and socialising | Incomplete | DIN 18041:2016-03 places dining rooms in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
+| Hospitality | Event room | Meetings and presentations | Verified | DIN 18041:2016-03, Use type A3 "Teaching/communication" (named example) |
+| Hospitality | Event room | Events and assemblies | Verified | DIN 18041:2016-03, Use type A2 "Speech/presentation" (named example) |
+| Hospitality | Event room | Video calls and hybrid meetings | Verified | DIN 18041:2016-03, Use type A4 "Teaching/communication, inclusive" (named example) |
 | Hospitality | Hotel lobby | Waiting and arrival | Incomplete | DIN 18041:2016-03 places entrance halls and circulation areas used for waiting in group B2 and gives only a recommended absorption for it (A/V ≥ 0.15 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
+| Hospitality | Hotel guest room | Sleeping and relaxing | Unsupported | No reference found sets a reverberation time for hotel guest rooms. |
 | Healthcare | Consultation room | Consultation and treatment | Incomplete | DIN 18041:2016-03 places consulting, examination and treatment rooms in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
+| Healthcare | Examination room | Consultation and treatment | Incomplete | DIN 18041:2016-03 places examination and treatment rooms in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Healthcare | Waiting area | Waiting and arrival | Incomplete | DIN 18041:2016-03 places patient waiting rooms in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Healthcare | Patient room | Patient care and rest | Incomplete | DIN 18041:2016-03 places patient bedrooms and rest rooms in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Healthcare | Therapy room | Therapy and group sessions | Verified | DIN 18041:2016-03, Use type A3 "Teaching/communication" (by its use definition) |
 | Healthcare | Therapy room | Consultation and treatment | Incomplete | DIN 18041:2016-03 places consulting and treatment rooms in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
+| Healthcare | Nurse station | Staff work and coordination | Unsupported | No reference found sets a reverberation time for nurse stations. |
+| Healthcare | Corridor | Circulation and waiting | Incomplete | DIN 18041:2016-03 places circulation areas with places to wait in hospitals and care facilities in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Auditoriums | Auditorium | Lectures and presentations | Verified | DIN 18041:2016-03, Use type A2 "Speech/presentation" (named example) |
 | Auditoriums | Auditorium | Lectures and presentations, inclusive | Verified | DIN 18041:2016-03, Use type A3 "Speech/presentation, inclusive" (named example) |
 | Auditoriums | Auditorium | Music rehearsal and performance | Incomplete | DIN 18041 excludes concert halls and theatres. |
 | Auditoriums | Cinema | Film screening | Incomplete | DIN 18041 excludes cinemas. |
+| Auditoriums | Drama theatre | Spoken drama and performance | Unsupported | DIN 18041 excludes theatres, and no other verified reference found sets a reverberation time for them. |
+| Auditoriums | Concert hall | Music rehearsal and performance | Incomplete | DIN 18041 excludes concert halls and theatres. |
+| Auditoriums | Black box theatre | Flexible performance and rehearsal | Unsupported | DIN 18041 excludes theatres, and no other verified reference found sets a reverberation time for them. |
 | Auditoriums | Place of worship | Spoken services | Unsupported | No reference found sets a reverberation time for places of worship. |
 | Auditoriums | Place of worship | Services with music and singing | Unsupported | No reference found sets a reverberation time for places of worship. |
-| Auditoriums | Community hall | Events and assemblies | Verified | DIN 18041:2016-03, Use type A2 "Speech/presentation" (named example) |
-| Auditoriums | Community hall | Lectures and presentations, inclusive | Verified | DIN 18041:2016-03, Use type A3 "Speech/presentation, inclusive" (named example) |
-| Auditoriums | Community hall | Dining and socialising | Incomplete | DIN 18041:2016-03 places dining rooms in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
+| Auditoriums, Government | Community hall | Events and assemblies | Verified | DIN 18041:2016-03, Use type A2 "Speech/presentation" (named example) |
+| Auditoriums, Government | Community hall | Lectures and presentations, inclusive | Verified | DIN 18041:2016-03, Use type A3 "Speech/presentation, inclusive" (named example) |
+| Auditoriums, Government | Community hall | Dining and socialising | Incomplete | DIN 18041:2016-03 places dining rooms in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Industrial | Exhibition hall | Exhibitions and circulation | Incomplete | DIN 18041:2016-03 places exhibition rooms (B3 when interactive or noisy) in group B2 and gives only a recommended absorption for it (A/V ≥ 0.15 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Industrial | Showroom | Exhibitions and circulation | Incomplete | DIN 18041:2016-03 places exhibition rooms (B3 when interactive or noisy) in group B2 and gives only a recommended absorption for it (A/V ≥ 0.15 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Industrial | Showroom | Reception and service desk | Incomplete | DIN 18041:2016-03 places reception and counter areas with a permanent workplace in group B4 and gives only a recommended absorption for it (A/V ≥ 0.25 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Industrial | Retail store | Sales and customer service | Incomplete | DIN 18041:2016-03 places sales rooms in group B3 and gives only a recommended absorption for it (A/V ≥ 0.20 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
+| Industrial | Shopping mall common area | Circulation and shopping | Incomplete | DIN 18041:2016-03 places entrance halls and circulation areas with places to stay in group B2 and gives only a recommended absorption for it (A/V ≥ 0.15 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Industrial | Workshop | Workshop and manual work | Incomplete | DIN 18041:2016-03 places workshops and other work rooms with a lot of noise in group B5 and gives only a recommended absorption for it (A/V ≥ 0.30 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
+| Industrial | Monitoring / control centre | Monitoring and control work | Incomplete | DIN 18041:2016-03 places control centres and security centres in group B5 and gives only a recommended absorption for it (A/V ≥ 0.30 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
 | Industrial | Warehouse | Storage and logistics | Unsupported | No reference found sets a reverberation time or an absorption for warehouses. |
 | Residential | Living room | Living and relaxing | Unsupported | No reference found sets a reverberation-time target for homes. |
 | Residential | Living room | Film and TV viewing | Unsupported | No reference found sets a reverberation-time target for homes. |
 | Residential | Bedroom | Sleeping and relaxing | Unsupported | No reference found sets a reverberation-time target for homes. |
 | Residential | Home theatre | Film and TV viewing | Unsupported | No reference found sets a reverberation-time target for homes. |
+| Residential | Home office | Remote work and calls | Unsupported | No reference found sets a reverberation-time target for homes. |
+| Government | Council chamber / courtroom | Formal proceedings and debate | Verified | DIN 18041:2016-03, Use type A2 "Speech/presentation" (named example) |
+| Government | Council chamber / courtroom | Formal proceedings, inclusive | Verified | DIN 18041:2016-03, Use type A3 "Speech/presentation, inclusive" (named example) |
+| Transport | Airport / railway waiting hall | Waiting and announcements | Incomplete | DIN 18041:2016-03 places counter halls and entrance halls with waiting areas in group B2 and gives only a recommended absorption for it (A/V ≥ 0.15 m²/m³ for rooms up to 2.5 m high, from 250 Hz to 2 kHz), not a reverberation time. |
+| Sports | Swimming pool hall | Sport and exercise | Verified | DIN 18041:2016-03, Use type A5 "Sport" (named example) |
+| Sports | Gym / fitness studio | Sport and exercise | Verified | DIN 18041:2016-03, Use type A5 "Sport" (by its use definition) |
 
-66 categories.
+92 categories.
 
 ## References checked and not used for targets
 

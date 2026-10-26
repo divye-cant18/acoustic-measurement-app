@@ -5,10 +5,12 @@
    openings and the equipment on it (ticked, no sizes); current problems and the outcome wanted (AM.services.surfaces, js/data/room-form.js). The
    surfaces describe the room and tell the treatment prediction what each product covers and how much wall is free
    for it; the room's RT60 is measured, never estimated here. Limits, checks and actions: js/stages/room.js. */
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { acoustics, am, cx, DEMO, fmt, isNum, S, stageModel, SURF, TGT } from '../lib';
 import type { Ctx } from '../am';
 import { Btn, Card, Field, GuideThumb, Icon, Kv, KvNote, Note, NumberInput, Pill, Seg, SelectInput, SyncSelect, TextInput } from '../ui/kit';
+import { fillOf, lookDefs, lookOf } from '../ui/looks';
+import { createRoom3D, type Room3D, type Snapshot, type Wall3D } from '../ui/room3d';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface Question { id: string; label: string; kind: 'int' | 'choice' | 'multi'; options?: string[]; hint?: string }
@@ -46,6 +48,113 @@ function IsoRoom({ r }: { r: any }) {
       <text x={(lW[0] + 8).toFixed(1)} y={(lW[1] + 20).toFixed(1)}>{fmt.m(Wd)}</text>
       <text x={(lH[0] - 8).toFixed(1)} y={(lH[1] + 4).toFixed(1)} textAnchor="end">{fmt.m(H)}</text>
     </svg>
+  );
+}
+
+/* ---------- the room in 3D ---------- */
+const BOX = ['wall1', 'wall2', 'wall3', 'wall4'];
+const surfOf = (r: any, k: string) => (r.surfaces || {})[k] || SURF.blankSurface();
+const typeIdOf = (r: any, k: string, kind: string) => { const x = SURF.typeOfSurface(surfOf(r, k), kind); return x ? x.type.id : ''; };
+const typeLabel = (kind: string, id: string) => { const t = id ? SURF.typeOf(kind, id) : null; return t ? t.name : 'Not chosen yet'; };
+// What the 3D room draws: the box as far as its size is entered, walls 1–4 laid out as on their cards, floor and ceiling.
+function snapshotOf(r: any): Snapshot {
+  const ok = (k: string) => isNum(r[k]) && !M().dimError(k, r[k]), floorOk = ok('L') && ok('W'), wallsOk = floorOk && ok('H');
+  const L: number = floorOk ? r.L : 4, W: number = floorOk ? r.W : 3, H: number = wallsOk ? r.H : 2.7;
+  const walls = SURF.wallKeysOf(r).filter((k: string) => BOX.includes(k)).map((k: string): Wall3D => {
+    const def = SURF.surfaceDef(k, r), s = surfOf(r, k), lay = wallLayout(SURF.surfaceModel(r, k), s);
+    return {
+      key: k as Wall3D['key'], name: s.label ? `${def.name} (${s.label})` : def.name,
+      parts: lay.parts.map(x => ({ type: x.type, f0: x.u0 / lay.L, f1: (x.u0 + x.w) / lay.L, info: `${typeLabel('wall', x.type)}${lay.known ? ` · ${fmt.m(+x.w.toFixed(2))}` : ''}` })),
+      ops: lay.ops.map(o => ({ kind: o.kind, f0: o.u0 / lay.L, f1: o.u1 / lay.L, z0: o.z0, z1: o.z1 })),
+    };
+  });
+  const fl = typeIdOf(r, 'floor', 'floor'), ce = typeIdOf(r, 'ceiling', 'ceiling');
+  return {
+    L, W, H, floorOk, wallsOk, walls,
+    size: wallsOk ? `${fmt.m(L)} × ${fmt.m(W)} × ${fmt.m(H)} · ${(L * W * H).toFixed(0)} m³` : floorOk ? `${fmt.m(L)} × ${fmt.m(W)}` : '',
+    message: !floorOk ? 'Enter the length and width: the floor appears' : !wallsOk ? 'Now the height: the walls go up' : '',
+    floor: { type: fl, info: typeLabel('floor', fl) }, ceiling: { type: ce, info: typeLabel('ceiling', ce) },
+  };
+}
+// The key: each type in its colour and pattern, with its area once the size is known.
+function legendOf(r: any) {
+  const out = new Map<string, { kind: string; type: string; m2: number | null }>();
+  const add = (kind: string, type: string, m2: number | null) => {
+    if (!type || type === 'other' || !lookOf(kind, type)) return;
+    const k = `${kind}:${type}`, cur = out.get(k);
+    out.set(k, { kind, type, m2: m2 == null ? (cur ? cur.m2 : null) : (cur && cur.m2 != null ? cur.m2 : 0) + m2 });
+  };
+  SURF.surfacesOf(r).forEach((def: any) => {
+    const s = surfOf(r, def.key), m = SURF.surfaceModel(r, def.key), own = typeIdOf(r, def.key, def.kind), ct = SURF.coverTypeOf(s.cover, def.kind);
+    const typeOfPart = (x: any) => (x.role === 'finish' ? own : x.role === 'section' ? x.type : x.role === 'cover' && ct ? ct.id : '');
+    if (m.parts.length) m.parts.forEach((x: any) => { if (x.areaM2 > 0) add(def.kind, typeOfPart(x), x.areaM2); });
+    else [own, ...(def.kind === 'wall' ? SURF.sectionsOf(s).map((x: any) => x.type) : []), ct ? ct.id : ''].forEach((t: string) => add(def.kind, t, null));
+  });
+  return [...out.values()].sort((a, b) => (b.m2 || 0) - (a.m2 || 0));
+}
+const surfName = (r: any, k: string) => { const d = SURF.surfaceDef(k, r); return d ? d.name : k; };
+/* The room in 3D as it is described (src/ui/room3d.ts): it builds up as the size is entered (the floor, then the walls),
+   shows each wall's parts, doors and windows and the floor and ceiling in their types' colours, and turns to the surface
+   being edited (the card last clicked or typed in). A click on a wall in the drawing opens its card. Without WebGL, the
+   flat sketch. */
+function RoomView({ r }: { r: any }) {
+  const host = useRef<HTMLDivElement>(null), view = useRef<Room3D | null>(null), selRef = useRef('wall1'), follow = useRef(true), room = useRef(r);
+  room.current = r;
+  const [failed, setFailed] = useState(false), [sel, setSel] = useState('wall1'), [turn, setTurn] = useState(true);
+  const pick = (k: string) => {
+    if (k === selRef.current) return;
+    selRef.current = k; setSel(k);
+    const v = view.current;
+    if (v) { v.mark(k); if (follow.current || !k.startsWith('wall')) v.focus(k); }
+  };
+  useEffect(() => {
+    const el = host.current;
+    if (!el || !el.closest('#app')) return undefined; // not when the screen is drawn as HTML (the step's view)
+    // The surface being edited: the card last clicked or typed in.
+    const on = (e: Event) => { const c = e.target instanceof Element ? e.target.closest('details.surf') : null; if (c && c.id.startsWith('surf-card-')) pick(c.id.slice(10)); };
+    // Started once the screen has settled, so a step passed straight through (a new project going on) never builds it.
+    const later = window.setTimeout(() => {
+      const v = createRoom3D(el, k => {
+        pick(k);
+        S.ui({ open: Object.assign({}, (S.state.ui as any).open, { [`surf-${k}`]: true }) });
+        requestAnimationFrame(() => { const c = document.getElementById(`surf-card-${k}`); if (c) c.scrollIntoView({ block: 'center' }); });
+      });
+      if (!v) { setFailed(true); return; }
+      view.current = v;
+      v.mark(selRef.current); v.update(snapshotOf(room.current));
+      document.addEventListener('focusin', on); document.addEventListener('click', on);
+    }, 120);
+    return () => {
+      window.clearTimeout(later);
+      document.removeEventListener('focusin', on); document.removeEventListener('click', on);
+      if (view.current) { view.current.dispose(); view.current = null; }
+    };
+  }, []);
+  useEffect(() => { const v = view.current; if (v) { v.mark(selRef.current); v.update(snapshotOf(r)); } }); // redrawn only where something changed
+  const legend = legendOf(r), notDrawn = SURF.wallKeysOf(r).filter((k: string) => !BOX.includes(k)).map((k: string) => surfName(r, k));
+  const act = (label: string, fn: () => void, icon?: string, text?: string) => (
+    <button type="button" className="btn btn-ghost btn-sm" aria-label={label} title={label} onClick={fn}>{icon ? <Icon name={icon} size={15} sw={2.1} /> : null}{text}</button>
+  );
+  if (failed) return <IsoRoom r={r} />;
+  return (
+    <div className="room3d">
+      <div className="v-head">
+        <span className="small muted">{`Editing: ${surfName(r, sel)}`}</span>
+        <span className="v-acts">
+          {act('See the whole room', () => { if (view.current) view.current.focus('overview'); }, undefined, 'Overview')}
+          {act('A slow turn around the room', () => { if (view.current) view.current.tour(); }, undefined, '360°')}
+          {act('Turn left', () => { if (view.current) view.current.orbit(-1); }, 'chevL')}
+          {act('Turn right', () => { if (view.current) view.current.orbit(1); }, 'chevR')}
+        </span>
+      </div>
+      <div className="viewer" ref={host} />
+      <label className="v-follow small"><input type="checkbox" checked={turn} onChange={e => { follow.current = e.target.checked; setTurn(e.target.checked); if (e.target.checked && view.current) view.current.focus(selRef.current); }} /> Turn to the wall I edit</label>
+      <div className="v-legend">{legend.length ? legend.map(x => (
+        <span key={`${x.kind}:${x.type}`}><svg className="sw" aria-hidden="true"><rect width="100%" height="100%" fill={fillOf(x.kind, x.type)} /></svg>{typeLabel(x.kind, x.type)}{x.m2 != null ? <em>{fmt.m2(x.m2)}</em> : null}</span>
+      )) : <span className="muted">Choose what each surface is: it appears here.</span>}</div>
+      {notDrawn.length ? <p className="small muted">{`${notDrawn.join(', ')} ${notDrawn.length > 1 ? 'are' : 'is'} not drawn: the drawing is the room's box, walls 1 to 4.`}</p> : null}
+      {r.shape && r.shape !== 'rectangular' ? <p className="small muted">Drawn as a box of the room's length, width and height.</p> : null}
+    </div>
   );
 }
 
@@ -175,7 +284,122 @@ function EquipmentTicks({ keyName, s }: { keyName: string; s: any }) {
           {RF().EQUIPMENT.map((t: any) => <button type="button" key={t.id} className="chip" id={`surf-${keyName}-eq-${t.id}`} data-action="toggleEquipment" data-value={`${keyName}|${t.id}`} aria-pressed={on.has(t.id)}>{t.name}</button>)}
         </div>
       </Field>
-      {on.has('other') ? <div className="surf-name"><TextInput id={`surf-${keyName}-eq-other`} label="What else is on it" bind={`room.surfaces.${keyName}.equipmentOther`} value={s.equipmentOther} placeholder="e.g. Fire alarm panel" req="optional" /></div> : null}
+      {on.has('other') ? <div className="surf-name"><TextInput id={`surf-${keyName}-eq-other-name`} label="What else is on it" bind={`room.surfaces.${keyName}.equipmentOther`} value={s.equipmentOther} placeholder="e.g. Fire alarm panel" req="optional" /></div> : null}
+    </div>
+  );
+}
+
+/* ---------- a wall in parts: what it is along its length, and its doors and windows ---------- */
+const shortName = (name: string) => name.replace(/ \(.*\)$/, '');
+const typeName = (id: string) => { const t = SURF.typeOf('wall', id); return t ? t.name : 'Not chosen yet'; };
+/* A wall laid out from its left end, in m: its sections, then its own type in the width they leave. Doors are placed
+   from the right end and windows from the left (sill 0.9 m), where they usually are: where they are is not recorded.
+   Without the wall's size, a 4 × 2.7 m outline. Drawn face-on on its card and in the 3D room. */
+function wallLayout(model: any, s: any) {
+  const known = isNum(model.lengthM) && isNum(model.heightM), L: number = known ? model.lengthM : 4, H: number = known ? model.heightM : 2.7;
+  let u = 0;
+  const parts = SURF.sectionsOf(s).map((x: any) => {
+    const w = isNum(x.widthM) && x.widthM > 0 ? Math.min(x.widthM, Math.max(0, L - u)) : 0, part = { type: x.type || '', u0: u, w };
+    u += w;
+    return part;
+  });
+  const own = SURF.typeOfSurface(s, 'wall');
+  parts.push({ type: own ? own.type.id : '', u0: u, w: Math.max(0, L - u) });
+  const ops: { kind: string; u0: number; u1: number; z0: number; z1: number }[] = [];
+  let right = L - 0.3, left = 0.4;
+  (s.openings || []).forEach((o: any) => {
+    if (!(isNum(o.widthM) && isNum(o.heightM) && o.widthM > 0 && o.heightM > 0)) return;
+    const h = Math.min(o.heightM, H);
+    for (let i = 0; i < (isNum(o.count) && o.count >= 1 ? Math.floor(o.count) : 1); i++) {
+      if (o.kind === 'window') { const z0 = Math.max(0, Math.min(0.9, H - h)); ops.push({ kind: o.kind, u0: left, u1: Math.min(L, left + o.widthM), z0, z1: z0 + h }); left += o.widthM + 0.4; }
+      else { ops.push({ kind: o.kind, u0: Math.max(0, right - o.widthM), u1: Math.max(0, right), z0: 0, z1: h }); right -= o.widthM + 0.3; }
+    }
+  });
+  return { known, L, H, parts: parts.filter((x: any) => x.w > 0) as { type: string; u0: number; w: number }[], ops: ops.filter(o => o.u1 > o.u0) };
+}
+// The wall seen face-on, to scale.
+function WallStrip({ name, model, s }: { name: string; model: any; s: any }) {
+  const { known, L, H, parts: shown, ops } = wallLayout(model, s);
+  const VW = 600, VH = Math.max(70, Math.min(150, VW * H / L)), sx = VW / L, fh = VH - 18, sz = fh / H;
+  return (
+    <svg className="wstrip" viewBox={`0 0 ${VW} ${VH}`} role="img" aria-label={`${name} seen face-on: ${shown.map((x: any) => `${typeName(x.type)}${known ? `, ${fmt.m(+x.w.toFixed(2))}` : ''}`).join('; ')}`}>
+      {shown.map((x: any, i: number) => <rect key={`p${i}`} className="wstrip-part" x={x.u0 * sx} y={0} width={x.w * sx} height={fh} fill={fillOf('wall', x.type)}><title>{`${typeName(x.type)}${known ? ` · ${fmt.m(+x.w.toFixed(2))}` : ''}`}</title></rect>)}
+      {ops.map((o, i) => <rect key={`o${i}`} className={`wstrip-${o.kind === 'window' ? 'window' : 'door'}`} x={o.u0 * sx} y={(H - o.z1) * sz} width={(o.u1 - o.u0) * sx} height={(o.z1 - o.z0) * sz}><title>{SURF.OPENINGS[o.kind] || 'Opening'}</title></rect>)}
+      {shown.filter((x: any) => x.w * sx > 80).map((x: any, i: number) => {
+        const cx0 = (x.u0 + x.w / 2) * sx, bw = Math.min(x.w * sx - 12, 170);
+        return <g key={`l${i}`} className="wstrip-l"><rect x={cx0 - bw / 2} y={fh / 2 - 11} width={bw} height={22} rx={6} /><text x={cx0} y={fh / 2 + 4} textAnchor="middle">{`${shortName(typeName(x.type))}${known ? ` · ${fmt.m(+x.w.toFixed(2))}` : ''}`}</text></g>;
+      })}
+      <line className="wstrip-dim" x1={0} y1={VH - 9} x2={VW} y2={VH - 9} />
+      <text className="wstrip-dim-t" x={VW / 2} y={VH - 1} textAnchor="middle">{known ? fmt.m(+L.toFixed(2)) : 'size not entered'}</text>
+    </svg>
+  );
+}
+// A part's sound data in one line: α per band as small bars, in words, and its source.
+function PartData({ id }: { id: string }) {
+  const m = SURF.material(id);
+  if (!m) return <span className="wpart-data small muted">No sound data in the library for this yet</span>;
+  const r = SURF.soundRating(m.id), al = SURF.alphaOf(m.id), src = SURF.sourceOf(m);
+  return (
+    <span className="wpart-data small muted" title={m.variant || undefined}>
+      <span className="wbars" aria-hidden="true">{DEMO.BANDS.map((f: number) => <i key={f} style={{ height: `${Math.max(2, Math.round((al.values[f] || 0) * 16))}px` }} />)}</span>
+      <span>{r ? r.word : 'Sound data for some bands only'}{src ? <>{' · '}<a href={src.url} target="_blank" rel="noopener">{src.short}</a></> : null}</span>
+    </span>
+  );
+}
+/* The wall from left to right: one row per section (what it is, its width) and one for the wall's own type in the width
+   they leave; "Split the wall"; and its doors and windows, one more or one less. */
+function WallParts({ def, model, s, room }: { def: any; model: any; s: any; room: any }) {
+  const key = def.key, g = SURF.typesFor('wall', room), secs = SURF.sectionsOf(s), own = SURF.typeOfSurface(s, 'wall');
+  const counted = model.parts.filter((x: any) => x.role === 'section'), used = counted.reduce((t: number, x: any) => t + x.widthM, 0);
+  const options = <>
+    <option value="" disabled>Choose what it is</option>
+    {g.common.length ? <optgroup label={g.label}>{g.common.map((t: any) => <option value={t.id} key={t.id}>{t.name}</option>)}</optgroup> : null}
+    <optgroup label={g.common.length ? 'More types' : 'Types'}>{g.rest.map((t: any) => <option value={t.id} key={t.id}>{t.name}</option>)}</optgroup>
+  </>;
+  const pick = (part: string, type: string, label: string) => (
+    <SyncSelect className="select" id={`surf-${key}-part-${part}`} value={type} data-change-action="setWallPart" data-key={key} data-part={part} aria-label={label}>{options}</SyncSelect>
+  );
+  const swatch = (type: string) => <svg className="sw" aria-hidden="true"><rect width="100%" height="100%" fill={fillOf('wall', type)} /></svg>;
+  const count = (kind: string) => (s.openings || []).filter((o: any) => o.kind === kind).reduce((t: number, o: any) => t + (isNum(o.count) && o.count >= 1 ? Math.floor(o.count) : 1), 0);
+  const step = (kind: string, word: string) => {
+    const n = count(kind);
+    return (
+      <span className="wstep"><span className="small">{`${word}s`}</span>
+        <span className="stepper stepper-sm">
+          <button type="button" id={`surf-${key}-${kind}-less`} data-action="stepOpening" data-value={`${key}|${kind}|-1`} aria-label={`One ${word.toLowerCase()} less`} disabled={!n || undefined}><Icon name="minus" size={14} sw={2.4} /></button>
+          <output aria-label={`${word}s on ${def.name}`}>{n}</output>
+          <button type="button" id={`surf-${key}-${kind}-more`} data-action="stepOpening" data-value={`${key}|${kind}|1`} aria-label={`One ${word.toLowerCase()} more`}><Icon name="plus" size={14} sw={2.4} /></button>
+        </span>
+      </span>
+    );
+  };
+  return (
+    <div className="wparts">
+      <WallStrip name={def.name} model={model} s={s} />
+      {secs.map((x: any, i: number) => (
+        <div className="wpart" key={x.id}>
+          {swatch(x.type)}
+          <div className="wpart-main">
+            {pick(x.id, x.type || '', `${def.name}, section ${i + 1}: what it is`)}
+            {x.type ? <PartData id={x.material} /> : null}
+          </div>
+          <NumberInput id={`surf-${key}-sec-${x.id}-w`} label={`Section ${i + 1} width`} bind={`room.surfaces.${key}.sections.${i}.widthM`} value={x.widthM} unit="m" placeholder="e.g. 2.4"
+            error={isNum(x.widthM) && x.widthM <= 0 ? 'Enter more than 0 m' : null} />
+          <Btn action="removeSection" value={`${key}|${x.id}`} variant="ghost" size="sm" icon="x" label={`Remove section ${i + 1}`} />
+        </div>
+      ))}
+      <div className="wpart">
+        {swatch(own ? own.type.id : '')}
+        <div className="wpart-main">
+          {pick('main', own ? own.type.id : '', secs.length ? `${def.name}, the rest of it: what it is` : `${def.name}: what it is`)}
+          {own && own.type.id !== 'other' ? <PartData id={s.material} /> : null}
+        </div>
+        <span className="wpart-rest small muted">{`${secs.length ? 'the rest' : 'whole wall'}${isNum(model.lengthM) ? ` · ${fmt.m(+Math.max(0, model.lengthM - used).toFixed(2))}` : ''}`}</span>
+      </div>
+      <div className="wparts-acts">
+        <Btn action="addSection" value={key} variant="ghost" size="sm" icon="plus">Split the wall</Btn>
+        <span className="wparts-steps">{step('door', 'Door')}{step('window', 'Window')}</span>
+      </div>
     </div>
   );
 }
@@ -239,49 +463,63 @@ function SurfaceCard({ p, def, model, search, confirm, walls }: { p: any; def: a
   // What the header says the surface is: its type, or what was recorded earlier, or that it is not described yet.
   const built = [s.construction ? SURF.constructionText(s, def.kind) : '', s.finish ? SURF.finishText(s, def.kind).toLowerCase() : ''].filter(Boolean).join(', ');
   const what = SURF.typeText(s, def.kind) || built || (fin.cur ? fin.cur.variant || SURF.familyOf(fin.cur, def.kind) : '');
-  const counts = [(s.openings || []).length ? `${(s.openings || []).length} opening${(s.openings || []).length > 1 ? 's' : ''}` : '', ...model.equipment.map((e: any) => e.label.toLowerCase())].filter(Boolean).join(' · ');
-  const open = !!((S.state.ui as any).open || {})[`surf-${key}`];
+  const nSec = wall ? SURF.sectionsOf(s).length : 0;
+  const counts = [nSec ? `${nSec + 1} parts` : '', (s.openings || []).length ? `${(s.openings || []).length} opening${(s.openings || []).length > 1 ? 's' : ''}` : '', ...model.equipment.map((e: any) => e.label.toLowerCase())].filter(Boolean).join(' · ');
+  const opened = (S.state.ui as any).open || {}, open = !!opened[`surf-${key}`];
+  const nameField = <div className="surf-name"><TextInput id={`surf-${key}-label`} label="Name (optional)" bind={`room.surfaces.${key}.label`} value={s.label} placeholder={wall ? 'e.g. Window wall' : 'e.g. Raft over the table'} /></div>;
+  // What it is in detail: on a wall, under "More details" (its parts, doors and windows come first).
+  const detail = <>
+    <TypePicker id={`surf-${key}-type`} kind={def.kind} room={r} value={type ? type.id : ''} action="setSurfaceType" keyName={key} question={nSec ? `${question.replace('?', '')} (the rest of it)?` : question} />
+    {!type && built ? <p className="small muted">{`Recorded earlier: ${built}. Choose what it is above, or leave it as recorded.`}</p> : null}
+    {type && type.hint && !other ? <p className="small muted surf-hint">{type.hint}</p> : null}
+    {other ? <CustomEntry keyName={key} field="finishOther" what="material" value={s.finishOther} /> : null}
+    {s.construction === 'other' ? <CustomEntry keyName={key} field="constructionOther" what="construction" value={s.constructionOther} /> : null}
+    {other || s.construction === 'other' ? <p className="small muted">Kept with this room, with its sound properties left unknown until they are sourced: nothing is estimated for it. When you send the report form, the name is included so it can be reviewed for the library.</p> : null}
+    {type && !other ? <SoundLine m={fin.cur} typical={typical} /> : null}
+    {!other && (!fin.none || search) ? (
+      <details className="surf-exact" open={(!type && !!s.material) || !!search || undefined}>
+        <summary>Exact type and sound data (optional)</summary>
+        <p className="small muted">{type ? `Only if you know exactly what it is: the library's entries for ${type.name.toLowerCase()}, with their tested or published values.` : 'The library’s entries for this surface, with their tested or published values.'}</p>
+        <input className="input input-sm" id={`surf-${key}-search`} type="text" role="searchbox" data-uibind={`matSearch.${key}`} defaultValue={search} placeholder="Search, e.g. painted" aria-label={`Search the library for ${def.name}`} autoComplete="off" />
+        <div className="grid g2">{fin.sel}{fin.variant}</div><DataLine m={fin.cur} />
+      </details>
+    ) : null}
+    {coverHtml}{ops}{eq}
+    <div className="surf-adds">
+      {!cov ? <Btn action="addCover" value={key} variant="ghost" size="sm" icon="plus">Something covering part of it</Btn> : null}
+      {wall ? ['door', 'window', 'opening'].map(k => <Btn key={k} action="addOpening" value={`${key}|${k}`} variant="ghost" size="sm" icon="plus">{k === 'opening' ? 'Opening' : SURF.OPENINGS[k]}</Btn>) : null}
+    </div>
+  </>;
   return (
     <details className="surf" id={`surf-card-${key}`} data-open-id={`surf-${key}`} open={open}>
       <summary className="surf-h">
         <Icon name="chevR" size={14} sw={2.4} />
         <b>{def.name}</b>{s.label ? <span className="surf-label">{s.label}</span> : null}
         <span className="surf-what small">{what ? <span>{what}</span> : <span className="muted">Not described yet</span>}{counts ? <span className="muted">{` · ${counts}`}</span> : null}{model.problems.length ? <span className="surf-warn"><Icon name="alert" size={12} sw={2.4} />{`${model.problems.length} to check`}</span> : null}</span>
-        <span className="surf-area">{ok ? fmt.m2(model.grossM2) : '—'}{ok && model.openingsM2 > 0 ? <small>{`${fmt.m2(model.solidM2)} solid`}</small> : null}{ok && wall && model.availableM2 != null && (model.coverM2 > 0 || model.openingsM2 > 0) ? <small className="surf-free">{`${fmt.m2(model.availableM2)} free`}</small> : null}</span>
+        <span className="surf-area">{ok ? fmt.m2(model.grossM2) : '—'}{ok && model.openingsM2 > 0 ? <small>{`${fmt.m2(model.solidM2)} solid`}</small> : null}{ok && wall && model.availableM2 != null && (model.coverM2 > 0 || model.openingsM2 > 0 || model.availableM2 < model.finishM2 - 1e-9) ? <small className="surf-free">{`${fmt.m2(model.availableM2)} free`}</small> : null}</span>
       </summary>
       <div className="surf-b">
       <p className="small muted surf-where">{`${def.where}${dimText ? ` · ${dimText}` : ''}`}</p>
       {s.origin === 'migrated' && s.legacy ? <Note tone="warn">{`Filled from the earlier single choice “${s.legacy}”. Check that it describes ${def.name.toLowerCase()}.`}</Note> : null}
       {!s.material && s.legacy ? <p className="small muted">{`Earlier entry: “${s.legacy}”. It does not say which material this is, so choose it here.`}</p> : null}
-      {wall || def.section ? (
+      {wall ? (ownSize ? (
         <div className="surf-row surf-dims">
-          <div className="surf-name"><TextInput id={`surf-${key}-label`} label="Name (optional)" bind={`room.surfaces.${key}.label`} value={s.label} placeholder={wall ? 'e.g. Window wall' : 'e.g. Raft over the table'} /></div>
-          {ownSize ? <>
-            <NumberInput id={`surf-${key}-len`} label="Length" bind={`room.surfaces.${key}.lengthM`} value={s.lengthM} unit="m" placeholder={def.a ? derived(def.a) : 'required'} error={SURF.wallDimError('lengthM', s.lengthM)} />
-            <NumberInput id={`surf-${key}-ht`} label="Height" bind={`room.surfaces.${key}.heightM`} value={s.heightM} unit="m" placeholder={derived('H')} error={SURF.wallDimError('heightM', s.heightM)} />
-          </> : wall ? null : <NumberInput id={`surf-${key}-area`} label="Area" bind={`room.surfaces.${key}.areaM2`} value={s.areaM2} unit="m²" placeholder="required" error={isNum(s.areaM2) && s.areaM2 <= 0 ? 'Enter more than 0 m²' : null} />}
+          <NumberInput id={`surf-${key}-len`} label="Length" bind={`room.surfaces.${key}.lengthM`} value={s.lengthM} unit="m" placeholder={def.a ? derived(def.a) : 'required'} error={SURF.wallDimError('lengthM', s.lengthM)} />
+          <NumberInput id={`surf-${key}-ht`} label="Height" bind={`room.surfaces.${key}.heightM`} value={s.heightM} unit="m" placeholder={derived('H')} error={SURF.wallDimError('heightM', s.heightM)} />
+        </div>
+      ) : null) : def.section ? (
+        <div className="surf-row surf-dims">
+          {nameField}
+          <NumberInput id={`surf-${key}-area`} label="Area" bind={`room.surfaces.${key}.areaM2`} value={s.areaM2} unit="m²" placeholder="required" error={isNum(s.areaM2) && s.areaM2 <= 0 ? 'Enter more than 0 m²' : null} />
         </div>
       ) : null}
-      <TypePicker id={`surf-${key}-type`} kind={def.kind} room={r} value={type ? type.id : ''} action="setSurfaceType" keyName={key} question={question} />
-      {!type && built ? <p className="small muted">{`Recorded earlier: ${built}. Choose what it is above, or leave it as recorded.`}</p> : null}
-      {type && type.hint && !other ? <p className="small muted surf-hint">{type.hint}</p> : null}
-      {other ? <CustomEntry keyName={key} field="finishOther" what="material" value={s.finishOther} /> : null}
-      {s.construction === 'other' ? <CustomEntry keyName={key} field="constructionOther" what="construction" value={s.constructionOther} /> : null}
-      {other || s.construction === 'other' ? <p className="small muted">Kept with this room, with its sound properties left unknown until they are sourced: nothing is estimated for it. When you send the report form, the name is included so it can be reviewed for the library.</p> : null}
-      {type && !other ? <SoundLine m={fin.cur} typical={typical} /> : null}
-      {!other && (!fin.none || search) ? (
-        <details className="surf-exact" open={(!type && !!s.material) || !!search || undefined}>
-          <summary>Exact type and sound data (optional)</summary>
-          <p className="small muted">{type ? `Only if you know exactly what it is: the library's entries for ${type.name.toLowerCase()}, with their tested or published values.` : 'The library’s entries for this surface, with their tested or published values.'}</p>
-          <input className="input input-sm" id={`surf-${key}-search`} type="text" role="searchbox" data-uibind={`matSearch.${key}`} defaultValue={search} placeholder="Search, e.g. painted" aria-label={`Search the library for ${def.name}`} autoComplete="off" />
-          <div className="grid g2">{fin.sel}{fin.variant}</div><DataLine m={fin.cur} />
+      {wall ? <>
+        <WallParts def={def} model={model} s={s} room={r} />
+        <details className="surf-more" data-open-id={`surf-${key}-more`} open={!!opened[`surf-${key}-more`] || undefined}>
+          <summary>More details</summary>
+          <div className="surf-more-b"><div className="surf-row surf-dims">{nameField}</div>{detail}</div>
         </details>
-      ) : null}
-      {coverHtml}{ops}{eq}
-      <div className="surf-adds">
-        {!cov ? <Btn action="addCover" value={key} variant="ghost" size="sm" icon="plus">Something covering part of it</Btn> : null}
-        {wall ? ['door', 'window', 'opening'].map(k => <Btn key={k} action="addOpening" value={`${key}|${k}`} variant="ghost" size="sm" icon="plus">{k === 'opening' ? 'Opening' : SURF.OPENINGS[k]}</Btn>) : null}
-      </div>
+      </> : detail}
       {model.problems.length ? <ul className="bullets small">{model.problems.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul> : null}
       {wall || def.section ? (
         <div className="surf-foot">
@@ -346,6 +584,7 @@ export function RoomScreen({ ctx }: { ctx: Ctx }) {
   const t = SURF.totals(r), fin = SURF.finishes(r);
   return (
     <div className="grid split">
+      <svg className="look-defs" width={0} height={0} aria-hidden="true" focusable="false"><defs dangerouslySetInnerHTML={{ __html: lookDefs() }} /></svg>
       <div className="stack">
         <Card icon="doc" title="Room">
           <div className="fields">
@@ -401,8 +640,8 @@ export function RoomScreen({ ctx }: { ctx: Ctx }) {
           </div>
           <Field label="In the room" hint="Anything soft or acoustic already there. Choose all that apply."><Chips path="furnishings" options={O.furnishings} value={r.furnishings} label="In the room" /></Field>
         </Card>
-        <Card icon="wall" title={`Walls (${walls.length})`} sub="Each wall: what it is built from, its finish, and what is on it. Their sizes come from the room; walls go round it: 1 and 3 are the long walls, 2 and 4 the end walls.">
-          <p className="small muted">Open a wall to describe it. Its line shows what is recorded so far.</p>
+        <Card icon="wall" title={`Walls (${walls.length})`} sub="Each wall: what it is along its length, its doors and windows, and what is on it. Their sizes come from the room; walls go round it: 1 and 3 are the long walls, 2 and 4 the end walls.">
+          <p className="small muted">Open a wall to describe it. Where part of it is something else (a glass section, fitted panels), split it. Its line shows what is recorded so far.</p>
           <div className="surfs">{walls.map(card)}</div>
           <div className="hstack"><Btn action="addWall" icon="plus" size="sm">Add a wall</Btn><span className="small muted">Or duplicate a wall to copy what is recorded on it.</span></div>
         </Card>
@@ -420,12 +659,12 @@ export function RoomScreen({ ctx }: { ctx: Ctx }) {
       </div>
       <div className="stack sticky">
         <Card icon="seal" title="Room summary" right={validG ? null : <Pill tone="neutral" text="Incomplete" />} cls="card-summary">
-          <IsoRoom r={r} />
+          <RoomView r={r} />
           <Kv rows={[
             ['Volume', validG ? fmt.m3(g.V) : '—', 'is-strong'],
             ['Floor area', validG ? fmt.m2(g.floor) : '—'],
             ['Wall area', t.wallM2 != null ? <>{fmt.m2(t.wallM2)}<KvNote>{`${t.walls} wall${t.walls === 1 ? '' : 's'}`}</KvNote></> : '—'],
-            ['Free wall area', t.wallAvailableM2 != null ? <>{fmt.m2(t.wallAvailableM2)}<KvNote>less openings and coverings</KvNote></> : '—'],
+            ['Free wall area', t.wallAvailableM2 != null ? <>{fmt.m2(t.wallAvailableM2)}<KvNote>less openings, coverings and fitted treatment</KvNote></> : '—'],
             ['Equipment on walls', t.equipmentItems ? `${t.equipmentItems} on ${t.wallsWithEquipment} wall${t.wallsWithEquipment === 1 ? '' : 's'}` : 'None ticked'],
             ['Ceiling area', t.ceilingM2 != null ? <>{fmt.m2(t.ceilingM2)}{t.ceilingSections > 1 ? <KvNote>{`${t.ceilingSections} sections`}</KvNote> : null}</> : '—'],
             ['Total surface', t.wallM2 != null && t.floorM2 != null && t.ceilingM2 != null ? fmt.m2(t.wallM2 + t.floorM2 + t.ceilingM2) : '—'],

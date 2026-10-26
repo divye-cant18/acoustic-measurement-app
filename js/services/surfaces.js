@@ -28,13 +28,18 @@
      areaM2       a ceiling section: its area
      cover        { material, pct }: another material, or existing acoustic treatment, over pct % of the solid area;
                   the finish keeps the rest
+     sections     walls only: [{ id, type, material, widthM }]: parts of the wall that are something else, from its
+                  left end; the wall's own type keeps the width they leave (none: the whole wall is its type)
      openings     walls only: [{ id, kind: 'door' | 'window' | 'opening', material, widthM, heightM, count }]
      equipment    walls only: the kinds of equipment on it, ticked (EQUIPMENT ids, e.g. ['ac', 'speaker']);
                   equipmentOther: what "other" is, when given. No sizes: recorded for the recommendations only
      origin       'user', or 'migrated' when filled from an earlier version's single choice (to be checked); legacy: that
                   earlier choice, kept for reference
    Areas: gross = the surface's size; openings come off the gross (never more than all of it); the cover takes pct %
-   of what is left; the finish keeps the remainder, which is the area free for treatment. Every m² is counted once.
+   of what is left; the finish keeps the remainder, which is the area free for treatment. On a wall with sections, the
+   remainder is shared by width: each section takes its width's share and the wall's own type the rest (where the
+   doors, windows and covering are is not recorded, so they come off every part alike); a section of acoustic
+   treatment already fitted is not free for treatment. Every m² is counted once.
    Material α are limited to 1.00, as product data is; a band a source does not give is missing, never 0. */
 (function (AM) {
   'use strict';
@@ -217,6 +222,9 @@
   // The types that can cover part of a surface (RF.COVER_TYPES), and a cover's type: chosen, or recognised by its entry.
   const coverTypesFor = kind => ((RF.COVER_TYPES || {})[kind] || []).map(id => typeOf(kind, id)).filter(Boolean);
   const coverTypeOf = (cover, kind) => (cover ? coverTypesFor(kind).find(t => (cover.type ? t.id === cover.type : t.material && t.material === cover.material)) || null : null);
+  // A wall's sections, and whether a type is acoustic treatment already fitted (not free for new treatment).
+  const sectionsOf = cfg => (Array.isArray(cfg && cfg.sections) ? cfg.sections : []);
+  const fittedTreatment = t => !!t && t.construction === 'acoustic-system';
 
   /* ---------- equipment ---------- */
   // The kinds of equipment ticked on a wall, in the list's order: [{ type, label }] ("other" with what it is, if given).
@@ -246,7 +254,8 @@
 
   /* The surface's areas and the parts it is made of: { key, name, kind, label, lengthM, heightM, grossM2, openingsM2,
      solidM2, coverM2, finishM2, availableM2 (free for treatment), equipment, construction, finish, parts: [{ role:
-     'finish' | 'cover' | 'door' | 'window' | 'opening', label, materialId, material, areaM2, alpha }], problems: [...] }.
+     'finish' | 'cover' | 'door' | 'window' | 'opening' | 'section', label, materialId, material, areaM2, alpha, free
+     (free for treatment) }], problems: [...] }. A section's part also has its id, type and widthM (as counted).
      Areas are null while the size is not complete. */
   function surfaceModel(room, key) {
     const def = surfaceDef(key, room) || defOf(key), cfg = surfaceOf(room, key);
@@ -299,10 +308,20 @@
     if (cov.material && !given) out.problems.push(`Enter how much of ${def.name} is covered.`);
     out.coverM2 = solid * pct / 100;
     out.finishM2 = solid - out.coverM2;
-    out.parts.unshift({ role: 'finish', label: 'Finish', materialId: cfg.material || '', areaM2: out.finishM2 });
+    // A wall's sections, from its left end, each its width's share of the finish area; the wall's own type the rest.
+    let rest = out.finishM2, used = 0;
+    const secs = def.kind === 'wall' ? sectionsOf(cfg) : [], wide = secs.reduce((s, x) => s + (isNum(x.widthM) && x.widthM > 0 ? x.widthM : 0), 0);
+    secs.forEach((x, i) => {
+      if (!(isNum(x.widthM) && x.widthM > 0)) { out.problems.push(`${def.name}, section ${i + 1}: enter its width, more than 0 m.`); return; }
+      const w = Math.min(x.widthM, Math.max(0, out.lengthM - used)), a = out.finishM2 * w / out.lengthM;
+      used += w; rest -= a;
+      out.parts.push({ role: 'section', label: `Section ${i + 1}`, materialId: x.material || '', areaM2: a, id: x.id, type: x.type || '', widthM: w, free: !fittedTreatment(typeOf('wall', x.type)) });
+    });
+    if (wide > out.lengthM + 1e-9) out.problems.push(`The sections on ${def.name} add up to more than the wall (${wide.toFixed(2)} of ${out.lengthM.toFixed(2)} m); only the wall's length is counted.`);
+    out.parts.unshift({ role: 'finish', label: 'Finish', materialId: cfg.material || '', areaM2: Math.max(0, rest), free: true });
     if (out.coverM2 > 0) out.parts.splice(1, 0, { role: 'cover', label: 'Covered part', materialId: cov.material || '', areaM2: out.coverM2 });
     out.parts.forEach(p => { p.material = material(p.materialId); p.alpha = p.material ? alphaOf(p.materialId) : null; });
-    out.availableM2 = out.finishM2;
+    out.availableM2 = out.parts.filter(p => p.free).reduce((s, p) => s + p.areaM2, 0);
     return out;
   }
 
@@ -322,8 +341,8 @@
   const PLACEMENTS = placementsFor(null);
   const placementKeys = (placement, room) => { const pl = placementsFor(room || null); return (pl.find(p => p.value === placement) || pl[0]).keys; };
 
-  /* What a treatment placed there covers: the finish of those surfaces (not their openings, not an existing covering),
-     area-weighted. { keys, names, freeM2: area available, alpha: { [f]: α | null },
+  /* What a treatment placed there covers: the finish of those surfaces and the sections free for it (not their
+     openings, not an existing covering or fitted treatment), area-weighted. { keys, names, freeM2: area available, alpha: { [f]: α | null },
      known: every band known, why: the reason when not known }. Used by the treatment prediction, which starts from the
      measured room. */
   function coveredBy(room, placement) {
@@ -331,13 +350,13 @@
     const alpha = {}, whys = [];
     BANDS.forEach(f => {
       let w = 0, why = null;
-      ss.forEach(s => {
-        const p = s.parts.find(x => x.role === 'finish'), a = s.availableM2 || 0;
-        if (why || !p || !(a > 0)) return; // no finish part while the size is not complete
-        if (!p.material) why = `${s.name}: ${p.materialId ? 'the material is not in the library' : 'no material chosen'}`;
-        else if (p.alpha.values[f] == null) why = `${s.name}: no value at ${f} Hz`;
-        else w += a * p.alpha.values[f];
-      });
+      ss.forEach(s => s.parts.forEach(p => {
+        if (why || !p.free || !(p.areaM2 > 0)) return; // no parts while the size is not complete
+        const where = p.role === 'section' ? `${s.name}, ${p.label.toLowerCase()}` : s.name;
+        if (!p.material) why = `${where}: ${p.materialId ? 'the material is not in the library' : 'no material chosen'}`;
+        else if (p.alpha.values[f] == null) why = `${where}: no value at ${f} Hz`;
+        else w += p.areaM2 * p.alpha.values[f];
+      }));
       if (!why && !(free > 0)) why = 'no free surface there';
       alpha[f] = why ? null : w / free;
       if (why) whys.push(why);
@@ -372,7 +391,7 @@
   }
   const listText = xs => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0] || '');
   // Is a surface described: a library material, or at least what it is built from or its finish.
-  const describedCfg = cfg => !!(cfg.type || cfg.material || cfg.construction || cfg.finish);
+  const describedCfg = cfg => !!(cfg.type || cfg.material || cfg.construction || cfg.finish || sectionsOf(cfg).some(x => x.type));
   // "Concrete or reinforced concrete, painted" from the construction and finish chosen (or typed).
   function buildText(cfg, kind) {
     const c = cfg.construction ? constructionText(cfg, kind) : '', f = cfg.finish ? finishText(cfg, kind) : '';
@@ -389,7 +408,10 @@
       const exact = tx && cfg.material && cfg.material !== tx.type.material ? partText({ materialId: cfg.material, material: material(cfg.material) }) : '';
       const what = tt ? (exact ? `${tt} (${exact})` : tt)
         : cfg.material ? (fin ? partText(fin) : partText({ materialId: cfg.material, material: material(cfg.material) })) : built || 'not chosen';
+      // A section: "2.4 m glass wall or glass partition", its width as entered.
+      const secText = x => { const t = typeOf('wall', x.type); return `${isNum(x.widthM) && x.widthM > 0 ? `${AM.util.fmt.m(x.widthM)} ` : ''}${t ? t.name.toLowerCase() : 'not chosen'}`; };
       const extra = [
+        s.kind === 'wall' ? sectionsOf(cfg).map(x => `, ${secText(x)}`).join('') : '',
         cov ? `, ${Math.round(100 * cov.areaM2 / (m.solidM2 || 1))} % ${(t => (t && t.id !== 'other' ? t.name.toLowerCase() : partText(cov)))(coverTypeOf(cfg.cover, s.kind))}` : '',
         ops.length ? `, ${ops.length} opening${ops.length > 1 ? 's' : ''}` : '',
         m.equipment.length ? `, with ${listText(m.equipment.map(e => e.label.toLowerCase()))}` : '',
@@ -434,7 +456,7 @@
     SURFACES, OPENINGS, PLACEMENTS, CLASSES: DATA.CLASSES || {}, WALL_LIMITS, blankSurface, blankSurfaces, surfaceDef, surfacesOf, wallKeysOf, ceilingKeysOf, nextKey,
     placementsFor, placementKeys, material, materialsFor, familyOf, categoryOf, alphaOf, sourceOf, classOf, openingArea, wallDimError, surfaceModel, coveredBy,
     constructionsFor, finishesFor, finishFits, materialFits, constructionOf, finishOf, constructionText, finishText, equipmentOf,
-    typesOf, typeOf, typesFor, typeOfSurface, typeText, soundRating, SOUND_WORDS, openingTypesFor, openingTypeOf, coverTypesFor, coverTypeOf,
+    typesOf, typeOf, typesFor, typeOfSurface, typeText, soundRating, SOUND_WORDS, openingTypesFor, openingTypeOf, coverTypesFor, coverTypeOf, sectionsOf, fittedTreatment,
     describe, finishes, totals, customMaterials, fromLegacy,
   };
 })(window.AM);

@@ -196,11 +196,11 @@
     status('Offered…');
     {
       const inds = TS.offeredIndustries();
-      check('Industries with a verified category: all but industrial and commercial facilities (none of its rooms has one); every industry is still listed in Room Setup',
-        !inds.includes(IND) && inds.includes(D.OTHER_INDUSTRY) && inds.includes(CORP) && inds.length === D.INDUSTRIES.length - 1, inds.join(' · '));
+      check('Industries with a verified category: all but industrial and commercial facilities and transport (none of their rooms has one); every industry is still listed in Room Setup',
+        !inds.includes(IND) && !inds.includes('Transport') && inds.includes(D.OTHER_INDUSTRY) && inds.includes(CORP) && inds.includes('Government and civic') && inds.includes('Sports and recreation') && inds.length === D.INDUSTRIES.length - 2, inds.join(' · '));
       const g = i => TS.typeGroups(i);
-      check('Room types in two groups: hospitality has the banquet hall with a target and restaurants, cafés, bars and hotel lobbies without; homes the home studio, then living room, bedroom and home theatre; industrial none with a target; "Other" always last, without',
-        json(g(HOSP).target) === json(['Banquet hall']) && json(g(HOSP).none) === json(['Restaurant', 'Café', 'Bar', 'Hotel lobby', 'Other']) && json(g(RES).target) === json(['Home studio']) && json(g(RES).none) === json(['Living room', 'Bedroom', 'Home theatre', 'Other'])
+      check('Room types in two groups: hospitality has the banquet hall and the event room with a target and restaurants, cafés, bars, hotel lobbies and guest rooms without; homes the home studio, then living room, bedroom, home theatre and home office; industrial none with a target; "Other" always last, without',
+        json(g(HOSP).target) === json(['Banquet hall', 'Event room']) && json(g(HOSP).none) === json(['Restaurant', 'Café', 'Bar', 'Hotel lobby', 'Hotel guest room', 'Other']) && json(g(RES).target) === json(['Home studio']) && json(g(RES).none) === json(['Living room', 'Bedroom', 'Home theatre', 'Home office', 'Other'])
           && !g(IND).target.length && g(IND).none.includes('Workshop'),
         [HOSP, RES, IND].map(i => `${g(i).target.join(', ')} | ${g(i).none.join(', ')}`).join(' ‖ '));
       check('Main activities offered are only the verified ones: a banquet hall offers events, not dining; a recording studio offers mixing, not recording',
@@ -229,6 +229,36 @@
       check('What a verdict does not establish is said with it: DIN (the room in use), EBU (neighbouring bands, 63 Hz and 8 kHz not checked); nothing for NBC or the project\'s own target',
         /not an official DIN check/.test(TS.verdictNote(meet)) && /63 Hz and 8 kHz are not checked/.test(TS.verdictNote(ctl)) && TS.verdictNote(offT) === null && TS.verdictNote(Object.assign({}, meet, { source: 'custom' })) === null && /63 Hz and 8 kHz/.test(EV.policyFor(ctlR, ctl).basis),
         TS.verdictNote(ctl));
+    }
+
+    /* ===== 5c. the rooms added from the Vicoustic room list (26 October 2026) ===== */
+    status('Added rooms…');
+    {
+      const CIV = 'Government and civic', SPO = 'Sports and recreation', TRA = 'Transport';
+      // DIN 18041 A2, 12 × 10 × 5 = 600 m³: 0.37 × lg 600 − 0.14 = 0.37 × 2.77815 − 0.14 = 0.88792 → 0.89; × 0.8 = 0.71033 → 0.71; × 1.2 = 1.06550 → 1.07
+      const council = TS.recommend(room(CIV, 'Council chamber / courtroom', 'Formal proceedings and debate', 12, 10, 5)), councilI = TS.recommend(room(CIV, 'Council chamber / courtroom', 'Formal proceedings, inclusive', 12, 10, 5));
+      check('Council chamber / courtroom, 600 m³: DIN 18041 A2, which names court rooms and council chambers, 0.89 s (0.71–1.07 s); inclusive use by the A3 formula',
+        json(tri(council)) === json([0.89, 0.71, 1.07]) && council.criterionId === 'din18041-A2' && council.category.basis === 'example' && /Gerichts- und Ratssaal/.test(council.category.why) && councilI.criterionId === 'din18041-A2i',
+        `${json(tri(council))} · ${councilI && json(tri(councilI))}`);
+      // DIN 18041 A5, 25 × 15 × 7 = 2625 m³: 0.75 × lg 2625 − 1.00 = 0.75 × 3.41913 − 1 = 1.56435 → 1.56; × 0.8 = 1.25148 → 1.25; × 1.2 = 1.87722 → 1.88
+      const pool = TS.recommend(room(SPO, 'Swimming pool hall', 'Sport and exercise', 25, 15, 7)), gym = TS.availability(room(SPO, 'Gym / fitness studio', 'Sport and exercise', 6, 5, 5));
+      check('Swimming pool hall, 2625 m³: DIN 18041 A5, which names swimming halls, 1.56 s (1.25–1.88 s); a 150 m³ fitness studio is below A5\'s 200 m³: no target',
+        json(tri(pool)) === json([1.56, 1.25, 1.88]) && pool.category.basis === 'example' && gym.status === 'outside' && TS.category('Gym / fitness studio', 'Sport and exercise').basis === 'definition', `${json(tri(pool))} · gym ${gym.status}`);
+      // DIN 18041 A2, school hall 20 × 12 × 6 = 1440 m³: 0.37 × 3.15836 − 0.14 = 1.02859 → 1.03 (0.82–1.23); A3, computer lab 9 × 7 × 3 = 189 m³: 0.32 × 2.27646 − 0.17 = 0.55847 → 0.56 (0.45–0.67)
+      const hall = TS.recommend(room(EDU, 'School hall', 'Events and assemblies', 20, 12, 6)), lab = TS.recommend(room(EDU, 'Computer lab', 'Teaching', 9, 7, 3));
+      check('School hall, 1440 m³: A2 (DIN 18041 names school halls), 1.03 s (0.82–1.23 s); computer lab, 189 m³: A3 by its teaching use, 0.56 s (0.45–0.67 s), with a note to check the room is used for teaching',
+        json(tri(hall)) === json([1.03, 0.82, 1.23]) && hall.category.basis === 'example' && json(tri(lab)) === json([0.56, 0.45, 0.67]) && lab.category.basis === 'definition' && /laboratories/.test(lab.category.why) && !!lab.fit,
+        `${json(tri(hall))} · ${json(tri(lab))}`);
+      const none = [['Examination room', 'Consultation and treatment', HEALTH, /group B3/], ['Corridor', 'Circulation and waiting', HEALTH, /group B3/], ['Nurse station', 'Staff work and coordination', HEALTH, /nurse stations/],
+        ['Airport / railway waiting hall', 'Waiting and announcements', TRA, /group B2/], ['Monitoring / control centre', 'Monitoring and control work', IND, /group B5/], ['Shopping mall common area', 'Circulation and shopping', IND, /group B2/],
+        ['Drama theatre', 'Spoken drama and performance', AUD, /excludes theatres/], ['Black box theatre', 'Flexible performance and rehearsal', AUD, /excludes theatres/], ['Concert hall', 'Music rehearsal and performance', AUD, /concert halls/],
+        ['Phone booth / focus pod', 'Calls and focused work', CORP, /phone booths/], ['Hotel guest room', 'Sleeping and relaxing', HOSP, /hotel guest rooms/], ['Home office', 'Remote work and calls', RES, /homes/]];
+      const wrongNone = none.filter(([t, u, i, re]) => { const a = TS.availability(room(i, t, u, 10, 8, 3)); return a.status === 'ok' || !!TS.recommend(room(i, t, u, 10, 8, 3)) || !re.test(a.message); });
+      check('The added rooms without a reference that sets an RT60 get no target and say why (DIN 18041 group B, theatres excluded, no reference found, dwellings)', !wrongNone.length,
+        wrongNone.length ? wrongNone.map(x => x[0]).join(', ') : `${none.length} rooms`);
+      check('Industries: transport has no room with a target; government and civic offers the council chamber; sports and recreation offers its four halls and studios',
+        !TS.typeGroups(TRA).target.length && TS.typeGroups(CIV).target.includes('Council chamber / courtroom') && json(TS.typeGroups(SPO).target) === json(['Sports hall', 'Gymnasium', 'Swimming pool hall', 'Gym / fitness studio']),
+        [CIV, TRA, SPO].map(i => `${i}: ${TS.typeGroups(i).target.join(', ') || 'none'}`).join(' · '));
     }
 
     /* ===== 6. the Target step ===== */
@@ -358,7 +388,7 @@
       const types = [...app.querySelector('#room-type').options].filter(o => o.value).map(o => o.textContent);
       const groups = [...app.querySelector('#room-type').querySelectorAll('optgroup')].map(o => o.label);
       check('Room Setup, the saved restaurant: every hospitality room type is listed, the banquet hall under "RT60 target from a standard" and the restaurant (selected) under "No verified RT60 target", with the reason shown',
-        json(types) === json(['Banquet hall', 'Restaurant', 'Café', 'Bar', 'Hotel lobby', 'Other']) && app.querySelector('#room-type').value === 'Restaurant' && json(groups) === json(['RT60 target from a standard', 'No verified RT60 target (can still be measured)'])
+        json(types) === json(['Banquet hall', 'Event room', 'Restaurant', 'Café', 'Bar', 'Hotel lobby', 'Hotel guest room', 'Other']) && app.querySelector('#room-type').value === 'Restaurant' && json(groups) === json(['RT60 target from a standard', 'No verified RT60 target (can still be measured)'])
           && /No verified target criteria/.test(app.textContent), `${types.join(' · ')} | ${groups.join(' / ')}`);
       S.openProject('old-classroom');
       S.go('room');

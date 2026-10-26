@@ -1,0 +1,127 @@
+/* =====================================================================
+   Glass theme (approved 26 October 2026), loaded after css/app.css.
+   The brand stays as it is: the logo's red and black and their shades. On
+   top of the design system in app.css this changes the surfaces only:
+
+     background  a plain, soft warm off-white
+     panels      warm white frosted glass: see-through, blurred, a bright
+                 edge along the top, a hairline, a soft warm shadow
+     frame       on wider screens the menu, the top bar and the action bar
+                 float as their own rounded panels with space round them;
+                 the red line along the top bar stays
+     menu        the logo's black, as dark glass, with light text; the
+                 current step lit in the logo red
+     controls    pills: buttons, choices, steppers, the help buttons; fields
+                 are bright white wells
+   The theme is light (the app's own dark colours are not used). Blur is
+   used on the large panels only, never nested, so scrolling stays smooth.
+   Without blur support, or with "reduce transparency", the panels turn
+   solid. Text keeps at least 4.5:1 throughout.
+   Previews and the steps that led here: ux-review/glass-*-2026-10-26/.
+   ===================================================================== */
+:root,:root:not([data-theme="light"]),:root[data-theme]{
+  /* the light colours of app.css, whatever the device's setting, with slightly darker greys for text on glass */
+  --bg:#EFEAE5; --surface:#FBF8F6; --raised:rgba(255,255,255,.62); --well:rgba(255,255,255,.34); --sunken:rgba(35,30,31,.08);
+  --ink:#231E1F; --ink-2:#2F2829; --muted:#4A4243; --faint:#7E7576; --on-ink:#FFFFFF;
+  --line:rgba(35,30,31,.12); --line-soft:rgba(35,30,31,.08); --hover:rgba(35,30,31,.05);
+  --brand:#EE4935; --brand-ink:#B8301E; --brand-tint:rgba(238,73,53,.13); --brand-wash:rgba(238,73,53,.07);
+  --action:#D23A25; --action-hover:#B8301E; --on-action:#FFFFFF;
+  --acoustic:#423B3C; --acoustic-ink:#231E1F; --acoustic-tint:rgba(35,30,31,.08);
+  --accent:var(--brand); --accent-ink:var(--brand-ink); --accent-tint:var(--brand-tint);
+  --measured:#231E1F; --predicted:#D23A25; --predicted-ink:#A82B1A; --predicted-tint:rgba(238,73,53,.10);
+  --target-wash:rgba(35,30,31,.07); --target-line:#5E5657; --material:#7A7172; --eval-wash:rgba(238,73,53,.11);
+  --good:#423B3C; --good-ink:#231E1F; --good-tint:rgba(35,30,31,.09);
+  --warn:#E8664A; --warn-ink:#8E3219; --warn-tint:rgba(238,110,80,.17);
+  --critical:#A3241A; --critical-ink:#7E1A12; --critical-tint:rgba(163,36,26,.11); --on-critical:#FFFFFF;
+  --grid:rgba(35,30,31,.10); --axis:#8E8586;
+  /* the menu: the logo's black */
+  --rail-bg:#231E1F; --rail-2:rgba(255,255,255,.06); --rail-ink:#F2EDEC; --rail-muted:#B5ACAD;
+  --rail-line:rgba(255,255,255,.10); --rail-hover:rgba(255,255,255,.06); --rail-acoustic:#F58C79;
+  --scope-bg:#1A1617;
+  --sh-1:none; --sh-2:0 12px 30px rgba(70,45,30,.12); --sh-h:0 18px 44px rgba(70,45,30,.18); --sh-pop:0 30px 80px rgba(35,30,31,.30);
+  --tour-dim:rgba(20,16,17,.62);
+  color-scheme:light;
+
+  --gl-panel:rgba(255,253,251,.62);
+  --gl-bar:rgba(255,253,251,.70);
+  --gl-pop:rgba(255,253,251,.92);
+  --gl-line:rgba(255,255,255,.78);
+  --gl-hair:rgba(70,50,40,.10);
+  --gl-edge:inset 0 1px 0 rgba(255,255,255,.85);
+  --gl-shadow:0 2px 6px rgba(70,45,30,.07),0 24px 56px rgba(70,45,30,.16);
+  --gl-blur:blur(28px) saturate(160%);
+  --gl-r:24px;
+}
+/* the wordmark as drawn (app.css lightens it for the dark colours, which this theme does not use) */
+:root:not([data-theme="light"]) .wordmark,:root[data-theme="dark"] .wordmark,.wordmark{filter:none}
+
+body{background:linear-gradient(160deg,#F8F4F1 0%,#F0EBE6 58%,#EAE4DE 100%) fixed;background-color:#EFEAE5;color:var(--ink)}
+.content{scrollbar-color:rgba(35,30,31,.22) transparent}
+
+/* the frame floats: menu, top bar and action bar as rounded panels (wider screens) */
+@media (min-width:901px){
+  .app{padding:14px;gap:14px;box-sizing:border-box}
+  .main{gap:12px}
+  .rail{border-radius:28px;border:1px solid rgba(255,255,255,.08)}
+  .topbar{border:1px solid var(--gl-line);border-radius:22px}
+  .actionbar{border:1px solid var(--gl-line);border-radius:22px}
+}
+.topbar{background:var(--gl-bar);border-bottom-color:var(--gl-line);box-shadow:0 0 0 1px var(--gl-hair),var(--gl-edge),inset 0 2px 0 var(--brand),var(--gl-shadow);-webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur)}
+.actionbar{background:var(--gl-bar);border-top-color:var(--gl-line);box-shadow:0 0 0 1px var(--gl-hair),var(--gl-edge),var(--gl-shadow);-webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur)}
+
+/* the menu: dark glass in the logo's black; the current step lit in the logo red */
+.rail{background:linear-gradient(180deg,rgba(38,32,33,.96),rgba(27,23,24,.95));scrollbar-color:rgba(255,255,255,.18) transparent;
+  box-shadow:0 0 0 1px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.09),0 24px 56px rgba(35,30,31,.30)}
+.proj,.rail-history{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.09);border-radius:18px}
+.rail-history:hover{border-color:rgba(255,255,255,.2)}
+.rail-count,.seg-meter i{background:rgba(255,255,255,.09)}
+.wf-item{border-radius:16px}
+.wf-item.is-current{background:linear-gradient(90deg,rgba(255,90,68,.26),rgba(255,255,255,.05) 72%);box-shadow:inset 0 0 0 1px rgba(255,90,68,.45),0 8px 22px rgba(0,0,0,.25)}
+
+/* panels: warm frosted glass */
+.card,.pcard,.home-empty{background:var(--gl-panel);border:1px solid var(--gl-line);border-radius:var(--gl-r);box-shadow:0 0 0 1px var(--gl-hair),var(--gl-edge),var(--gl-shadow);
+  -webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur)}
+.home-hero{background:radial-gradient(ellipse 42% 55% at 72% 56%,rgba(238,73,53,.10),transparent 72%),var(--gl-panel);border:1px solid var(--gl-line);border-radius:28px;
+  box-shadow:0 0 0 1px var(--gl-hair),var(--gl-edge),var(--gl-shadow);-webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur)}
+.pcard:hover,.pcard:focus-within{border-color:rgba(255,255,255,.9);box-shadow:0 0 0 1px rgba(70,50,40,.16),var(--gl-edge),0 30px 70px rgba(70,45,30,.22)}
+.pcard.is-pinned{box-shadow:inset 3px 0 0 var(--brand),0 0 0 1px var(--gl-hair),var(--gl-edge),var(--gl-shadow)}
+
+/* inside the panels: brighter glass, no blur of their own */
+.well,.note,.facts{background:rgba(255,255,255,.46);border-color:var(--gl-hair);border-radius:16px}
+.surf{background:rgba(255,255,255,.42);border-color:var(--gl-hair);border-radius:20px}
+details.surf>.surf-h{border-radius:20px}
+.input,.select{background-color:rgba(255,255,255,.78);border-color:rgba(35,30,31,.14);border-radius:14px}
+.input:focus,.select:focus{border-color:rgba(210,58,37,.6);box-shadow:0 0 0 3px rgba(238,73,53,.16)}
+.input:disabled,.select:disabled{background-color:rgba(255,255,255,.3)}
+.viewer{background:radial-gradient(120% 90% at 50% 30%,rgba(255,255,255,.7),rgba(255,248,242,.3) 60%,rgba(70,50,40,.07));border-color:var(--gl-hair);border-radius:20px}
+.wstrip{background:rgba(255,255,255,.4)}
+
+/* controls: pills */
+.btn{border-radius:999px}
+.btn-primary,.btn-accent{background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,0) 60%),var(--action);color:var(--on-action);box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 10px 26px rgba(210,58,37,.28)}
+.btn-primary:hover:not(:disabled):not([aria-disabled="true"]){background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,0) 60%),var(--action-hover);box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 12px 30px rgba(184,48,30,.34)}
+.btn-secondary{background:rgba(255,255,255,.58);box-shadow:inset 0 0 0 1px rgba(35,30,31,.14),inset 0 1px 0 rgba(255,255,255,.8)}
+.btn-secondary:hover:not(:disabled):not([aria-disabled="true"]){background:rgba(255,255,255,.78);box-shadow:inset 0 0 0 1px rgba(35,30,31,.28)}
+.chip{background:rgba(255,255,255,.55);box-shadow:inset 0 0 0 1px rgba(35,30,31,.13)}
+.chip[aria-pressed="true"]{background:rgba(238,73,53,.14);color:var(--brand-ink);box-shadow:inset 0 0 0 1.5px var(--brand)}
+.seg{background:rgba(35,30,31,.08);border-radius:999px;padding:4px}
+.seg button{border-radius:999px}
+.seg button[aria-pressed="true"]{background:rgba(255,255,255,.9);box-shadow:inset 0 0 0 1.5px var(--brand),0 4px 12px rgba(35,30,31,.12)}
+.stepper{background:rgba(255,255,255,.58);border-color:rgba(35,30,31,.14);border-radius:999px}
+.topbar-help,.topbar-helpbtn,.topbar-tour{background:rgba(255,255,255,.55);border-color:rgba(35,30,31,.12);border-radius:999px;box-shadow:inset 0 1px 0 rgba(255,255,255,.8)}
+.home-count{background:rgba(255,255,255,.55);border-color:var(--gl-hair)}
+
+/* menus, the panel, the tour, notices: dense glass */
+.help-menu,.tour-offer,.tour-card{background:var(--gl-pop);border-color:var(--gl-line);border-radius:20px;-webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur)}
+.sheet{background:var(--gl-pop);border-left:1px solid var(--gl-line);-webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur)}
+.tour-arrow{background:var(--gl-pop)}
+.toast{border-radius:999px}
+
+/* no blur support, or "reduce transparency": solid panels */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  :root,:root:not([data-theme="light"]),:root[data-theme]{--gl-panel:#FBF8F6;--gl-bar:#FBF8F6;--gl-pop:#FDFBFA}
+}
+@media (prefers-reduced-transparency: reduce){
+  :root,:root:not([data-theme="light"]),:root[data-theme]{--gl-panel:#FBF8F6;--gl-bar:#FBF8F6;--gl-pop:#FDFBFA}
+  body{background:#EFEAE5}
+}

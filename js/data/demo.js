@@ -20,14 +20,18 @@
   const OTHER_TYPE = 'Other';
   const OTHER_INDUSTRY = 'Other / custom industry';
   const INDUSTRIES = [
-    { id: 'ind.corporate', name: 'Corporate offices and meeting rooms', legacy: ['Corporate / Office'], types: ['Conference room', 'Meeting room', 'Boardroom', 'Private office', 'Open-plan office', 'Reception area', 'Training room', 'Staff canteen'] },
-    { id: 'ind.education', name: 'Education and training facilities', legacy: ['Education'], types: ['Classroom', 'Lecture hall', 'Training room', 'Library', 'Music room', 'Sports hall', 'Gymnasium'] },
+    { id: 'ind.corporate', name: 'Corporate offices and meeting rooms', legacy: ['Corporate / Office'], types: ['Conference room', 'Meeting room', 'Boardroom', 'Private office', 'Open-plan office', 'Reception area', 'Training room', 'Staff canteen', 'Phone booth / focus pod'] },
+    { id: 'ind.education', name: 'Education and training facilities', legacy: ['Education'], types: ['Classroom', 'Lecture hall', 'Lecture theatre', 'Training room', 'Computer lab', 'Library', 'Music room', 'Music practice room', 'School hall', 'Sports hall', 'Gymnasium'] },
     { id: 'ind.studios', name: 'Recording and music studios', legacy: ['Media & Entertainment'], types: ['Recording studio', 'Control room', 'Home studio', 'Rehearsal room'] },
-    { id: 'ind.hospitality', name: 'Hospitality and restaurants', legacy: ['Hospitality'], types: ['Restaurant', 'Café', 'Bar', 'Banquet hall', 'Hotel lobby'] },
-    { id: 'ind.healthcare', name: 'Healthcare facilities', legacy: ['Healthcare'], types: ['Consultation room', 'Waiting area', 'Patient room', 'Therapy room'] },
-    { id: 'ind.auditoriums', name: 'Auditoriums and performance spaces', legacy: ['Media & Entertainment', 'Public & Worship'], types: ['Auditorium', 'Cinema', 'Place of worship', 'Community hall'] },
-    { id: 'ind.industrial', name: 'Industrial and commercial facilities', legacy: ['Public & Worship'], types: ['Exhibition hall', 'Showroom', 'Retail store', 'Workshop', 'Warehouse'] },
-    { id: 'ind.residential', name: 'Residential spaces', legacy: ['Residential'], types: ['Living room', 'Bedroom', 'Home theatre', 'Home studio'] },
+    { id: 'ind.hospitality', name: 'Hospitality and restaurants', legacy: ['Hospitality'], types: ['Restaurant', 'Café', 'Bar', 'Banquet hall', 'Event room', 'Hotel lobby', 'Hotel guest room'] },
+    { id: 'ind.healthcare', name: 'Healthcare facilities', legacy: ['Healthcare'], types: ['Consultation room', 'Examination room', 'Waiting area', 'Patient room', 'Therapy room', 'Nurse station', 'Corridor'] },
+    { id: 'ind.auditoriums', name: 'Auditoriums and performance spaces', legacy: ['Media & Entertainment', 'Public & Worship'], types: ['Auditorium', 'Cinema', 'Drama theatre', 'Concert hall', 'Black box theatre', 'Place of worship', 'Community hall'] },
+    { id: 'ind.industrial', name: 'Industrial and commercial facilities', legacy: ['Public & Worship'], types: ['Exhibition hall', 'Showroom', 'Retail store', 'Shopping mall common area', 'Workshop', 'Monitoring / control centre', 'Warehouse'] },
+    { id: 'ind.residential', name: 'Residential spaces', legacy: ['Residential'], types: ['Living room', 'Bedroom', 'Home theatre', 'Home studio', 'Home office'] },
+    // Added 26 October 2026 with the room types of the Vicoustic Advisor room list (Vicoustic_Advisor_Room_Materials_and_Types.xlsx).
+    { id: 'ind.civic', name: 'Government and civic', legacy: [], types: ['Council chamber / courtroom', 'Community hall'] },
+    { id: 'ind.transport', name: 'Transport', legacy: [], types: ['Airport / railway waiting hall'] },
+    { id: 'ind.sports', name: 'Sports and recreation', legacy: [], types: ['Sports hall', 'Gymnasium', 'Swimming pool hall', 'Gym / fitness studio'] },
     { id: 'ind.other', name: OTHER_INDUSTRY, legacy: ['Other'], types: [] },
   ].map(i => Object.assign(i, { types: [...i.types, OTHER_TYPE] }));
   // An earlier version's industry name gives the room types of every industry it became (so a room saved with it

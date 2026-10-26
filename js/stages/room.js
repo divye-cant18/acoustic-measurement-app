@@ -58,6 +58,8 @@
   const dropType = (s, kind) => { const t = s.type && RM().typeOf(kind, s.type); if (t && ((t.construction || '') !== (s.construction || '') || t.finish !== s.finish)) delete s.type; };
   // Open a surface's card (the cards are folded; the shell keeps which are open).
   const openCard = key => { S.state.ui.open = Object.assign({}, S.state.ui.open, { [`surf-${key}`]: true }); };
+  // The size a door or window added with "+" starts at: width and height in m.
+  const STANDARD = { door: [0.9, 2.1], window: [1.2, 1.2] };
   // Lists of choices kept on the room (checkboxes): which may be toggled.
   const LISTS = ['furnishings', 'problems', 'outcomes'];
   /* A wall or ceiling section added or removed: the surfaces and the list of keys are written as two values (each only
@@ -76,6 +78,7 @@
       ['lengthM', 'heightM'].forEach(k => { const e = def.kind === 'wall' && RM().wallDimError(k, s[k]); if (e) out.push(`${def.name} ${k === 'lengthM' ? 'length' : 'height'}: ${e.toLowerCase()}.`); });
       if (def.kind === 'ceiling' && def.key !== 'ceiling' && isNum(s.areaM2) && s.areaM2 <= 0) out.push(`${def.name}: enter an area of more than 0 m².`);
       if (def.kind === 'wall' && (s.openings || []).some(o => isNum(o.count) && o.count < 1)) out.push(`${def.name}: the number of doors, windows or openings must be 1 or more.`);
+      if (def.kind === 'wall' && RM().sectionsOf(s).some(x => isNum(x.widthM) && x.widthM <= 0)) out.push(`${def.name}: a section must be more than 0 m wide.`);
     });
     return out;
   }
@@ -265,6 +268,56 @@
       removeOpening: (ctx, v) => {
         const [key, id] = String(v).split('|');
         editSurface(ctx, key, s => { s.openings = (s.openings || []).filter(o => o.id !== id); });
+      },
+      // The doors or windows of a wall, one more or one less (value "<key>|door|1", "<key>|window|-1"). One more is the
+      // most common type at a standard size (door 0.9 × 2.1 m, window 1.2 × 1.2 m), changed under the wall's details;
+      // one less takes one from the last of them.
+      stepOpening: (ctx, v) => {
+        const [key, kind, d] = String(v).split('|'), size = STANDARD[kind];
+        if (kindOf(ctx, key) !== 'wall' || !size) return;
+        const t = RM().openingTypesFor(kind)[0];
+        editSurface(ctx, key, s => {
+          const ops = s.openings || (s.openings = []), mine = ops.filter(o => o.kind === kind);
+          if (Number(d) > 0) {
+            const n = 1 + Math.max(0, ...ops.map(o => parseInt(String(o.id).slice(1), 10) || 0));
+            ops.push({ id: `o${n}`, kind, type: t ? t.id : '', material: t && t.material ? t.material : '', widthM: size[0], heightM: size[1], count: 1 });
+          } else if (mine.length) {
+            const last = mine[mine.length - 1];
+            if (isNum(last.count) && last.count > 1) last.count = Math.floor(last.count) - 1;
+            else s.openings = ops.filter(o => o !== last);
+          }
+        });
+      },
+
+      /* ---------- a wall in sections ---------- */
+      // "Split the wall": a section after those there, of the wall's own type, half the width they leave (no width while
+      // the wall's length is not known).
+      addSection: (ctx, key) => {
+        const r = ctx.project.room, def = RM().surfaceDef(key, r);
+        if (!def || def.kind !== 'wall') return;
+        const len = RM().surfaceModel(r, key).lengthM, cur = (r.surfaces || {})[key] || {};
+        const left = isNum(len) ? len - RM().sectionsOf(cur).reduce((s, x) => s + (isNum(x.widthM) && x.widthM > 0 ? x.widthM : 0), 0) : null;
+        if (left != null && left < 0.2) { S.toast(`The sections already take the whole of ${def.name}.`); return; }
+        editSurface(ctx, key, s => {
+          const secs = s.sections || (s.sections = []), n = 1 + Math.max(0, ...secs.map(x => parseInt(String(x.id).slice(1), 10) || 0));
+          secs.push({ id: `s${n}`, type: s.type || '', material: s.type ? s.material || '' : '', widthM: left != null ? Math.max(0.1, Math.round(left * 5) / 10) : null });
+        });
+      },
+      removeSection: (ctx, v) => {
+        const [key, id] = String(v).split('|');
+        editSurface(ctx, key, s => { s.sections = RM().sectionsOf(s).filter(x => x.id !== id); });
+      },
+      // What a part of a wall is (a select: data-key, data-part "main" or a section's id, the value a type): the wall's
+      // own type as "What is this wall?" sets it; a section takes the type and its typical sound data.
+      setWallPart: (ctx, value, el) => {
+        const key = el.dataset.key, part = el.dataset.part;
+        if (kindOf(ctx, key) !== 'wall') return;
+        if (part === 'main') { if (value) W.get('room').actions.setSurfaceType(ctx, `${key}|${value}`); return; }
+        const t = RM().typeOf('wall', value);
+        editSurface(ctx, key, s => {
+          const x = RM().sectionsOf(s).find(y => y.id === part);
+          if (x) { x.type = t ? t.id : ''; x.material = t && t.material ? t.material : ''; }
+        });
       },
 
       /* ---------- equipment on a wall ---------- */

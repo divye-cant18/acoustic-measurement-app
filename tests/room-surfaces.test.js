@@ -238,6 +238,53 @@
         check('Before the room size is entered: not known, with the reason (no error)', nosize && !nosize.known && nosize.freeM2 === 0 && /no free surface/.test(nosize.why), nosize ? nosize.why : err);
       }
 
+      /* ===== 4b. a wall in sections (26 October 2026) ===== */
+      status('A wall in sections…');
+      {
+        // 10 × 6 × 3, every finish α 0.10. Wall 1 (10 × 3 m) from its left end: 2.5 m of glass (test-mid, α 0.05), 3 m of
+        // acoustic panels already fitted (test-soft), and its own finish in the 4.5 m left. A door 0.9 × 2.1 = 1.89 m²;
+        // the solid 28.11 m² is shared by width: glass × 0.25 = 7.0275, panels × 0.3 = 8.433, the rest × 0.45 = 12.6495 m².
+        // Free for treatment: 7.0275 + 12.6495 = 19.677 m² (not the fitted panels), at (12.6495 × 0.10 + 7.0275 × 0.05) /
+        // 19.677 = 1.616325 / 19.677 = (0.45 × 0.10 + 0.25 × 0.05) / 0.7 = 0.0575 / 0.7 = 0.0821428…
+        const r = box(10, 6, 3, surfacesAll('test-hard'));
+        Object.assign(r.surfaces.wall1, { openings: [{ id: 'o1', kind: 'door', material: 'test-door', widthM: 0.9, heightM: 2.1, count: 1 }],
+          sections: [{ id: 's1', type: 'glass', material: 'test-mid', widthM: 2.5 }, { id: 's2', type: 'acoustic-panels', material: 'test-soft', widthM: 3 }] });
+        const m = SF.surfaceModel(r, 'wall1'), secs = m.parts.filter(x => x.role === 'section'), fin = m.parts.find(x => x.role === 'finish'), sum = m.parts.reduce((s, x) => s + x.areaM2, 0);
+        check('Wall 1 in three parts: 2.5 m of glass 7.0275 m², 3 m of fitted panels 8.433 m², the 4.5 m left 12.6495 m², the door 1.89 m²; together 30 m²; free for treatment 19.677 m² (not the fitted panels)',
+          secs.length === 2 && close(secs[0].areaM2, 7.0275) && close(secs[1].areaM2, 8.433) && close(fin.areaM2, 12.6495) && close(sum, 30) && close(m.availableM2, 19.677) && secs[0].free && !secs[1].free && !m.problems.length,
+          m.parts.map(x => `${x.role} ${+x.areaM2.toFixed(4)}`).join(' + '));
+        const cb = SF.coveredBy(r, 'Wall 1');
+        check('A product on Wall 1 covers its free parts, area-weighted: 19.677 m² at 0.0575 / 0.7 = 0.0821428… in every band',
+          cb.known && close(cb.freeM2, 19.677) && B.every(f => close(cb.alpha[f], 0.0575 / 0.7, 1e-12)), `free ${cb.freeM2} m², α ${cb.alpha[1000]}`);
+        check('The room\'s free wall area counts the free parts only: 19.677 + 18 + 30 + 18 = 85.677 m²', close(SF.totals(r).wallAvailableM2, 85.677), SF.totals(r).wallAvailableM2);
+        const line = SF.describe(r).find(x => x.key === 'wall1');
+        check('Wall 1 described with its sections: "Test hard, 2.5 m glass wall or glass partition, 3 m acoustic panels (already fitted), 1 opening"',
+          line.text === 'Test hard, 2.5 m glass wall or glass partition, 3 m acoustic panels (already fitted), 1 opening', line.text);
+        r.surfaces.wall1.sections[0].material = 'test-gap';
+        const gap = SF.coveredBy(r, 'Wall 1');
+        check('A free section without a value is named, never 0: "Wall 1, section 1: no value at 125 Hz"; 250 Hz (0.45 × 0.10 + 0.25 × 0.30) / 0.7 = 0.1714…',
+          !gap.known && gap.alpha[125] === null && /Wall 1, section 1: no value at 125 Hz/.test(gap.why) && close(gap.alpha[250], 0.12 / 0.7, 1e-12), `${gap.why}; α250 ${gap.alpha[250]}`);
+        // Sections wider than the wall: 6 m + 6 m on 10 m → 6 m and the 4 m left (18 + 12 m²), none for the wall's own type.
+        const r2 = box(10, 6, 3, surfacesAll('test-hard'));
+        r2.surfaces.wall1.sections = [{ id: 's1', type: 'glass', material: 'test-mid', widthM: 6 }, { id: 's2', type: 'glass', material: 'test-mid', widthM: 6 }];
+        const m2 = SF.surfaceModel(r2, 'wall1'), s2 = m2.parts.filter(x => x.role === 'section');
+        check('Sections wider than the wall: counted up to it (6 m and the 4 m left, 18 + 12 m², nothing for the wall\'s own type), nothing negative, and reported',
+          close(s2[0].areaM2, 18) && close(s2[1].areaM2, 12) && close(s2[1].widthM, 4) && close(m2.parts.find(x => x.role === 'finish').areaM2, 0) && m2.parts.every(x => x.areaM2 >= 0)
+            && m2.problems.some(x => /add up to more than the wall \(12\.00 of 10\.00 m\)/.test(x)), m2.problems.join(' '));
+        r2.surfaces.wall1.sections = [{ id: 's1', type: 'glass', material: 'test-mid', widthM: null }];
+        const m3 = SF.surfaceModel(r2, 'wall1');
+        check('A section without its width is not counted and is asked for; the wall\'s own type keeps all 30 m²',
+          close(m3.parts.find(x => x.role === 'finish').areaM2, 30) && !m3.parts.some(x => x.role === 'section') && m3.problems.some(x => /section 1: enter its width/.test(x)), m3.problems.join(' '));
+        r2.surfaces.wall1.sections = [{ id: 's1', type: 'glass', material: 'test-mid', widthM: 0 }];
+        check('A section 0 m wide stops the step, with its reason', W.get('room').model.surfaceErrors(r2).some(x => /Wall 1: a section must be more than 0 m wide/.test(x)), W.get('room').model.surfaceErrors(r2).join(' '));
+        // A wall saved before sections existed, or with none left, has one finish part of the whole solid area.
+        const r3 = box(10, 6, 3, surfacesAll('test-hard')), r4 = box(10, 6, 3, surfacesAll('test-hard'));
+        r4.surfaces.wall1.sections = [];
+        const old = SF.surfaceModel(r3, 'wall1');
+        check('A wall without sections: one finish part of all 30 m², free 30 m², the same with an empty list',
+          old.parts.length === 1 && old.parts[0].role === 'finish' && close(old.availableM2, 30) && json(old) === json(SF.surfaceModel(r4, 'wall1')), old.parts.map(x => `${x.role} ${x.areaM2}`).join(', '));
+      }
+
       /* ===== 5. the six surfaces are independent ===== */
       status('Independent surfaces…');
       S.startProject('new');
@@ -344,6 +391,44 @@
         L2.dispatchEvent(new Event('input', { bubbles: true }));
         act.removeOpening(ctx(), `wall3|${w3[0].id}`);
         check('Length back to 10 m: Wall 1 30 m² again', S.state.project.room.L === 10 && SF.surfaceModel(S.state.project.room, 'wall1').grossM2 === 30, `L ${S.state.project.room.L} m`);
+
+        // A wall in sections, and its doors and windows, on the screen (26 October 2026). Wall 1 is put back afterwards.
+        const keep = copy(S.state.project.room.surfaces.wall1), w1 = () => S.state.project.room.surfaces.wall1, q = sel => app.querySelector(sel);
+        const pick = (sel, v) => { const el = q(sel); el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); };
+        pick('#surf-wall1-part-main', 'gypsum-partition');
+        await sleep(60);
+        q('#surf-card-wall1 [data-action="addSection"]').click();
+        await sleep(60);
+        const sid = w1().sections && w1().sections[0] && w1().sections[0].id;
+        check('Wall 1 chosen as a gypsum board partition in its row, then "Split the wall": a section of the same type, half of the 10 m (5 m), with its own row',
+          w1().type === 'gypsum-partition' && w1().sections.length === 1 && w1().sections[0].type === 'gypsum-partition' && w1().sections[0].material === w1().material && w1().sections[0].widthM === 5 && !!q(`#surf-wall1-part-${sid}`),
+          json(w1().sections));
+        pick(`#surf-wall1-part-${sid}`, 'glass');
+        await sleep(60);
+        const wIn = q(`#surf-wall1-sec-${sid}-w`);
+        wIn.value = '2.4';
+        wIn.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(60);
+        q('#surf-wall1-door-more').click(); await sleep(40);
+        q('#surf-wall1-door-more').click(); await sleep(40);
+        q('#surf-wall1-door-less').click(); await sleep(40);
+        q('#surf-wall1-window-more').click(); await sleep(60);
+        // 30 m² less a door 0.9 × 2.1 = 1.89 m² and a window 1.2 × 1.2 = 1.44 m²: solid 26.67 m²; Wall 1 is still 50 %
+        // covered (5 above): 13.335 m² covered, 13.335 m² left, shared by width: the glass 2.4 m of 10 m 13.335 × 0.24 =
+        // 3.2004 m². Glass is not fitted treatment, so all 13.335 m² left stay free.
+        const mm = SF.surfaceModel(S.state.project.room, 'wall1'), glass = mm.parts.find(x => x.role === 'section'), ops = w1().openings || [];
+        const strip = q('#surf-card-wall1 svg.wstrip');
+        check('Section 1 made glass and 2.4 m wide; doors +, +, − and windows +: one door 0.9 × 2.1 m and one window 1.2 × 1.2 m (standard sizes); glass 3.2004 m², all 13.335 m² left free; the strip shows both parts, the door and the window',
+          w1().sections[0].type === 'glass' && w1().sections[0].material === 'hall-heavy-plate-glass' && w1().sections[0].widthM === 2.4 && ops.length === 2
+            && ops.some(o => o.kind === 'door' && o.widthM === 0.9 && o.heightM === 2.1 && o.type === 'wood-door') && ops.some(o => o.kind === 'window' && o.widthM === 1.2 && o.heightM === 1.2)
+            && close(glass.areaM2, 3.2004) && close(mm.availableM2, 13.335) && close(mm.coverM2, 13.335) && strip && strip.querySelectorAll('.wstrip-part').length === 2 && strip.querySelectorAll('.wstrip-door').length === 1 && strip.querySelectorAll('.wstrip-window').length === 1
+            && q('#surf-card-wall1 output[aria-label="Doors on Wall 1"]').textContent === '1',
+          `${json(w1().sections)} · ${ops.map(o => `${o.kind} ${o.widthM}×${o.heightM}`).join(', ')} · free ${mm.availableM2}`);
+        q(`#surf-card-wall1 [data-action="removeSection"][data-value="wall1|${sid}"]`).click();
+        await sleep(60);
+        check('Section removed: Wall 1 is one gypsum board partition again, its doors and windows kept', !w1().sections.length && w1().type === 'gypsum-partition' && w1().openings.length === 2, json(w1().sections));
+        S.set('room.surfaces.wall1', keep);
+        await sleep(40);
       }
 
       /* ===== 8. treatment from the measured room ===== */

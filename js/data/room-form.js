@@ -176,6 +176,8 @@
       T('wood-panelling', 'Wood or laminate panelling', 'Plywood, veneer or laminate sheets fixed over the wall.', 'timber', 'wood', 'as-plywood-panelling-3-8-in'),
       T('fabric', 'Fabric-covered or upholstered wall', 'Fabric stretched over soft padding, or upholstered wall panels.', 'fabric-system', 'fabric', 'aua-muslin-covered-cotton-felt-25-mm'),
       T('acoustic-panels', 'Acoustic panels (already fitted)', 'Sound-absorbing panels already on the wall, e.g. fabric-wrapped or polyester fibre panels.', 'acoustic-system', 'acoustic', 'mfr-fabric-wrapped-fibreglass-panel-25-mm-type-a'),
+      T('felt-panels', 'Acoustic felt or PET panels (already fitted)', 'Polyester (PET) felt panels already on the wall, often coloured, fixed flat.', 'acoustic-system', 'acoustic', 'mfr-autex-quietspace-panel-25-mm'),
+      T('bass-absorber', 'Low-frequency absorbers (already fitted)', 'Deep absorbers with a bass layer, as in studios, music rooms and cinemas.', 'acoustic-system', 'acoustic', 'mfr-ecophon-akusto-wall-c-extra-bass-80-mm'),
       T('wood-slats', 'Wooden slats or grooved wood panels', 'Wood with slots, grooves or gaps, often an acoustic design feature.', 'timber', 'wood-acoustic', 'aua-acoustic-timber-wall-panelling'),
       T('wallpaper', 'Wallpaper', 'Paper or vinyl wallpaper on a plastered wall.', 'masonry', 'wallpaper', 'aua-plaster-on-masonry-with-wallpaper'),
       T('tiles-stone', 'Tiles, marble or stone cladding', 'Ceramic wall tiles, marble, granite or stone.', 'masonry', 'tiles', 'as-marble-or-glazed-tile'),
@@ -207,6 +209,7 @@
     ceiling: [
       T('gypsum-ceiling', 'Gypsum or POP false ceiling', 'A smooth hung ceiling of gypsum board or plaster of Paris, painted.', 'plasterboard', 'painted', 'pra-plasterboard-ceiling-on-battens-large-air-sp'),
       T('grid-tiles', 'Grid ceiling with fibre tiles', 'Square soft tiles resting in a metal grid.', 'suspended', 'ceiling-tiles', 'pra-fissured-ceiling-tile'),
+      T('hygiene-tiles', 'Hygiene or cleanable ceiling tiles', 'Washable tiles in a grid, as in clinics, labs and kitchens.', 'suspended', 'ceiling-tiles', 'mfr-rockfon-cleanspace-pro-20-mm-200-mm-plenum'),
       T('metal-tiles', 'Perforated metal ceiling tiles', 'Metal tiles or panels with small holes.', 'suspended', 'perforated-metal', 'pra-perforated-metal-ceiling-200-mm-cavity-miner'),
       T('perforated-gypsum', 'Perforated gypsum ceiling', 'Gypsum board with a pattern of small holes.', 'plasterboard', 'perforated-board', 'pra-perforated-gypsum-ceiling-300-mm-plenum'),
       T('plastered-slab', 'Plastered and painted slab', 'The concrete slab itself, plastered and painted, with no false ceiling.', 'concrete', 'plaster', 'ca-plaster-ceiling-smooth'),
@@ -221,7 +224,7 @@
   /* An existing covering over part of a surface (Room Setup, "Existing treatment or covering"): the types that can cover
      part of a surface, by kind. */
   const COVER_TYPES = {
-    wall: ['acoustic-panels', 'fabric', 'curtains', 'wood-slats', 'wood-panelling', 'cork', 'tiles-stone', 'wallpaper', 'mirror', 'other'],
+    wall: ['acoustic-panels', 'felt-panels', 'bass-absorber', 'fabric', 'curtains', 'wood-slats', 'wood-panelling', 'cork', 'tiles-stone', 'wallpaper', 'mirror', 'other'],
     floor: ['carpet', 'carpet-tiles', 'vinyl', 'rubber', 'other'],
     ceiling: ['acoustic-ceiling', 'grid-tiles', 'wood-ceiling', 'metal-tiles', 'other'],
   };
@@ -266,6 +269,21 @@
     industrial: L(['block-bare', 'block-painted', 'bare-brick', 'metal-sheet', 'bare-concrete', 'painted-plaster'], ['concrete-floor', 'vitrified-tiles', 'rubber'], ['metal-roof', 'bare-slab', 'gypsum-ceiling']),
     home: L(['painted-plaster', 'wallpaper', 'wood-panelling', 'curtains', 'tiles-stone', 'glass'], ['vitrified-tiles', 'stone', 'laminate', 'wood-floor', 'carpet'], ['plastered-slab', 'gypsum-ceiling', 'wood-ceiling']),
     homeTheatre: L(['fabric', 'acoustic-panels', 'wood-slats', 'curtains', 'painted-plaster', 'wood-panelling'], ['carpet', 'laminate', 'wood-floor', 'vitrified-tiles'], ['gypsum-ceiling', 'acoustic-ceiling', 'wood-ceiling', 'perforated-gypsum']),
+    // Added 26 October 2026 from the Room Material Matrix of the Vicoustic room list (Vicoustic_Advisor_Room_Materials_and_Types.xlsx).
+    booth: L(['felt-panels', 'fabric', 'wood-panelling'], ['carpet', 'rubber', 'vinyl'], ['acoustic-ceiling', 'perforated-gypsum']),
+    computerLab: L(['gypsum-partition', 'painted-plaster', 'glass', 'cork'], ['vinyl', 'carpet-tiles'], ['grid-tiles', 'gypsum-ceiling']),
+    schoolHall: L(['block-painted', 'painted-plaster', 'bare-concrete', 'wood-panelling', 'wood-slats'], ['sports-vinyl', 'wood-floor', 'stone'], ['perforated-gypsum', 'acoustic-ceiling', 'metal-tiles']),
+    eventRoom: L(['painted-plaster', 'glass', 'wood-panelling', 'acoustic-panels', 'curtains'], ['carpet', 'wood-floor', 'laminate', 'vinyl'], ['grid-tiles', 'gypsum-ceiling', 'acoustic-ceiling']),
+    hotelRoom: L(['gypsum-partition', 'painted-plaster', 'wallpaper', 'wood-panelling', 'fabric', 'curtains'], ['carpet', 'laminate', 'vinyl', 'vitrified-tiles'], ['gypsum-ceiling', 'grid-tiles']),
+    clinical: L(['painted-plaster', 'gypsum-partition', 'tiles-stone'], ['vinyl', 'rubber', 'stone'], ['hygiene-tiles', 'gypsum-ceiling', 'grid-tiles']),
+    nurse: L(['painted-plaster', 'glass', 'wood-panelling', 'acoustic-panels'], ['vinyl', 'rubber'], ['grid-tiles', 'hygiene-tiles', 'gypsum-ceiling']),
+    blackBox: L(['block-painted', 'fabric', 'curtains', 'wood-panelling'], ['vinyl', 'wood-floor', 'carpet'], ['bare-slab', 'acoustic-ceiling']),
+    mall: L(['tiles-stone', 'glass', 'painted-plaster', 'wood-panelling', 'metal-sheet'], ['stone', 'vitrified-tiles'], ['bare-slab', 'gypsum-ceiling', 'metal-tiles', 'grid-tiles']),
+    monitoring: L(['fabric', 'acoustic-panels', 'wood-slats', 'painted-plaster', 'bass-absorber'], ['carpet-tiles', 'raised-floor-carpet', 'vinyl'], ['grid-tiles', 'acoustic-ceiling', 'bare-slab']),
+    homeOffice: L(['painted-plaster', 'gypsum-partition', 'wood-panelling', 'glass', 'acoustic-panels', 'curtains'], ['carpet', 'laminate', 'wood-floor', 'vinyl', 'vitrified-tiles'], ['plastered-slab', 'gypsum-ceiling', 'grid-tiles']),
+    council: L(['wood-panelling', 'painted-plaster', 'fabric', 'acoustic-panels', 'glass', 'curtains'], ['carpet', 'wood-floor', 'stone'], ['grid-tiles', 'gypsum-ceiling', 'wood-ceiling', 'acoustic-ceiling']),
+    terminal: L(['glass', 'metal-sheet', 'tiles-stone', 'painted-plaster', 'acoustic-panels'], ['stone', 'vitrified-tiles'], ['bare-slab', 'metal-roof', 'metal-tiles', 'acoustic-ceiling']),
+    pool: L(['tiles-stone', 'glass', 'bare-concrete', 'painted-plaster'], ['vitrified-tiles', 'concrete-floor'], ['metal-roof', 'bare-slab', 'metal-tiles']),
   };
   const ROOM_MATERIALS = {
     'Conference room': P.meeting, 'Meeting room': P.meeting, 'Boardroom': P.meeting, 'Private office': P.office, 'Open-plan office': P.openPlan,
@@ -277,10 +295,16 @@
     'Auditorium': P.auditorium, 'Cinema': P.cinema, 'Place of worship': P.worship, 'Community hall': P.community,
     'Exhibition hall': P.exhibition, 'Showroom': P.retail, 'Retail store': P.retail, 'Workshop': P.industrial, 'Warehouse': P.industrial,
     'Living room': P.home, 'Bedroom': P.home, 'Home theatre': P.homeTheatre,
+    'Phone booth / focus pod': P.booth, 'Lecture theatre': P.lecture, 'Computer lab': P.computerLab, 'Music practice room': P.music, 'School hall': P.schoolHall,
+    'Event room': P.eventRoom, 'Hotel guest room': P.hotelRoom, 'Examination room': P.clinical, 'Nurse station': P.nurse, 'Corridor': P.clinical,
+    'Drama theatre': P.auditorium, 'Concert hall': P.auditorium, 'Black box theatre': P.blackBox, 'Shopping mall common area': P.mall,
+    'Monitoring / control centre': P.monitoring, 'Home office': P.homeOffice, 'Council chamber / courtroom': P.council,
+    'Airport / railway waiting hall': P.terminal, 'Swimming pool hall': P.pool, 'Gym / fitness studio': P.gym,
   };
   const INDUSTRY_MATERIALS = {
     [I.corporate]: P.office, [I.education]: P.classroom, [I.studios]: P.studio, [I.hospitality]: P.restaurant, [I.healthcare]: P.health,
     [I.auditoriums]: P.auditorium, [I.industrial]: P.industrial, [I.residential]: P.home,
+    'Government and civic': P.council, 'Transport': P.terminal, 'Sports and recreation': P.sports,
   };
 
   AM.roomFormData = { CONSTRUCTIONS, FINISHES, FITS, classify, EQUIPMENT, QUESTIONS, COMMON, SURFACE_TYPES, COVER_TYPES, OPENING_TYPES, ROOM_MATERIALS, INDUSTRY_MATERIALS };
