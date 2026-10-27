@@ -1,7 +1,8 @@
 /* A 3D sound field behind the Home page's title: a surface seen in perspective, with sound radiating from one source and,
    every few seconds, an impulse that spreads out and dies away, the way a room's reverberation decays. Decorative only:
-   no value on it is a measurement. Drawn on a canvas (no library); it pauses when off screen or in a hidden tab, follows
-   the pointer a little, and stands still for people who prefer reduced motion. */
+   no value on it is a measurement. Drawn on a canvas (no library); it pauses when off screen, in a hidden tab or while the
+   page scrolls (so scrolling stays smooth on phones), follows the pointer a little, and stands still for people who prefer
+   reduced motion. */
 import { useEffect, useRef } from 'react';
 
 const NX = 72, NZ = 44;                 // grid lines across and in depth
@@ -26,7 +27,9 @@ export function SoundField() {
     if (!g0) return;
     const g: CanvasRenderingContext2D = g0;
     const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let raf = 0, running = false, visible = true, t0 = performance.now();
+    let raf = 0, running = false, visible = true, t0 = performance.now(), pausedAt = 0, resume = 0;
+    let line = '#423B3C', brand = '#EE4935';
+    const colours = () => { const css = getComputedStyle(cv); line = css.getPropertyValue('--acoustic').trim() || line; brand = css.getPropertyValue('--brand').trim() || brand; };
     const look = { x: 0, y: 0, tx: 0, ty: 0 };
     const xs = new Float32Array(NX * NZ), ys = new Float32Array(NX * NZ), ds = new Float32Array(NX * NZ);
 
@@ -41,7 +44,6 @@ export function SoundField() {
     function draw(t: number) {
       if (!size()) return;
       const w = cv!.clientWidth, h = cv!.clientHeight, narrow = w < 700;
-      const css = getComputedStyle(cv!), line = css.getPropertyValue('--acoustic').trim() || '#423B3C', brand = css.getPropertyValue('--brand').trim() || '#EE4935';
       look.x += (look.tx - look.x) * 0.05; look.y += (look.ty - look.y) * 0.05;
       const yaw = -0.42 + 0.1 * Math.sin(t * 0.11) + look.x * 0.2, pitch = 0.86 + look.y * 0.07, dist = 4.7;
       const cyaw = Math.cos(yaw), syaw = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
@@ -105,10 +107,15 @@ export function SoundField() {
       draw((now - t0) / 1000);
       raf = requestAnimationFrame(frame);
     };
-    const start = () => { if (running || still || !visible || document.hidden) return; running = true; raf = requestAnimationFrame(frame); };
-    const stop = () => { running = false; if (raf) cancelAnimationFrame(raf); raf = 0; };
+    // a pause holds the field where it was: on resuming it carries on from there
+    const start = () => {
+      if (running || still || !visible || document.hidden) return;
+      if (pausedAt) { t0 += performance.now() - pausedAt; pausedAt = 0; }
+      colours(); running = true; raf = requestAnimationFrame(frame);
+    };
+    const stop = () => { if (running) pausedAt = performance.now(); running = false; if (raf) cancelAnimationFrame(raf); raf = 0; };
 
-    if (still) { t0 = performance.now() - 1800; draw(1.8); }
+    if (still) { t0 = performance.now() - 1800; colours(); draw(1.8); }
     else start();
     const io = typeof IntersectionObserver !== 'undefined' ? new IntersectionObserver(es => { visible = es.some(e => e.isIntersecting); if (visible) start(); else stop(); }) : null;
     if (io) io.observe(cv);
@@ -116,10 +123,15 @@ export function SoundField() {
     if (ro) ro.observe(cv);
     const onVis = () => (document.hidden ? stop() : start());
     const onMove = (e: PointerEvent) => { look.tx = (e.clientX / window.innerWidth) * 2 - 1; look.ty = (e.clientY / window.innerHeight) * 2 - 1; };
+    // any scroll on the page (the page itself or its scrolling area): hold still until it has stopped for a moment
+    const onScroll = () => { stop(); clearTimeout(resume); resume = window.setTimeout(start, 200); };
     document.addEventListener('visibilitychange', onVis);
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true });
     window.addEventListener('pointermove', onMove, { passive: true });
     return () => {
       stop();
+      clearTimeout(resume);
+      document.removeEventListener('scroll', onScroll, true);
       if (io) io.disconnect();
       if (ro) ro.disconnect();
       document.removeEventListener('visibilitychange', onVis);

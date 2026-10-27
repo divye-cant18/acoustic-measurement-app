@@ -245,7 +245,10 @@ face-on to scale, a row per part with its width ("Split the wall"), and doors an
 at a standard 0.9 × 2.1 m door or 1.2 × 1.2 m window, its size changeable); the rest of what is recorded on a wall is
 under "More details". Each type has its own colour and pattern, always with its name. The Room summary draws the room
 in 3D as it is entered (the floor once the length and width are in, then the walls), turning to the surface being
-edited; without WebGL it keeps the flat sketch. The industries and room types include those of the Vicoustic room list
+edited; a tap on a wall names it (its type, parts and area) with Edit to open its card, and the page does not move. On
+narrower screens (up to 1180 px) the 3D room is its own card after Floor and ceiling, and there a finger moved sideways
+turns it while up and down scrolls the page. Without WebGL it keeps the flat sketch. The industries and room types
+include those of the Vicoustic room list
 (26 October 2026: government and civic, transport, sports and recreation, and rooms such as council chambers, swimming
 pool halls and examination rooms), each with a target only where a reference sets one (docs/TARGET-CRITERIA.md).
 

@@ -14,7 +14,9 @@
      controls    pills: buttons, choices, steppers, the help buttons; fields
                  are bright white wells
    The theme is light (the app's own dark colours are not used). Blur is
-   used on the large panels only, never nested, so scrolling stays smooth.
+   used only on what opens over the page (menus, the panel, the tour): the
+   cards and bars sit on a plain background, where a blur would not show but
+   would cost every scroll.
    Without blur support, or with "reduce transparency", the panels turn
    solid. Text keeps at least 4.5:1 throughout.
    Previews and the steps that led here: ux-review/glass-*-2026-10-26/.
@@ -66,8 +68,8 @@ body{background:linear-gradient(160deg,#F8F4F1 0%,#F0EBE6 58%,#EAE4DE 100%) fixe
   .topbar{border:1px solid var(--gl-line);border-radius:22px}
   .actionbar{border:1px solid var(--gl-line);border-radius:22px}
 }
-.topbar{background:var(--gl-bar);border-bottom-color:var(--gl-line);box-shadow:0 0 0 1px var(--gl-hair),var(--gl-edge),inset 0 2px 0 var(--brand),var(--gl-shadow);-webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur)}
-.actionbar{background:var(--gl-bar);border-top-color:var(--gl-line);box-shadow:0 0 0 1px var(--gl-hair),var(--gl-edge),var(--gl-shadow);-webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur)}
+.topbar{background:var(--gl-bar);border-bottom-color:var(--gl-line);box-shadow:0 0 0 1px var(--gl-hair),var(--gl-edge),inset 0 2px 0 var(--brand),var(--gl-shadow)}
+.actionbar{background:var(--gl-bar);border-top-color:var(--gl-line);box-shadow:0 0 0 1px var(--gl-hair),var(--gl-edge),var(--gl-shadow)}
 
 /* the menu: dark glass in the logo's black; the current step lit in the logo red */
 .rail{background:linear-gradient(180deg,rgba(38,32,33,.96),rgba(27,23,24,.95));scrollbar-color:rgba(255,255,255,.18) transparent;
@@ -79,10 +81,9 @@ body{background:linear-gradient(160deg,#F8F4F1 0%,#F0EBE6 58%,#EAE4DE 100%) fixe
 .wf-item.is-current{background:linear-gradient(90deg,rgba(255,90,68,.26),rgba(255,255,255,.05) 72%);box-shadow:inset 0 0 0 1px rgba(255,90,68,.45),0 8px 22px rgba(0,0,0,.25)}
 
 /* panels: warm frosted glass */
-.card,.pcard,.home-empty{background:var(--gl-panel);border:1px solid var(--gl-line);border-radius:var(--gl-r);box-shadow:0 0 0 1px var(--gl-hair),var(--gl-edge),var(--gl-shadow);
-  -webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur)}
+.card,.pcard,.home-empty{background:var(--gl-panel);border:1px solid var(--gl-line);border-radius:var(--gl-r);box-shadow:0 0 0 1px var(--gl-hair),var(--gl-edge),var(--gl-shadow)}
 .home-hero{background:radial-gradient(ellipse 42% 55% at 72% 56%,rgba(238,73,53,.10),transparent 72%),var(--gl-panel);border:1px solid var(--gl-line);border-radius:28px;
-  box-shadow:0 0 0 1px var(--gl-hair),var(--gl-edge),var(--gl-shadow);-webkit-backdrop-filter:var(--gl-blur);backdrop-filter:var(--gl-blur)}
+  box-shadow:0 0 0 1px var(--gl-hair),var(--gl-edge),var(--gl-shadow)}
 .pcard:hover,.pcard:focus-within{border-color:rgba(255,255,255,.9);box-shadow:0 0 0 1px rgba(70,50,40,.16),var(--gl-edge),0 30px 70px rgba(70,45,30,.22)}
 .pcard.is-pinned{box-shadow:inset 3px 0 0 var(--brand),0 0 0 1px var(--gl-hair),var(--gl-edge),var(--gl-shadow)}
 

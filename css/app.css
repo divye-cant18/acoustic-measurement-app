@@ -730,6 +730,7 @@ svg.i{display:inline-block;flex:none;vertical-align:middle}
 .vol .stat-v{font-size:30px}
 .dims-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .surfs{display:flex;flex-direction:column;gap:10px}
+.surf{scroll-margin-top:12px}
 .surf{border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:10px;background:var(--raised)}
 .surf-h{display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap}
 .surf-h b{font-size:14.5px;font-weight:600}
@@ -796,7 +797,7 @@ details.surf>.surf-h .surf-area{flex:none;white-space:nowrap;padding-left:8px}
 .wstrip-dim{stroke:var(--faint)}
 .wstrip-dim-t{font-family:var(--font-num);font-size:11px;fill:var(--muted)}
 .wpart{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:6px 10px;align-items:end}
-.wpart>.sw{width:22px;height:22px;border-radius:6px;align-self:center;border:1px solid var(--line-soft)}
+.wpart>.sw{width:22px;height:22px;border-radius:6px;align-self:start;margin-top:10px;border:1px solid var(--line-soft)}
 .wpart-main{display:flex;flex-direction:column;gap:4px;min-width:0}
 .wpart>.field{width:120px}
 .wpart-rest{font-family:var(--font-num);text-align:right;align-self:center;grid-column:3 / span 2;white-space:nowrap}
@@ -818,7 +819,7 @@ details.surf>.surf-h .surf-area{flex:none;white-space:nowrap;padding-left:8px}
 .v-head{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap}
 .v-acts{display:inline-flex;gap:2px;margin-left:auto}
 .viewer{position:relative;height:clamp(320px,52vh,520px);border-radius:var(--r);overflow:hidden;border:1px solid var(--line-soft);background:radial-gradient(120% 90% at 50% 30%,var(--raised) 0%,var(--well) 55%,var(--sunken) 100%)}
-.viewer canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+.viewer canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:pan-y}
 .viewer canvas:active{cursor:grabbing}
 .v-labels{position:absolute;inset:0;pointer-events:none}
 .badge3d{pointer-events:auto;border:1.5px solid #8A8180;background:rgba(255,255,255,.92);color:#423B3C;border-radius:999px;min-width:26px;height:26px;padding:0 8px;font:600 12px var(--font-num);cursor:pointer;box-shadow:0 2px 8px rgba(35,30,31,.15);transition:background-color var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
@@ -833,11 +834,40 @@ details.surf>.surf-h .surf-area{flex:none;white-space:nowrap;padding-left:8px}
 .v-msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;font:600 13px var(--font);color:#423B3C;background:rgba(255,255,255,.9);padding:8px 14px;border-radius:999px;white-space:nowrap}
 .v-size:empty,.v-msg:empty{display:none}
 .v-follow{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2);cursor:pointer}
+.viewer-wrap{position:relative}
+.viewer-wrap.has-pick .v-hint{opacity:0}
+.v-pick{position:absolute;left:10px;right:10px;bottom:10px;z-index:4;display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px;border-radius:999px;background:rgba(255,253,251,.94);box-shadow:0 0 0 1px rgba(70,50,40,.12),0 10px 26px rgba(70,45,30,.18);font-size:13.5px;color:#231E1F;animation:pickin .18s var(--ease)}
+.v-pick-dot{width:10px;height:10px;border-radius:50%;background:var(--brand);flex:none}
+.v-pick-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v-pick-t b{font-weight:600}
+.v-pick .btn{min-height:34px;padding:5px 14px;flex:none}
+.v-pick-x{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;flex:none;color:var(--muted)}
+.v-pick-x:hover{background:var(--hover);color:var(--ink)}
+@keyframes pickin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .v-legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--ink-2)}
 .v-legend>span{display:inline-flex;align-items:center;gap:6px}
 .v-legend .sw{width:14px;height:14px;border-radius:4px;border:1px solid var(--line-soft);flex:none}
 .v-legend em{font-style:normal;font-family:var(--font-num);color:var(--muted)}
-@media (prefers-reduced-motion:reduce){.v-hint,.badge3d{transition:none}}
+@media (prefers-reduced-motion:reduce){.v-hint,.badge3d{transition:none}.v-pick{animation:none}}
+/* phones (27 October 2026): more of the screen for the step itself: slimmer readouts and step header, roomier cards,
+   no labels inside the wall strip (too small to read there; each part is named in its row), a shorter Home intro */
+@media (max-width:560px){
+  .fact{padding:3px 8px 4px}
+  .fact .i{display:none}
+  .fact-k{font-size:9.5px;letter-spacing:.08em}
+  .fact-v{font-size:13.5px}
+  .stage-title{font-size:22px;margin-top:4px}
+  .stage-purpose{font-size:14px;margin-top:4px}
+  .stage-tools .btn{min-height:36px;padding:6px 12px;font-size:13px}
+  .content-inner{padding:14px 12px 28px;gap:14px}
+  .card{padding:16px 14px}
+  details.surf>.surf-h{padding:10px 12px}
+  .surf-b{padding:10px 12px 12px}
+  .wstrip-l{display:none}
+  .wpart-rest{font-family:var(--font)}
+  .wpart-data{font-size:11.5px}
+  .home-hero{min-height:440px}
+}
 @media (max-width:560px){
   .viewer{height:clamp(260px,46vh,380px)}
   .wpart{grid-template-columns:22px minmax(0,1fr) auto}

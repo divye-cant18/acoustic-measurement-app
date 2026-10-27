@@ -28,7 +28,8 @@ const ENDS: Record<string, [[number, number], [number, number]]> = { wall1: [[0,
 const TILE: Record<string, number> = { felt: 0.6, slots: 0.6, perf: 0.6, plaster: 1.2, drywall: 1.2, brick: 0.72, block: 1.2, concrete: 1.6, wood: 0.8, fabric: 0.6, panels: 0.6, ctiles: 1.2, metal: 0.6, carpet: 0.5, tiles: 1.2, vinyl: 1.6 };
 const ROUGH: Record<string, number> = { felt: 1, slots: 0.75, perf: 0.7, plaster: 0.92, drywall: 0.9, brick: 0.95, block: 0.93, concrete: 0.88, wood: 0.62, fabric: 1, panels: 0.8, ctiles: 0.95, metal: 0.38, carpet: 1, tiles: 0.35, vinyl: 0.55, mirror: 0.06 };
 
-export function createRoom3D(host: HTMLElement, onPick: (k: string) => void): Room3D | null {
+// onPick: a tap on a surface (its key), or on nothing (null). It never moves the page.
+export function createRoom3D(host: HTMLElement, onPick: (k: string | null) => void): Room3D | null {
   let renderer: THREE.WebGLRenderer;
   try {
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -42,7 +43,8 @@ export function createRoom3D(host: HTMLElement, onPick: (k: string) => void): Ro
   host.appendChild(renderer.domElement);
   const labels = new CSS2DRenderer(); labels.domElement.className = 'v-labels'; host.appendChild(labels.domElement);
   const div = (cls: string, text = '') => { const d = document.createElement('div'); d.className = cls; d.textContent = text; host.appendChild(d); return d; };
-  const tip = div('v-tip'), hint = div('v-hint', 'Drag to look around · click a wall to edit it'), size = div('v-size'), msg = div('v-msg');
+  const touch = !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  const tip = div('v-tip'), hint = div('v-hint', touch ? 'Swipe sideways to turn · tap a wall to see what it is' : 'Drag to turn · click a wall to see what it is'), size = div('v-size'), msg = div('v-msg');
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer), env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -51,6 +53,9 @@ export function createRoom3D(host: HTMLElement, onPick: (k: string) => void): Ro
   const controls = new OrbitControls(camera, renderer.domElement);
   Object.assign(controls, { enableDamping: true, dampingFactor: 0.1, enablePan: false, minDistance: 1.2, maxDistance: 40, rotateSpeed: 0.8 });
   controls.maxPolarAngle = Math.PI * 0.49;
+  // On a touch screen a sideways swipe turns the room and an up-and-down one scrolls the page past it (OrbitControls would
+  // otherwise keep every touch, and the page could not be scrolled with a finger on the drawing).
+  renderer.domElement.style.touchAction = 'pan-y';
 
   // light: a warm sun with soft shadows, sky fill, a cool rim
   scene.add(new THREE.HemisphereLight(0xfff7f0, 0xd8ccc8, 0.55));
@@ -223,7 +228,7 @@ export function createRoom3D(host: HTMLElement, onPick: (k: string) => void): Ro
     w.add(glow);
   }
   function badge(k: string, text: string, soft: boolean) {
-    const el = document.createElement('button'); el.type = 'button'; el.className = soft ? 'badge3d soft' : 'badge3d'; el.textContent = text; el.setAttribute('aria-label', `Edit ${text.length > 1 ? text.toLowerCase() : `Wall ${text}`}`);
+    const el = document.createElement('button'); el.type = 'button'; el.className = soft ? 'badge3d soft' : 'badge3d'; el.textContent = text; el.setAttribute('aria-label', `Show ${text.length > 1 ? text.toLowerCase() : `Wall ${text}`}`);
     el.addEventListener('click', ev => { ev.stopPropagation(); onPick(k); });
     return new CSS2DObject(el);
   }
@@ -302,7 +307,7 @@ export function createRoom3D(host: HTMLElement, onPick: (k: string) => void): Ro
 
   /* ---------- pointing at the room ---------- */
   const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(), cv = renderer.domElement;
-  let downAt: [number, number] | null = null;
+  let downAt: [number, number, number] | null = null;
   function hit(ev: PointerEvent) {
     const b = cv.getBoundingClientRect(); ptr.set(((ev.clientX - b.left) / b.width) * 2 - 1, -((ev.clientY - b.top) / b.height) * 2 + 1);
     ray.setFromCamera(ptr, camera);
@@ -316,12 +321,15 @@ export function createRoom3D(host: HTMLElement, onPick: (k: string) => void): Ro
     else { tip.classList.remove('show'); cv.style.cursor = 'grab'; }
   };
   const onLeave = () => tip.classList.remove('show');
-  const onDown = (ev: PointerEvent) => { downAt = [ev.clientX, ev.clientY]; hint.classList.add('gone'); stopGlide(); };
+  const onDown = (ev: PointerEvent) => { downAt = [ev.clientX, ev.clientY, performance.now()]; hint.classList.add('gone'); stopGlide(); };
+  // A tap: pressed and let go within 6 px and 450 ms (anything longer or further is turning the room, never a tap).
   const onUp = (ev: PointerEvent) => {
-    if (!downAt || Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > 5) return;
-    const h = hit(ev); if (h && h.object.userData.k) onPick(h.object.userData.k);
+    const d = downAt; downAt = null;
+    if (!d || Math.hypot(ev.clientX - d[0], ev.clientY - d[1]) > 6 || performance.now() - d[2] > 450) return;
+    const h = hit(ev); onPick(h && h.object.userData.k ? h.object.userData.k : null);
   };
-  cv.addEventListener('pointermove', onMove); cv.addEventListener('pointerleave', onLeave); cv.addEventListener('pointerdown', onDown); cv.addEventListener('pointerup', onUp);
+  const onCancel = () => { downAt = null; };   // the page took the touch to scroll
+  cv.addEventListener('pointermove', onMove); cv.addEventListener('pointerleave', onLeave); cv.addEventListener('pointerdown', onDown); cv.addEventListener('pointerup', onUp); cv.addEventListener('pointercancel', onCancel);
 
   /* ---------- size and frames: drawn while something moves, then at rest ---------- */
   function resize() {
@@ -393,7 +401,7 @@ export function createRoom3D(host: HTMLElement, onPick: (k: string) => void): Ro
     dispose() {
       if (raf) cancelAnimationFrame(raf);
       clearTimeout(settle); ro.disconnect(); controls.dispose();
-      cv.removeEventListener('pointermove', onMove); cv.removeEventListener('pointerleave', onLeave); cv.removeEventListener('pointerdown', onDown); cv.removeEventListener('pointerup', onUp);
+      cv.removeEventListener('pointermove', onMove); cv.removeEventListener('pointerleave', onLeave); cv.removeEventListener('pointerdown', onDown); cv.removeEventListener('pointerup', onUp); cv.removeEventListener('pointercancel', onCancel);
       if (room) dispose(room);
       Object.values(cache).forEach(t => t.dispose()); [...Object.values(mats), BLANK, FRAME, WHITE, LEAF, PANE, GLOW, LAMP].forEach(m => m.dispose()); env.dispose(); pmrem.dispose();
       renderer.dispose(); renderer.forceContextLoss();

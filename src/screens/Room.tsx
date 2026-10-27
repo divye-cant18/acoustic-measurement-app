@@ -93,32 +93,45 @@ function legendOf(r: any) {
   return [...out.values()].sort((a, b) => (b.m2 || 0) - (a.m2 || 0));
 }
 const surfName = (r: any, k: string) => { const d = SURF.surfaceDef(k, r); return d ? d.name : k; };
+// A surface tapped in the drawing, in words: its name, what it is, how many parts, its area.
+function pickedText(r: any, k: string) {
+  const def = SURF.surfaceDef(k, r);
+  if (!def) return null;
+  const s = surfOf(r, k), m = SURF.surfaceModel(r, k), n = def.kind === 'wall' ? SURF.sectionsOf(s).length : 0;
+  return { name: s.label ? `${def.name} (${s.label})` : def.name, text: [SURF.typeText(s, def.kind) || 'Not described yet', n ? `${n + 1} parts` : '', m.grossM2 != null ? fmt.m2(m.grossM2) : ''].filter(Boolean).join(' · ') };
+}
 /* The room in 3D as it is described (src/ui/room3d.ts): it builds up as the size is entered (the floor, then the walls),
    shows each wall's parts, doors and windows and the floor and ceiling in their types' colours, and turns to the surface
-   being edited (the card last clicked or typed in). A click on a wall in the drawing opens its card. Without WebGL, the
-   flat sketch. */
+   being edited (the card last clicked or typed in). A tap on a wall in the drawing highlights it and names it, with
+   "Edit" to go to its card: the page never moves by itself. Without WebGL, the flat sketch. */
 function RoomView({ r }: { r: any }) {
   const host = useRef<HTMLDivElement>(null), view = useRef<Room3D | null>(null), selRef = useRef('wall1'), follow = useRef(true), room = useRef(r);
   room.current = r;
-  const [failed, setFailed] = useState(false), [sel, setSel] = useState('wall1'), [turn, setTurn] = useState(true);
+  const [failed, setFailed] = useState(false), [sel, setSel] = useState('wall1'), [turn, setTurn] = useState(true), [picked, setPicked] = useState<string | null>(null);
   const pick = (k: string) => {
     if (k === selRef.current) return;
     selRef.current = k; setSel(k);
     const v = view.current;
     if (v) { v.mark(k); if (follow.current || !k.startsWith('wall')) v.focus(k); }
   };
+  // "Edit": its card opens and comes into view.
+  const edit = (k: string) => {
+    setPicked(null);
+    S.ui({ open: Object.assign({}, (S.state.ui as any).open, { [`surf-${k}`]: true }) });
+    requestAnimationFrame(() => {
+      const c = document.getElementById(`surf-card-${k}`), s = c && c.querySelector<HTMLElement>('summary');
+      if (c) c.scrollIntoView({ block: 'start' });
+      if (s) s.focus({ preventScroll: true });
+    });
+  };
   useEffect(() => {
     const el = host.current;
     if (!el || !el.closest('#app')) return undefined; // not when the screen is drawn as HTML (the step's view)
-    // The surface being edited: the card last clicked or typed in.
-    const on = (e: Event) => { const c = e.target instanceof Element ? e.target.closest('details.surf') : null; if (c && c.id.startsWith('surf-card-')) pick(c.id.slice(10)); };
+    // The surface being edited: the card last clicked or typed in (the name shown for a tapped wall then goes).
+    const on = (e: Event) => { const c = e.target instanceof Element ? e.target.closest('details.surf') : null; if (c && c.id.startsWith('surf-card-')) { pick(c.id.slice(10)); setPicked(null); } };
     // Started once the screen has settled, so a step passed straight through (a new project going on) never builds it.
     const later = window.setTimeout(() => {
-      const v = createRoom3D(el, k => {
-        pick(k);
-        S.ui({ open: Object.assign({}, (S.state.ui as any).open, { [`surf-${k}`]: true }) });
-        requestAnimationFrame(() => { const c = document.getElementById(`surf-card-${k}`); if (c) c.scrollIntoView({ block: 'center' }); });
-      });
+      const v = createRoom3D(el, k => { if (k) pick(k); setPicked(k); });   // a tap: that surface, or nothing
       if (!v) { setFailed(true); return; }
       view.current = v;
       v.mark(selRef.current); v.update(snapshotOf(room.current));
@@ -136,6 +149,7 @@ function RoomView({ r }: { r: any }) {
     <button type="button" className="btn btn-ghost btn-sm" aria-label={label} title={label} onClick={fn}>{icon ? <Icon name={icon} size={15} sw={2.1} /> : null}{text}</button>
   );
   if (failed) return <IsoRoom r={r} />;
+  const info = picked ? pickedText(r, picked) : null;
   return (
     <div className="room3d">
       <div className="v-head">
@@ -147,7 +161,17 @@ function RoomView({ r }: { r: any }) {
           {act('Turn right', () => { if (view.current) view.current.orbit(1); }, 'chevR')}
         </span>
       </div>
-      <div className="viewer" ref={host} />
+      <div className={cx('viewer-wrap', info && 'has-pick')}>
+        <div className="viewer" ref={host} />
+        {info && picked ? (
+          <div className="v-pick" role="status">
+            <span className="v-pick-dot" aria-hidden="true" />
+            <span className="v-pick-t"><b>{info.name}</b>{` · ${info.text}`}</span>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => edit(picked)}>Edit<Icon name="arrowD" size={14} sw={2.4} /></button>
+            <button type="button" className="v-pick-x" aria-label="Close" onClick={() => setPicked(null)}><Icon name="x" size={14} sw={2.4} /></button>
+          </div>
+        ) : null}
+      </div>
       <label className="v-follow small"><input type="checkbox" checked={turn} onChange={e => { follow.current = e.target.checked; setTurn(e.target.checked); if (e.target.checked && view.current) view.current.focus(selRef.current); }} /> Turn to the wall I edit</label>
       <div className="v-legend">{legend.length ? legend.map(x => (
         <span key={`${x.kind}:${x.type}`}><svg className="sw" aria-hidden="true"><rect width="100%" height="100%" fill={fillOf(x.kind, x.type)} /></svg>{typeLabel(x.kind, x.type)}{x.m2 != null ? <em>{fmt.m2(x.m2)}</em> : null}</span>
@@ -156,6 +180,19 @@ function RoomView({ r }: { r: any }) {
       {r.shape && r.shape !== 'rectangular' ? <p className="small muted">Drawn as a box of the room's length, width and height.</p> : null}
     </div>
   );
+}
+
+// Whether the screen is narrow: Room Setup's two columns are then one (css/app.css, max-width 1180px).
+const NARROW = '(max-width: 1180px)';
+function useNarrow() {
+  const [n, setN] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia(NARROW).matches);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const m = window.matchMedia(NARROW), on = () => setN(m.matches);
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, []);
+  return n;
 }
 
 /* Chips that toggle membership of a list on the room (furnishings, problems, outcomes, a multiple-choice question). */
@@ -581,7 +618,7 @@ export function RoomScreen({ ctx }: { ctx: Ctx }) {
   const ui: any = S.state.ui, search = (k: string) => ((ui.matSearch || {})[k] || ''), confirm = ui.confirm || null;
   const card = (def: any) => <SurfaceCard key={def.key} p={ctx.project} def={def} model={SURF.surfaceModel(r, def.key)} search={search(def.key)} confirm={confirm} walls={walls.length} />;
   const shape = (O.shape as any[]).find(x => x.value === (r.shape || 'rectangular')) || O.shape[0];
-  const t = SURF.totals(r), fin = SURF.finishes(r);
+  const t = SURF.totals(r), fin = SURF.finishes(r), narrow = useNarrow();
   return (
     <div className="grid split">
       <svg className="look-defs" width={0} height={0} aria-hidden="true" focusable="false"><defs dangerouslySetInnerHTML={{ __html: lookDefs() }} /></svg>
@@ -651,6 +688,7 @@ export function RoomScreen({ ctx }: { ctx: Ctx }) {
           {r.existing && r.existing !== 'None' ? <p className="small muted">{`Earlier entry for existing treatment: “${r.existing}”. Describe it on the surfaces it covers.`}</p> : null}
           <Note>The surfaces describe the room and tell the treatment prediction what each product covers and how much of each wall is free, so no surface is counted twice. The room's RT60 is measured, not estimated from them; they never change the target or a measurement.</Note>
         </Card>
+        {narrow ? <Card icon="room" title="The room in 3D" sub="The room as described above: its size, walls, floor and ceiling. Tap a wall to see what it is." cls="card-room3d"><RoomView r={r} /></Card> : null}
         <Card icon="flag" title="Acoustic problems and goals" sub="What people notice now, and what should improve. Optional; recorded for the recommendations.">
           <Field label="Current problems"><Chips path="problems" options={O.problems} value={r.problems} label="Current problems" /></Field>
           <Field label="Outcome wanted"><Chips path="outcomes" options={O.outcomes} value={r.outcomes} label="Outcome wanted" /></Field>
@@ -659,7 +697,7 @@ export function RoomScreen({ ctx }: { ctx: Ctx }) {
       </div>
       <div className="stack sticky">
         <Card icon="seal" title="Room summary" right={validG ? null : <Pill tone="neutral" text="Incomplete" />} cls="card-summary">
-          <RoomView r={r} />
+          {narrow ? null : <RoomView r={r} />}
           <Kv rows={[
             ['Volume', validG ? fmt.m3(g.V) : '—', 'is-strong'],
             ['Floor area', validG ? fmt.m2(g.floor) : '—'],

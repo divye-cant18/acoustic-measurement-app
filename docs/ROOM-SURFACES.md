@@ -52,10 +52,12 @@ change. Their surfaces, measurements and history are kept as they are.
   (one more starts at a standard 0.9 × 2.1 m door or 1.2 × 1.2 m window, changeable). Everything else on the wall
   (name, the type buttons, the exact library entry, a covering, opening sizes and types, equipment) is under "More
   details". Each type has its own colour and pattern (`src/ui/looks.ts`), always with its name beside it.
-- **The room in 3D** (`src/ui/room3d.ts`, three.js 0.160.0, bundled): in the Room summary, built up as the room is
-  entered (the floor once the length and width are in, the walls with the height), with each wall's parts, doors and
-  windows and the floor and ceiling in their types' colours. It turns to the surface being edited, a click on a wall
-  opens its card, and walls nearer the camera lower themselves. Doors and windows are placed where they usually are
+- **The room in 3D** (`src/ui/room3d.ts`, three.js 0.160.0, bundled): in the Room summary (on screens up to 1180 px
+  wide, its own card after Floor and ceiling), built up as the room is entered (the floor once the length and width are
+  in, the walls with the height), with each wall's parts, doors and windows and the floor and ceiling in their types'
+  colours. It turns to the surface being edited; a tap on a wall names it (type, parts, area) with Edit to open its
+  card, without moving the page (27 October 2026; it used to open the card at once). A finger moved sideways turns the
+  room, up and down scrolls the page. Walls nearer the camera lower themselves. Doors and windows are placed where they usually are
   (their positions are not recorded); added walls (Wall 5 and up) are listed, not drawn. Without WebGL, the flat
   sketch.
 
