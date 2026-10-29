@@ -53,16 +53,31 @@ function resultLine(a: any): [string, string, string] {
   return [above.length ? 'arrowUp' : below.length ? 'arrowDn' : 'check', head, say];
 }
 
+/* The room's RT60 minus the target (its preferred value, or the limit of an upper-limit target), and where the room's
+   average lies: the verdict itself also judges each band. From the values as shown, so the three figures add up. */
+const shown = (x: number) => Math.round(Number(x.toFixed(2)) * 100);
+const diffText = (rt: number, to: number) => { const d = shown(rt) - shown(to); return `${d > 0 ? '+' : d < 0 ? '−' : ''}${(Math.abs(d) / 100).toFixed(2)}`; };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const diffSub = (a: any) => {
+  const t = a.target, by = (x: number, y: number) => fmt.s((shown(x) - shown(y)) / 100);
+  if (t.preferred == null) return a.summaryStatus === 'above' ? 'over the limit' : 'under the limit';
+  return `from the target · ${a.summaryStatus === 'above' ? `${by(a.rt, t.max)} above the range` : a.summaryStatus === 'below' ? `${by(t.min, a.rt)} below the range` : 'within the range'}`;
+};
+
 /* ---------- what to fix: one row per sound group ---------- */
-const GROUP_STATE: Record<string, [string, string, string]> = { above: ['above', 'Too echoey', 'arrowUp'], below: ['below', 'Too dull', 'arrowDn'], within: ['within', 'Just right', 'check'], none: ['none', 'Not measured', 'minus'] };
+// 'none': measured, but the target sets no limit for these pitches (NBC judges 500 Hz only; EBU sets none above 4 kHz),
+// as Results says it; 'unmeasured': no value for the group at all.
+const GROUP_STATE: Record<string, [string, string, string]> = { above: ['above', 'Too echoey', 'arrowUp'], below: ['below', 'Too dull', 'arrowDn'], within: ['within', 'Just right', 'check'], none: ['none', 'No target here', 'minus'], unmeasured: ['none', 'Not measured', 'minus'] };
+const groupState = (g: SoundGroup) => g.status || (g.value == null ? 'unmeasured' : 'none');
 function hint(g: SoundGroup): string {
+  if (g.status === 'none' || (!g.status && g.value != null)) return 'The target sets no limit for these pitches, so they are not judged.';
   if (g.status === 'above') return g.id === 'low' ? 'They ring too long. Thicker panels, or panels with an air gap, help most.' : g.id === 'voices' ? 'They ring too long, so speech sounds muddy. Sound-absorbing panels help.' : 'They ring too long. Most acoustic panels absorb these well.';
   if (g.status === 'below') return 'A little dry. Avoid adding much more soft material for these.';
   if (g.status === 'within') return 'On target.';
   return 'Not measured clearly in this room.';
 }
 function FixRow({ g, bands }: { g: SoundGroup; bands: { f: number; status: string | null }[] }) {
-  const [cls, word, icon] = GROUP_STATE[g.status || 'none'] || GROUP_STATE.none;
+  const [cls, word, icon] = GROUP_STATE[groupState(g)];
   // The bands of the group that are outside their own limits: why a group can be off although its average looks fine.
   const off = bands.filter(b => (g.bands as number[]).includes(b.f) && (b.status === 'above' || b.status === 'below'));
   return (
@@ -109,6 +124,8 @@ export function AssessmentScreen({ ctx }: { ctx: Ctx }) {
         <div className="av-figs">
           <div className="av-fig is-room"><span className="av-k">RT60 of the room</span><span className="av-n">{a.available && a.rt != null ? <>{a.rt.toFixed(2)}<small>s</small></> : '—'}</span><span className="av-sub">{`average, ${pol.short}`}</span></div>
           <div className="av-fig is-target"><span className="av-k">Target</span><span className="av-n">{t.preferred != null ? <>{t.preferred.toFixed(2)}<small>s</small></> : <>{`≤ ${t.max.toFixed(2)}`}<small>s</small></>}</span><span className="av-sub">{t.preferred != null ? `range ${TGT.rangeText(t)}` : `at ${pol.short}`}</span></div>
+          {a.available && a.rt != null ? <div className="av-fig" data-watch="assessment-diff"><span className="av-k">Difference</span><span className="av-n">{diffText(a.rt, TGT.aim(t))}<small>s</small></span><span className="av-sub">{diffSub(a)}</span></div> : null}
+          {a.reliability ? <div className={`av-fig is-rel is-${a.reliability.level}`} data-watch="assessment-reliability"><span className="av-k">Reliability</span><span className="av-n">{a.reliability.word}</span><span className="av-sub">{a.reliability.reason}</span></div> : null}
           {a.available ? <div className="av-scale"><RtScale target={t} measured={a.rt} /></div> : null}
         </div>
       </section>

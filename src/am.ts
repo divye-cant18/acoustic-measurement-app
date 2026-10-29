@@ -118,6 +118,7 @@ export interface Assessment {
   bands: BandRow[]; verdict: Verdict; warnings: BandRow[]; explanation: Explanation; above: number;
   ref: { f: Band; rt: number; method: string; confidence: string }; positions: { valid: number; required: number; complete: boolean }; provisional: boolean;
   rt: number | null; diff: number | null; status: Status | null; summaryStatus: Status | null; blocked?: string;
+  reliability: { level: 'good' | 'fair' | 'limited'; word: string; reason: string } | null;
 }
 export interface RoomBand { f: Band; rt60: number | null; n: number; of: number; path: string | null; quality: string; confidence: string; reason: string | null; notes: string[]; spread: number | null; values: { position: string; rt60: number | null; path: string | null; quality: string | null; reason: string | null }[] }
 export interface RoomResult { valid: true; count: number; minimum: number; complete: boolean; positions: { id: string; name: string; recordingId: string; takenAt: string }[]; referenceBand: Band; headline: { f: Band; rt60: number; method: string; quality: string; confidence: string }; bands: RoomBand[]; status: string; warnings: string[] }

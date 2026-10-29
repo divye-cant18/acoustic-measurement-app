@@ -274,11 +274,13 @@
     const within = (rts, x) => B.every((f, i) => { const v = r2(30.429 / (30.429 / rts[i] + x * al[f])); return v >= lim[f][0] && v <= lim[f][1]; });
     const even = [0.95, 0.95, 0.95, 0.95, 0.9, 0.85], g1 = AM.derive.treatmentForTarget(proj(even));
     // There every band is within its limits, so the amount is the one that brings the 250 Hz–2 kHz average to the preferred
-    // 0.56 s (the aim), with every band, worked out here, inside its own limits.
+    // 0.56 s (the aim), with every band, worked out here, inside its own limits. The product is sold in panels, so it is
+    // the least whole number of panels that does: the average at that many is 0.56 s or less, at one fewer above it.
     const avgAt = x => [250, 500, 1000, 2000].reduce((t, f) => t + 30.429 / (30.429 / even[B.indexOf(f)] + x * al[f]), 0) / 4;
-    check('Amount for the target, every band reachable: the amount brings the 250 Hz–2 kHz average to the preferred 0.56 s, and every band there is within its own DIN limits (worked out here)',
-      mr.min === 0.45 && mr.max === 0.67 && g1 && g1.meetsBands && within(even, g1.areaM2) && close(avgAt(g1.areaM2), 0.56, 2e-4),
-      g1 ? `${g1.areaM2.toFixed(2)} m² of ${prod.name}, ${cfg.label}: ${B.map((f, i) => (30.429 / (30.429 / even[i] + g1.areaM2 * al[f])).toFixed(3)).join(', ')} s` : 'none');
+    const panel = prod.size.options[si].areaM2;
+    check('Amount for the target, every band reachable: the least whole number of panels that brings the 250 Hz–2 kHz average to the preferred 0.56 s (one fewer leaves it above, worked out here), and every band there is within its own DIN limits (worked out here)',
+      mr.min === 0.45 && mr.max === 0.67 && g1 && g1.meetsBands && close(g1.areaM2, g1.units * panel, 1e-9) && within(even, g1.areaM2) && avgAt(g1.areaM2) <= 0.56 + 1e-9 && avgAt((g1.units - 1) * panel) > 0.56,
+      g1 ? `${g1.units} panels, ${g1.areaM2.toFixed(2)} m² of ${prod.name}, ${cfg.label}: ${B.map((f, i) => (30.429 / (30.429 / even[i] + g1.areaM2 * al[f])).toFixed(3)).join(', ')} s; average ${avgAt(g1.areaM2).toFixed(4)} s, at ${g1.units - 1} panels ${avgAt((g1.units - 1) * panel).toFixed(4)} s` : 'none');
     // Automatic treatment (20 October 2026). The app sets the amounts of its products (amountBy 'app') together
     // (AM.derive.autoPlan): the fewest bands outside their limits, then the least material; never more than the free
     // surface (here the walls, 2 × (9 + 7) × 3 = 96 m², no openings recorded). Worked out here by trying every amount.
@@ -296,6 +298,10 @@
       const al2 = AM.derive.autoAmount(loud, AM.derive.treatmentItems(loud)[0]);
       check('Automatic amount when the room needs more than fits where it goes: all of Wall 1 (27 m²) in whole panels, and said so (capped)',
         al2 && al2.capped && al2.availableM2 === 27 && al2.quantity === Math.floor(27 / per + 1e-9), al2 ? `${al2.quantity} panels, ${al2.areaM2.toFixed(2)} of ${al2.availableM2} m²` : 'none');
+      // What the screens may promise for the app's amount (meets): the even room is within every limit at the app's amount
+      // (worked out here); the 4 s room capped on Wall 1 is not, so the app's amount there is never said to reach the target.
+      check('The app\'s amount says whether it meets the target: yes for the even room (every band within, worked out here), no for the 4 s room capped on Wall 1 (bands still above, worked out here)',
+        amt.meets === true && within(even, amt.areaM2) && al2.meets === false && !within([4, 4, 4, 4, 4, 4], al2.areaM2), `even: meets ${amt.meets}; capped: meets ${al2.meets}`);
       // Two products set by the app together are never worse than either one alone at its own best amount.
       const second = CAT.getProducts().find(q => q.id !== prod.id && q.size.options.some(o => o.areaM2 > 0) && CAT.getAcousticConfigurations(q.id).some(c => !CAT.getOctaveAbsorption(c.id, B).missing.length));
       const cfg2 = CAT.getAcousticConfigurations(second.id).find(c => !CAT.getOctaveAbsorption(c.id, B).missing.length);
@@ -327,6 +333,51 @@
     const noArea = !Array.from({ length: 2000 }, (_, k) => k * 0.25).some(x => within(lowBoom, x));
     check('Amount for the target when no amount meets every band (125 Hz at 3.0 s, the rest 0.7–0.8 s): said so (meetsBands false), naming 125 Hz, never offered as meeting the target',
       noArea && g2 && g2.meetsBands === false && g2.above.includes(125), g2 ? `average amount ${g2.areaM2.toFixed(1)} m²; above ${g2.above.join(', ')}; below ${g2.below.join(', ')}` : 'none');
+    // Sold in whole panels (29 October 2026): the amount for the target agrees with the app's own prediction tried at every
+    // whole number of panels. Where only a narrow range of areas meets every band (fewer m² than one panel), the count in
+    // it is found; where no whole number does, it says so (wholePanels false) instead of a count that does not meet it.
+    {
+      const at = (rts, k) => { const q = proj(rts); Object.assign(q.treatment.items[0], { quantity: k, mode: 'units' }); q.completed = ['treatment']; const pr = AM.derive.prediction(q); return !!(pr && pr.verdict && pr.verdict.status === 'within'); };
+      const rooms = [even, [0.85, 0.78, 0.7, 0.7, 0.55, 0.4], [1.15, 1.03, 0.9, 0.9, 0.79, 0.68], [1.2, 1.05, 0.9, 0.9, 0.86, 0.82], [0.75, 0.93, 1.1, 1.1, 0.78, 0.46], [1, 0.85, 0.7, 0.7, 0.62, 0.54]];
+      const rows = rooms.map(rts => { const g = AM.derive.treatmentForTarget(proj(rts)), works = Array.from({ length: 150 }, (_, k) => k + 1).filter(k => at(rts, k)); return { rts, g, works }; });
+      const agree = r => (r.g.meetsBands ? r.works.includes(r.g.units) : !r.works.length);
+      check('Whole panels: the amount for the target agrees with the app\'s prediction at every whole number of panels (1–150), finds the count in a range narrower than one panel, and says so when no whole number meets every band',
+        rows.every(agree) && rows[1].g.meetsBands && rows[1].works.length <= 2 && rows.some(r => r.g.wholePanels === false),
+        rows.map(r => `${r.rts.join('/')}: goal ${r.g.units} panels ${r.g.meetsBands ? 'meets' : r.g.wholePanels === false ? 'no whole number' : 'does not meet'}; prediction meets at ${r.works.slice(0, 4).join(', ') || 'none'}`).join(' · '));
+    }
+
+    // Where the plan's products go in the 3D room (AM.services.placement, 29 October 2026): whole pieces at their real
+    // size, never an amount. A 12.6 m wall, 3 m high: 1220 mm panels in one row, 150 mm from each corner, 10 mm apart:
+    // (12.6 − 0.3 + 0.01) ÷ 1.23 = 10.0 → 10 fit.
+    {
+      const PL = AM.services.placement, room = { L: 12.6, W: 7, H: 3, walls: [{ key: 'wall1', len: 12.6, blocks: [] }, { key: 'wall2', len: 7, blocks: [[1.0, 3.04], [3.96, 6.05]] }, { key: 'wall3', len: 12.6, blocks: [[6.3, 11.09]] }, { key: 'wall4', len: 7, blocks: [[0.74, 1.85]] }] };
+      const U = (id, n, keys) => ({ id, keys, w: 1.22, h: 2.44, n }), P = (id, n, keys) => ({ id, keys, w: 0.705, h: 0.6, n });
+      const clean = r => { let bad = 0; const by = {}; r.pieces.filter(q => q.u0 != null && !q.ghost).forEach(q => (by[q.key] = by[q.key] || []).push(q));
+        Object.entries(by).forEach(([k, ps]) => { const w = room.walls.find(x => x.key === k); ps.forEach((a, i) => { if (a.u0 < 0.15 - 1e-9 || a.u1 > w.len - 0.15 + 1e-9 || a.z0 < 0 || a.z1 > room.H) bad++; w.blocks.forEach(([b0, b1]) => { if (a.u1 > b0 + 1e-9 && a.u0 < b1 - 1e-9) bad++; }); ps.slice(i + 1).forEach(b => { if (a.u0 < b.u1 - 1e-9 && b.u0 < a.u1 - 1e-9 && a.z0 < b.z1 - 1e-9 && b.z0 < a.z1 - 1e-9) bad++; }); }); });
+        return bad; };
+      const one = PL.layout(room, [U('u', 12, ['wall1'])]);
+      check('Placement: on a 12.6 m wall 10 whole 1220 × 2440 mm panels fit (worked out here); asked for 12, 10 are placed and 2 are over, each inside the wall, none overlapping',
+        one.items.u.fits === 10 && one.items.u.placed === 10 && one.items.u.over === 2 && one.pieces.length === 10 && clean(one) === 0, JSON.stringify(one.items.u));
+      // Two products on one wall: the Penray panels (705 × 600 mm, 4 rows, 2 columns = 1.42 m) keep their place; the UNIZEN
+      // panels asking for 12 get what is left: (12.3 − 1.42 − 0.3 + 0.01) ÷ 1.23 = 8.6 → 8.
+      const two = PL.layout(room, [U('u', 12, ['wall1']), P('p', 8, ['wall1'])]);
+      check('Placement: two products share a wall: the one that fits (8 Penray panels) keeps its place, the one asking for more than is left gets the rest (8 of 12 UNIZEN, worked out here), no overlaps',
+        two.items.p.placed === 8 && two.items.u.placed === 8 && two.items.u.over === 4 && clean(two) === 0, JSON.stringify(two.items));
+      // Doors, windows and glass: nothing on them; "Walls" shares the pieces over the walls in proportion to what fits.
+      const spread = PL.layout(room, [U('u', 14, ['wall1', 'wall2', 'wall3', 'wall4'])]), on = spread.items.u.on;
+      check('Placement: spread over the walls, 14 panels go where they fit (none on the windows of Wall 2, the glass of Wall 3 or the door of Wall 4), every one placed, none overlapping',
+        spread.items.u.placed === 14 && Object.values(on).reduce((s, n) => s + n, 0) === 14 && on.wall2 === 0 && clean(spread) === 0, JSON.stringify(on));
+      // The ceiling: clouds of two sizes share one grid from the centre; the free spots of the one being edited are ghosts.
+      const before = JSON.stringify([room, [{ id: 'r', keys: ['ceiling'], w: 1.2, h: 1.2, n: 4, hung: true }]]);
+      const cl = PL.layout(room, [{ id: 'r', keys: ['ceiling'], w: 1.2, h: 1.2, n: 4, hung: true }, { id: 'x', keys: ['ceiling'], w: 0.9, h: 0.9, n: 6, hung: true }], { ghostsFor: 'x' });
+      const inside = cl.pieces.every(q => Math.abs(q.x) + q.w / 2 <= room.L / 2 - 0.5 + 1e-9 && Math.abs(q.z) + q.h / 2 <= room.W / 2 - 0.5 + 1e-9);
+      check('Placement: two kinds of cloud share the ceiling (4 + 6 placed), the free spots shown are only for the one being edited, every one 0.5 m clear of the walls; the inputs are not changed',
+        cl.items.r.placed === 4 && cl.items.x.placed === 6 && cl.pieces.filter(q => q.ghost).every(q => q.item === 'x') && cl.pieces.some(q => q.ghost) && inside
+          && JSON.stringify([room, [{ id: 'r', keys: ['ceiling'], w: 1.2, h: 1.2, n: 4, hung: true }]]) === before, JSON.stringify(cl.items));
+      // A piece taller than the wall allows (2.8 m on a 2.7 m wall) does not fit at all: nothing is drawn, all of it is over.
+      const tall = PL.layout(Object.assign({}, room, { H: 2.7 }), [{ id: 't', keys: ['wall1'], w: 1.22, h: 2.8, n: 3 }]);
+      check('Placement: a panel taller than the wall (2800 mm on a 2.7 m wall) does not fit: none placed, all 3 over', tall.items.t.placed === 0 && tall.items.t.over === 3 && !tall.pieces.length, JSON.stringify(tall.items.t));
+    }
 
     // 5. A band measured at only one of the two positions leaves the result provisional there (ISO 3382-2: two
     //    source-microphone combinations for the survey method).

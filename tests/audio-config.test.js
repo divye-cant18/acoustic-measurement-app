@@ -215,6 +215,19 @@
       check('A2 A zero-filled gap, an invalid sample, an incomplete recording and a clipped recording: each take rejected with its own reason',
         /gap/.test(zero.reason) && /corrupted/.test(nan.reason) && /incomplete/.test(short.reason) && /overloaded/.test(clip.reason), [zero.reason, nan.reason, short.reason, clip.reason].map(r => (r || '').slice(0, 45)).join(' | '));
     }
+    {
+      // A Bluetooth headset's low sample rate (8 and 11.025 kHz): the RT60 bands' upper edge lies above what the recording
+      // holds. The levels must still be read: they came out NaN, and a test signal too quiet for the background then
+      // passed its check unseen.
+      const rows = [8000, 11025].map(fs => ({ fs, n: AN.analyseNoise(FIX.background(Math.round(5.5 * fs), -60, 5, 'pink'), fs), ok: analyse({ fs, refl: DESK }), quiet: analyse({ fs, refl: DESK, level: -62, noise: -65 }) }));
+      check('A2 At 8 and 11.025 kHz (a Bluetooth headset): the background and the take\'s levels are numbers, a normal take is captured, and a test signal too quiet for the background is rejected with that reason',
+        rows.every(r => Number.isFinite(r.n.inBand.leqDbfs) && Number.isFinite(r.ok.levels.preRollDbfs) && Number.isFinite(r.ok.levels.snrDb) && r.ok.status === 'captured' && r.quiet.status === 'failed' && /above the background at the microphone/.test(r.quiet.reason || '')),
+        rows.map(r => `${r.fs / 1000} kHz: background ${r.n.inBand.leqDbfs} dBFS · take ${r.ok.status}, signal ${r.ok.levels.snrDb} dB above · quiet take: ${(r.quiet.reason || r.quiet.status).slice(0, 60)}`).join(' | '));
+      // A click's reason names what was found in the field (sound effects or speaker protection) and what to do.
+      const ck = analyse({ splice: 2.7, n: -128, refl: DESK });
+      check('A2 A take rejected for a click says where such jumps come from (the device\'s sound effects or speaker protection, a dropped moment of audio, a tap) and what to do (sound effects off, the sweep level lower)',
+        ck.status === 'failed' && /has a click/.test(ck.reason || '') && /sound effects or speaker protection/.test(ck.reason) && /lower the sweep level/.test(ck.reason), (ck.reason || '').slice(0, 160));
+    }
 
     /* ---------- A3 processing decisions ---------- */
     status('A3 processing…');

@@ -65,7 +65,9 @@ const GLOBAL: Record<string, ActionFn> = {
      share of the free surface where it goes (data-avail, m²), kept as the area that share is (to 0.1 m²). */
   setAmount: (_c, v, el) => {
     if (el.dataset.mode === 'units') { setQuantity(el.dataset.item, Math.round(Number(v))); return; }
-    setItem(el.dataset.item, { size: 'area', areaM2: Math.max(0, Math.round(Number(v) / 100 * Number(el.dataset.avail || 0) * 10) / 10), amountBy: 'user' });
+    // Rounded down to 0.1 m²: a share of the free surface never comes out larger than it (100 % of 23.65 m² was 23.7 m²,
+    // which then blocked the prediction as more than the free surface).
+    setItem(el.dataset.item, { size: 'area', areaM2: Math.max(0, Math.floor(Number(v) / 100 * Number(el.dataset.avail || 0) * 10 + 1e-6) / 10), amountBy: 'user' });
   },
   // Help on a step (its menu), and the tour of the screen (src/shell/Tour.tsx).
   toggleHelp: () => S.ui({ help: !S.state.ui.help }),

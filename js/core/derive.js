@@ -261,8 +261,34 @@
     };
     out.provisional = !r.complete || out.thinBands.length > 0;
     // blocked: a short sentence for the step's action bar (which bands are missing).
-    if (!summary.available) return Object.assign(out, { rt: null, diff: null, status: null, summaryStatus: null, blocked: `No result for the ${pol.label.toLowerCase()}: only ${summary.total - summary.missing.length} of ${summary.total} of its bands were measured reliably. Measure again.` });
-    return Object.assign(out, { rt: summary.value, diff: summary.value - aim(t), status: verdict.status, summaryStatus: verdict.summaryStatus });
+    if (!summary.available) return Object.assign(out, { rt: null, diff: null, status: null, summaryStatus: null, reliability: null, blocked: `No result for the ${pol.label.toLowerCase()}: only ${summary.total - summary.missing.length} of ${summary.total} of its bands were measured reliably. Measure again.` });
+    return Object.assign(out, { rt: summary.value, diff: summary.value - aim(t), status: verdict.status, summaryStatus: verdict.summaryStatus, reliability: reliability(r, out) });
+  }
+
+  /* How far the result can be relied on, in one word and its first reason, from what the room's values rest on. It
+     changes no value. Over the judged bands (primary and edge):
+       limited  fewer positions than the session needs, or a judged band with no value (left out of the result)
+       fair     a judged band at fewer positions than needed; positions that differ by more than SPREAD in a judged band
+                (ISO 3382-2 expects the survey method to be within about 10 % in octave bands, so two positions within
+                that of the room's value differ by up to 20 %); a judged band whose decay carries a note or could not be
+                checked over 30 dB (quality Fair)
+       good     none of these */
+  const SPREAD = 0.2;
+  function reliability(r, a) {
+    const fmt = AM.util.fmt, hz = fmt.hzList;
+    const judged = a.bands.filter(b => b.role === 'primary' || b.role === 'edge').map(b => r.bands.find(x => x.f === b.f)).filter(Boolean);
+    const missing = a.verdict.missing;
+    if (!r.complete) return { level: 'limited', word: 'Limited', reason: `Measured at ${r.count} position${r.count > 1 ? 's' : ''} only. Measure at least ${r.minimum} for a firm result.` };
+    if (missing.length) return { level: 'limited', word: 'Limited', reason: `${hz(missing)} could not be measured, so the result leaves ${missing.length > 1 ? 'them' : 'it'} out.` };
+    if (a.thinBands.length) {
+      const at = fmt.list([...new Set(r.bands.filter(b => a.thinBands.includes(b.f)).flatMap(b => b.values.filter(v => v.rt60 == null).map(v => v.position)))]);
+      return { level: 'fair', word: 'Fair', reason: `${hz(a.thinBands)} ${a.thinBands.length > 1 ? 'have' : 'has'} no value at ${at}. Measure ${at} again.` };
+    }
+    const wide = judged.filter(b => b.spread != null && b.rt60 > 0 && b.spread / b.rt60 > SPREAD).sort((x, y) => y.spread / y.rt60 - x.spread / x.rt60)[0];
+    if (wide) return { level: 'fair', word: 'Fair', reason: `The positions differ by ${Math.round(100 * wide.spread / wide.rt60)} % at ${fmt.hz(wide.f)}. Measuring another position makes the average firmer.` };
+    const fair = judged.filter(b => b.quality !== 'Good').map(b => b.f);
+    if (fair.length) return { level: 'fair', word: 'Fair', reason: `At ${hz(fair)} the decay carries a note or could not be double-checked. Results shows why.` };
+    return { level: 'good', word: 'Good', reason: `Every judged pitch was measured cleanly at ${r.count} positions, and the positions agree.` };
   }
 
   /* The six bands in three groups anyone recognises, for Results and Assessment: low sounds (125 and 250 Hz), voices
@@ -336,8 +362,20 @@
       let prev = 0;
       for (let k = 1; k <= n && area == null; k++) { const x = top * k / n; if (ok(x)) area = x; else prev = x; }
       if (area != null) { let a = prev; while (area - a > 0.01) { const m = (a + area) / 2; if (ok(m)) area = m; else a = m; } }
+      // Sold in whole panels: the areas that meet every band can lie between two steps above and still hold a whole
+      // number of panels, so every count is tried.
+      else if (sel.size) for (let k = 1, a = sel.size.areaM2; k * a <= top && area == null; k++) if (ok(k * a)) area = k * a;
     }
     const units = x => (sel.size ? Math.ceil(x / sel.size.areaM2 - 1e-9) : null), base = { itemId: sel.id, withOthers: others.some(i => i.areaM2 > 0) };
+    if (area != null && sel.size) {
+      // Sold in whole panels: the whole number at or next to that area that meets every band. None may (one panel more
+      // puts a band below its limit, one fewer leaves another above): then the goal says so instead of a count that
+      // does not do it.
+      const a = sel.size.areaM2, c = units(area), n = [c, c - 1, c + 1].find(k => k >= 1 && ok(k * a));
+      if (n != null) return Object.assign({ areaM2: n * a, units: n, meetsBands: true, above: [], below: [] }, base);
+      const v = verdictAt(units(area) * a);
+      return Object.assign({ areaM2: units(area) * a, units: units(area), meetsBands: false, wholePanels: false, above: v.above.map(x => x.f), below: v.below.map(x => x.f) }, base);
+    }
     if (area != null) return Object.assign({ areaM2: area, units: units(area), meetsBands: true, above: [], below: [] }, base);
     if (avgArea == null) return null;
     const v = verdictAt(avgArea);
@@ -438,14 +476,17 @@
     return out;
   }
   /* The amount the app suggests for one item (autoPlan, with this item as the app's), for the screens:
-     { mode, quantity, areaM2, capped, availableM2, needed, goal } | null for an item without a tested configuration.
-     goal: the amount of this product alone that meets the target (treatmentForTarget), for the written-out calculation. */
+     { mode, quantity, areaM2, capped, availableM2, needed, meets, goal } | null for an item without a tested
+     configuration. meets: with the app's amounts the plan meets the target (every judged band within its limits);
+     what the screens may promise for "the app's amount". goal: the amount of this product alone that meets the target
+     (treatmentForTarget), for the written-out calculation: it can be more than the free surface allows. */
   function autoAmount(p, item) {
     if (!item || !item.complete) return null;
     const a = assessment(p), plan = autoPlan(p, item.amountBy === 'app' ? null : item.id), mine = plan[item.id];
     if (!mine) return null;
     return { mode: item.mode, quantity: mine.quantity, areaM2: mine.areaM2, capped: mine.capped, availableM2: mine.capM2,
-      needed: !!(a && a.available && a.status === 'above'), goal: a && a.available ? treatmentForTarget(p, item) : null };
+      needed: !!(a && a.available && a.status === 'above'), meets: !!(plan.best && plan.best[0] === 0),
+      goal: a && a.available ? treatmentForTarget(p, item) : null };
   }
   // Whether an item's amount is the app's (it changes with the plan) rather than one the user set.
   const isAutoAmount = (p, item) => !!item && item.amountBy === 'app';

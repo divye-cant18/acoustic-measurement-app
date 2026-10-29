@@ -204,7 +204,10 @@
   function firstNonFinite(x) { for (let i = 0; i < x.length; i++) if (!Number.isFinite(x[i])) return i; return -1; }
   // The bands RT60 is measured in (125–4000 Hz, edge to edge), as one filter: no DC offset, no rumble below them and
   // no hiss above them, so a level read through it is what those bands hear.
-  const inBandSections = fs => { const b = CRITERIA.noise.band, q = DSP.butterworthQ(6); return [...q.map(Q => DSP.rbj('highpass', b[0], fs, Q)), ...q.map(Q => DSP.rbj('lowpass', b[1], fs, Q))]; };
+  // At a low sample rate (a Bluetooth headset's 8 or 11.025 kHz) the upper edge lies above what the recording can hold;
+  // a low-pass there is unstable (its levels came out NaN, and the take's signal-to-background check then passed
+  // unseen), so it is kept within nyquistShare of the rate, as the band filters are.
+  const inBandSections = fs => { const b = CRITERIA.noise.band, q = DSP.butterworthQ(6), hi = Math.min(b[1], CRITERIA.take.nyquistShare * fs); return [...q.map(Q => DSP.rbj('highpass', b[0], fs, Q)), ...q.map(Q => DSP.rbj('lowpass', hi, fs, Q))]; };
   // DC offset (mean) of x[a…b), dBFS of its magnitude: diagnostic only.
   function dcDbfs(x, a, b) { let s = 0; for (let i = a; i < b; i++) s += x[i]; return r1(peakDb(Math.abs(s / Math.max(1, b - a)))); }
   const pct = (sorted, p) => { const i = (sorted.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i); return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo); };
@@ -757,7 +760,7 @@
       out.clicks = above.clicks; out.sweepGain = above.gain;
       if (above.clicks.found.length) {
         const k = above.clicks.found.reduce((a, b) => (b.db > a.db ? b : a)), more = above.clicks.found.length - 1;
-        return fail(`The recording has a click ${k.atSec.toFixed(2)} s into the test signal (${Math.round(k.db)} dB above the background around it${more ? `, and ${more} more` : ''}). Most likely the device or browser dropped or repeated a moment of audio; a tap on the device or a sharp sound nearby does the same. A click spreads into the decay of every band, so this take is not used. Close other apps and tabs, keep the device still, the screen on and the app in front, and measure again.`);
+        return fail(`The recording has a click ${k.atSec.toFixed(2)} s into the test signal (${Math.round(k.db)} dB above the background around it${more ? `, and ${more} more` : ''}). A sudden jump like this comes from the device's own sound effects or speaker protection changing the level (found on phones and laptops: the same moment in every take), from a moment of audio the device or browser dropped, or from a tap or sharp sound nearby. It spreads into the decay of every band, so this take is not used. Turn off sound effects or audio enhancements (on a phone, Dolby Atmos or sound effects; in Windows, Audio enhancements for the speakers and the microphone), lower the sweep level a step or two, keep the device still, and measure again.`);
       }
     }
 

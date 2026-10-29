@@ -370,6 +370,19 @@
         ah.slice(ah.indexOf('Result against the target'), ah.indexOf('Result against the target') + 220));
 
       S.set('treatment', { items: [{ id: 't1', productId: product.id, configurationId: cfg.id, size: String(sizeIndex), quantity: 6, placement: 'Walls' }], active: 't1' });
+      // The "how much" slider for a product sold without a panel size: a share of the free surface, rounded down to 0.1 m²,
+      // so 100 % of 23.65 m² is 23.6 m², never 23.7 m² (more than the free surface, which blocked the prediction). The plan
+      // is put back afterwards.
+      {
+        const keepT = JSON.parse(JSON.stringify(S.state.project.treatment)), el = document.createElement('input');
+        el.type = 'range'; Object.assign(el.dataset, { inputAction: 'setAmount', item: 't1', mode: 'share', avail: '23.65' });
+        document.body.appendChild(el);
+        const slide = v => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); return S.state.project.treatment.items[0].areaM2; };
+        const full = slide(100), half = slide(50), none = slide(0);
+        el.remove(); S.set('treatment', keepT);
+        check('9 The amount slider (a product without a panel size): 100 % of a 23.65 m² free surface is 23.6 m², never more than the surface; 50 % is 11.8 m²; 0 % is 0',
+          full === 23.6 && half === 11.8 && none === 0 && json(S.state.project.treatment) === json(keepT), `100 %: ${full} m² · 50 %: ${half} m² · 0 %: ${none} m²`);
+      }
       const pred = D.prediction(p);
       const predMean = pred ? PRIM.reduce((x, f) => x + pred.bands.find(b => b.f === f).predicted, 0) / PRIM.length : null;
       check('9 The prediction starts from each band\'s measured RT60 (never the average): every band\'s "measured" is that band\'s value; at 1000 Hz A₀ = 0.161 V ÷ the 1000 Hz RT60',
@@ -396,6 +409,17 @@
       check('9 Predicted Result, the treatment plan and the top bar show the same predicted average',
         pred && shownPred === pred.predicted.toFixed(2) && planPred === fmt.s(pred.predicted) && tb && tb.textContent.trim() === fmt.s(pred.predicted) && !bad(textOf(predHtml)) && !bad(textOf(treatHtml)),
         `Predicted Result ${shownPred}; plan ${planPred}; top bar ${tb && tb.textContent.trim()}; expected ${pred && pred.predicted.toFixed(4)}`);
+      // Editing the product: its amount card shows the Room Setup room in 3D with the plan's pieces at their real size
+      // (29 October 2026), saying how many are drawn and where. The screen state is put back afterwards.
+      {
+        const keepUi = JSON.parse(JSON.stringify(S.state.ui.catalog || {})), keepActive = p.treatment.active;
+        W.get('treatment').actions.editItem(ctx(), 't1');
+        const th = W.get('treatment').view(ctx()).body, td = document.createElement('div'); td.innerHTML = th;
+        const fig = td.querySelector('figure.plan3d'), cap = fig ? fig.querySelector('figcaption').textContent : '', size = product.size.options[sizeIndex].label;
+        check('9 Editing the product shows the room in 3D (the Room Setup room) with its view buttons, and says how many panels are drawn where, at their real size',
+          !!fig && !!fig.querySelector('.plan3d-view') && fig.querySelectorAll('.plan3d-bar button').length === 3 && cap.includes(`6 panels on the walls, drawn at their real size (${size} each)`) && !bad(cap), cap);
+        S.state.ui.catalog = keepUi; p.treatment.active = keepActive;
+      }
       const rec = AM.reportGate.projectSummary(p), allPred = RA.ofPrediction(pred.bands, B).value;
       check('9 The report form\'s record: predictedRt60Avg is the predicted average over the bands of the all-band average (as the column has always held), predictedRt60 the 1000 Hz prediction',
         pred && rec.predictedRt60Avg === Number(allPred.toFixed(2)) && rec.predictedRt60 === Number(pred.headline.predicted.toFixed(2)),

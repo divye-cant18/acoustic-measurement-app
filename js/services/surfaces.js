@@ -276,7 +276,7 @@
       if (isNum(a) && a <= 0) out.problems.push(`The area of ${def.name} must be more than 0 m².`);
       if (isNum(a) && a > 0) gross = fl != null ? Math.min(a, fl) : a;
       if (isNum(a) && fl != null && a > fl + 1e-9) out.problems.push(`${def.name} is larger than the floor (${a} of ${fl.toFixed(1)} m²): it is counted as ${fl.toFixed(1)} m².`);
-      else if (sizeOk(room)) out.problems.push(`Enter the area of ${def.name}.`);
+      else if (!isNum(a) && sizeOk(room)) out.problems.push(`Enter the area of ${def.name}.`); // only when no area is given
     } else if (def.kind === 'ceiling') {
       const fl = floorArea(room);
       if (fl != null) {

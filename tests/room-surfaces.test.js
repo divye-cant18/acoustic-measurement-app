@@ -285,6 +285,17 @@
           old.parts.length === 1 && old.parts[0].role === 'finish' && close(old.availableM2, 30) && json(old) === json(SF.surfaceModel(r4, 'wall1')), old.parts.map(x => `${x.role} ${x.areaM2}`).join(', '));
       }
 
+      /* ===== 4c. a ceiling section's area (29 October 2026) ===== */
+      {
+        // 10 × 6 m floor (60 m²). A section with its area entered asks for nothing; one without an area asks for it; one
+        // larger than the floor says so (and is counted as the floor), without also asking for the area it has.
+        const r = box(10, 6, 3, surfacesAll('test-hard')), at = a => { r.surfaces.ceiling2 = Object.assign(AM.demo.blankSurface(), { material: 'test-hard', areaM2: a }); return SF.surfaceModel(r, 'ceiling2'); };
+        const given = at(5), none = at(null), big = at(70);
+        check('A ceiling section with its area entered (5 m²) asks for nothing; without an area it asks "Enter the area of Ceiling section 2"; larger than the floor (70 of 60 m²) it says so, not "Enter the area"',
+          given.grossM2 === 5 && !given.problems.length && json(none.problems) === json(['Enter the area of Ceiling section 2.']) && big.grossM2 === 60 && big.problems.length === 1 && /larger than the floor/.test(big.problems[0]),
+          `5 m²: ${json(given.problems)} · none: ${json(none.problems)} · 70 m²: ${json(big.problems)}`);
+      }
+
       /* ===== 5. the six surfaces are independent ===== */
       status('Independent surfaces…');
       S.startProject('new');

@@ -1,9 +1,13 @@
 /* Step 8 · Treatment — build a treatment plan: one or more products, each in one of its tested configurations, with its
    own amount and placement. Product data comes only from AM.services.catalog; the project keeps the plan
    (js/stages/treatment.js). The prediction adds every item's own area × α band by band. */
+import { useEffect, useRef, useState } from 'react';
 import { acoustics, am, CAT, D, DEMO, fmt, isNum, RA, SURF, TGT, ui } from '../lib';
 import type { Ctx, PrimaryAction, Project } from '../am';
 import { MountArt, RoomPreview, SolutionArt } from '../ui/solutions';
+import { createRoom3D, type Piece3D, type Room3D, type View3D } from '../ui/room3d';
+import { BOX, snapshotOf } from '../ui/roomSnapshot';
+import { lookOf } from '../ui/looks';
 import { AmountSlider, amountWords, Btn, Card, Chart, CoverageWarning, Icon, Kv, KvNote, Legend, More, Note, Pill, ResultPill, SelectInput, soundsAdvice, soundsText, SubH, TableWrap, whereWords } from '../ui/kit';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -444,8 +448,8 @@ function PlanCard({ p, plan, pred, a, sel }: { p: Project; plan: any; pred: any;
 
 /* ---------- the amount of the item being edited: set by the app, the result first ---------- */
 const whereText = (pl: string) => `on ${whereWords(pl)}`;
-/* The amount in the room: the share of the free surface there that this product covers (and the plan's other products
-   there, in grey), drawn on a sketch of a room. It follows the slider as it moves. */
+/* Where WebGL is not available: the amount in the room as the share of the free surface there that this product covers
+   (and the plan's other products there, in grey), drawn on a sketch of a room. It follows the slider as it moves. */
 function RoomSketch({ p, sel, cov }: { p: Project; sel: any; cov: any }) {
   const sol = solOf(sel);
   if (!sol || !cov || !(cov.surfaceM2 > 0)) return null;
@@ -458,6 +462,102 @@ function RoomSketch({ p, sel, cov }: { p: Project; sel: any; cov: any }) {
         <span className="rp-key" aria-hidden="true" />{`${amountWords(p, sel).replace(/^\w/, ch => ch.toUpperCase())}.`}
         {others > 0.0005 ? <> <span className="rp-key is-other" aria-hidden="true" />{`Your other products there: ${pct(others)}.`}</> : null}
         {' A sketch of how much is covered, not of where each piece goes.'}
+      </figcaption>
+    </figure>
+  );
+}
+
+/* ---------- the room in 3D with the plan's products: the same room as Room Setup (src/ui/roomSnapshot.ts) ----------
+   Every product of the plan as whole pieces at its real size, where AM.services.placement puts them, and dotted the
+   free spots where more of the one being edited would go. It follows the slider and every change at once. The amounts
+   are the plan's own (the acoustic calculation); the drawing only says when they do not all fit as whole pieces. */
+const PL = () => (am.services as any).placement;
+const KIND_LOOK: Record<string, string> = { panel: 'felt', printed: 'print', fluted: 'fluted', relief: 'emboss', rain: 'rain', strips: 'strips', penray: 'tile', tiles: 'tile', grid: 'tile', roll: 'roll', wool: 'wool' };
+const UNIT: Record<string, string> = { tile: 'tiles', roll: 'sheets', cloud: 'clouds', cloud3d: 'clouds' };
+// One item as pieces: their size in m, how many, how each is drawn. A product sold by area (some clouds) has no piece size
+// in the plan: it is drawn in the largest size the product lists, as many as make up its area.
+function piecesOf(it: any) {
+  const kind: string = solOf(it) ? solOf(it).kind : 'panel', cloud = kind.startsWith('cloud'), mm = (x: any) => (isNum(x) && x > 0 ? x / 1000 : null);
+  const shape = !cloud ? 'rect' : kind.includes('round') ? 'round' : kind.includes('hex') ? 'hex' : kind.includes('petal') ? 'petal' : kind === 'cloud-square' ? 'square' : 'rect';
+  const look = cloud ? (kind.endsWith('-3d') ? 'cloud3d' : 'cloud') : KIND_LOOK[kind] || 'felt';
+  let w: number | null = null, h: number | null = null, n = 0, sized = true, label = '';
+  if (it.mode === 'units' && it.size) {
+    w = mm(it.size.widthMm); h = mm(it.size.lengthMm);
+    if (!(w && h)) w = h = Math.sqrt(it.size.areaM2);
+    n = it.quantity; label = it.size.label;
+  } else {
+    const ds = (it.product.size.options || []).map((o: any) => parseFloat(o.label)).filter((x: number) => x > 0), d = ds.length ? Math.max(...ds) / 1000 : 1.2;
+    const one = shape === 'round' ? (Math.PI * d * d) / 4 : shape === 'hex' ? 0.866 * d * d : d * d;
+    w = h = d; n = Math.round(it.areaM2 / one); sized = false; label = `${shape === 'round' ? 'Ø ' : ''}${Math.round(d * 1000)} mm`;
+  }
+  const gap = /(\d+)\s*mm\s*air\s*gap/i.exec((it.configuration && it.configuration.label) || '');
+  return { w: w as number, h: h as number, n, sized, label, hung: cloud, look, shape, unit: UNIT[look] || 'panels',
+    depth: mm(it.size && it.size.depthMm) || mm(it.product.thickness && it.product.thickness.mm) || 0.012, gap: gap ? +gap[1] / 1000 : 0.003 };
+}
+function planLayout(p: Project, selId: string) {
+  const snap = snapshotOf(p.room), lenOf = (k: string) => (k === 'wall1' || k === 'wall3' ? snap.L : snap.W);
+  // doors, windows, glass and treatment already fitted take their width of the wall
+  const blocked = (t: string) => { const l = lookOf('wall', t); return (!!l && l.look === 'glass') || SURF.fittedTreatment(SURF.typeOf('wall', t)); };
+  const room = { L: snap.L, W: snap.W, H: snap.H, walls: snap.walls.map(w => ({ key: w.key, len: lenOf(w.key),
+    blocks: [...w.ops.map(o => [o.f0 * lenOf(w.key) - 0.05, o.f1 * lenOf(w.key) + 0.05]), ...w.parts.filter(x => blocked(x.type)).map(x => [x.f0 * lenOf(w.key), x.f1 * lenOf(w.key)])] })) };
+  const items = D.treatmentItems(p).filter((it: any) => it.complete).map((it: any) => {
+    const pc = piecesOf(it), keys: string[] = SURF.placementKeys(it.placement, p.room);
+    return pc.w > 0 && pc.h > 0 ? { it, pc, keys: keys.filter(k => BOX.includes(k) || k.startsWith('ceiling')), hidden: keys.filter(k => k.startsWith('wall') && !BOX.includes(k)) } : null;
+  }).filter(Boolean) as any[];
+  const lay = snap.wallsOk ? PL().layout(room, items.map(x => ({ id: x.it.id, keys: x.keys, hung: x.pc.hung, w: x.pc.w, h: x.pc.h, n: x.pc.n })), { ghostsFor: selId }) : { items: {}, pieces: [] };
+  const byId: Record<string, any> = Object.fromEntries(items.map(x => [x.it.id, x]));
+  const pieces: Piece3D[] = lay.pieces.map((q: any) => {
+    const x = byId[q.item];
+    return Object.assign({}, q, { look: x.pc.look, shape: x.pc.shape, depth: x.pc.depth, gap: x.pc.gap, hung: !!q.hung, info: `${x.it.product.name} · ${x.pc.label}` });
+  });
+  return { snap, pieces, lay, byId };
+}
+function PlanRoom({ p, sel, cov }: { p: Project; sel: any; cov: any }) {
+  const host = useRef<HTMLDivElement>(null), view = useRef<Room3D | null>(null), drawn = useRef('');
+  const [failed, setFailed] = useState(false), [mode, setMode] = useState<View3D>('wall');
+  const { snap, pieces, lay, byId } = planLayout(p, sel.id), here = byId[sel.id];
+  // the wall it is on (spread over several: the one with most of it, none outlined)
+  const onWalls: string[] = here ? here.keys.filter((k: string) => BOX.includes(k)) : [], got = (k: string) => (lay.items[sel.id] && lay.items[sel.id].on[k]) || 0;
+  const wallKey: string | null = onWalls.length ? onWalls.slice().sort((x, y) => got(y) - got(x))[0] : null, outline = onWalls.length === 1 ? wallKey : null;
+  const now = useRef({ snap, pieces, mode, wallKey, outline });
+  now.current = { snap, pieces, mode, wallKey, outline };
+  // at eye level the room as a person sees it, without the outline of the wall being edited
+  const show = (v: Room3D) => { const c = now.current; v.mark(c.mode === 'eye' ? '' : c.outline || ''); v.view(c.mode, c.wallKey || (c.mode === 'eye' ? 'wall1' : undefined)); };
+  useEffect(() => {
+    const el = host.current;
+    if (!el || !el.closest('#app')) return undefined; // not when the screen is drawn as HTML (the step's view)
+    const later = window.setTimeout(() => {
+      const v = createRoom3D(el, () => undefined);
+      if (!v) { setFailed(true); return; }
+      view.current = v; v.update(now.current.snap); v.products(now.current.pieces); drawn.current = JSON.stringify(now.current.pieces); show(v);
+    }, 120);
+    return () => { window.clearTimeout(later); if (view.current) { view.current.dispose(); view.current = null; } };
+  }, []);
+  useEffect(() => { // redrawn only where something changed
+    const v = view.current; if (!v) return;
+    v.update(snap);
+    const sig = JSON.stringify(pieces); if (sig !== drawn.current) { drawn.current = sig; v.products(pieces); }
+  });
+  useEffect(() => { if (view.current) show(view.current); }, [mode, wallKey]);
+  if (failed) return <RoomSketch p={p} sel={sel} cov={cov} />;
+  const r = lay.items[sel.id], pc = here && here.pc, where = whereText(sel.placement);
+  const say = !snap.wallsOk ? 'The room appears in 3D once its length, width and height are complete in Room Setup.'
+    : !r || !pc ? null
+      : r.over > 0 ? `As whole ${pc.label} pieces, ${r.placed} of the ${r.wanted} fit ${where}: the other ${r.over} would need cutting or another place. The prediction counts the area as set.`
+        : `${r.placed} ${pc.unit} ${where}, drawn at their real size (${pc.label} each). ${r.fits > r.placed ? `Room for ${r.fits - r.placed} more there, shown dotted.` : 'No room for more there.'}`;
+  const others = Object.values(byId).filter((x: any) => x.it.id !== sel.id && lay.items[x.it.id] && lay.items[x.it.id].placed > 0);
+  const hidden = here && here.hidden.length ? ` ${here.hidden.map((k: string) => SURF.surfaceDef(k, p.room).name).join(' and ')} ${here.hidden.length > 1 ? 'are' : 'is'} not drawn in 3D.` : '';
+  return (
+    <figure className="plan3d">
+      <div className="plan3d-bar" role="group" aria-label="View of the room">
+        {(['overview', 'wall', 'eye'] as View3D[]).map(m => (
+          <button type="button" key={m} className={mode === m ? 'on' : ''} aria-pressed={mode === m} onClick={() => setMode(m)}>{m === 'overview' ? 'Whole room' : m === 'wall' ? (wallKey ? 'Where it goes' : 'Ceiling') : 'Eye level'}</button>
+        ))}
+      </div>
+      <div className="viewer plan3d-view" ref={host} />
+      <figcaption>
+        {say ? <span>{`${say}${pc && !pc.sized ? ' Sold by area: drawn in its largest size.' : ''}${hidden}`}</span> : null}
+        {others.length ? <span className="muted">{`Also in the room: ${others.map((x: any) => { const o = lay.items[x.it.id]; return `${o.placed} × ${x.it.product.name}${o.over ? ` (${o.over} more do not fit as whole pieces)` : ''}`; }).join(', ')}.`}</span> : null}
       </figcaption>
     </figure>
   );
@@ -476,7 +576,7 @@ function AmountCard({ p, sel, pred, a }: { p: Project; sel: any; pred: any; a: a
   const v = pred && pred.verdict, st = pred ? pred.predictedStatus : null;
   // The result in everyday words: meets the target, or what would still be wrong and what would help.
   const verdict = !pred ? null
-    : st === 'within' ? <p className="auto-say is-good"><Icon name="seal" size={16} sw={2.2} />{multi ? 'With the whole plan the room meets the target in every band.' : 'The room meets the target in every band.'}</p>
+    : st === 'within' ? <p className="auto-say is-good"><Icon name="seal" size={16} sw={2.2} />{`${multi ? 'With the whole plan the room' : 'The room'} meets the target ${v && v.complete === false ? 'where measured (not every band it is judged in has a value).' : 'in every band.'}`}</p>
       : st === 'below' && a.status === 'below' ? <p className="auto-say">The room was already below the target, so it would become drier still. Treatment is not recommended.</p>
         : v ? <p className="auto-say">{`Not fully there: ${soundsText(v.above.map((r: any) => r.f), v.below.map((r: any) => r.f)) || "the room's mean echo time is outside the range"}. ${st === 'below' ? 'Use less of it.' : soundsAdvice(v.above.map((r: any) => r.f), v.below.map((r: any) => r.f))}`}</p> : null;
   const amountNote = !amt ? null
@@ -487,7 +587,7 @@ function AmountCard({ p, sel, pred, a }: { p: Project; sel: any; pred: any; a: a
   return (
     <Card title={title} sub={sub} cls="card-amount">
       <div className="auto-amount">
-        <RoomSketch p={p} sel={sel} cov={cov} />
+        <PlanRoom p={p} sel={sel} cov={cov} />
         <AmountSlider p={p} sel={sel} keyName="edit" />
         <div className="auto-use">{auto ? <Pill tone="neutral" text="Set by the app" icon="seal" /> : <><Pill tone="neutral" text="Set by you" /><Btn action="useAutoAmount" value={sel.id} size="sm" cls="btn-wrap">Go back to the app's amount</Btn></>}</div>
         {amountNote ? <p className="small muted">{amountNote}</p> : null}
@@ -508,7 +608,12 @@ function AmountCard({ p, sel, pred, a }: { p: Project; sel: any; pred: any; a: a
           cov && [`Free surface on ${/^Wall \d$/.test(cov.label) ? cov.label : cov.label.toLowerCase()}`, fmt.m2(cov.surfaceM2)],
           cov && [`Coverage${cov.count > 1 ? ` (${cov.count} products)` : ''}`, fmt.pct(cov.fraction, 1)],
           [`Added absorption at ${fmt.hz(f0)}`, x && isNum(x.addedA) ? fmt.m2(x.addedA) : '—'],
-          goal ? ['The app’s amount', goal.meetsBands ? `${fmt.m2(goal.areaM2)}: the least that keeps every band ${D.policy(p).judgedShort} within its limits` : `${fmt.m2(goal.areaM2)}: brings the average to ${fmt.s(TGT.aim(a.target))}; ${fmt.hzList(goal.above)}${goal.above.length && goal.below.length ? ' above, ' : goal.above.length ? ' above' : ''}${goal.below.length ? `${fmt.hzList(goal.below)} below` : ''} their limits`] : null,
+          // The amount the app sets (its plan, within the free surface, in whole panels) and whether it meets the target;
+          // then what meeting it would take of this product alone, which can be more than the surface allows.
+          amt ? ['The app’s amount', `${amt.mode === 'units' && amt.quantity != null ? `${amt.quantity} panels, ` : ''}${fmt.m2(amt.areaM2)}: ${amt.meets ? `meets the target in every band ${D.policy(p).judgedShort}` : amt.capped ? 'all the free surface it can have here; the target is not reached' : 'the closest to the target the plan gets'}`] : null,
+          goal ? ['To meet the target with this product alone', goal.meetsBands ? `${goal.units != null ? `${goal.units} panels, ` : ''}${fmt.m2(goal.areaM2)}${amt && isNum(amt.availableM2) && goal.areaM2 > amt.availableM2 + 1e-9 ? `, more than the ${fmt.m2(amt.availableM2)} free where it goes` : ''}`
+            : goal.wholePanels === false ? `no whole number of panels keeps every band ${D.policy(p).judgedShort} within its limits`
+              : `not possible: the amount that brings the average to ${fmt.s(TGT.aim(a.target))} leaves ${fmt.hzList(goal.above)}${goal.above.length && goal.below.length ? ' above, ' : goal.above.length ? ' above' : ''}${goal.below.length ? `${fmt.hzList(goal.below)} below` : ''} their limits`] : null,
         ]} />
         <p className="small muted">{covers}</p>
       </More>
@@ -548,7 +653,7 @@ export function TreatmentScreen({ ctx }: { ctx: Ctx }) {
           : `The average over ${SHORT} is already at the target, but the room does not meet it in every band it is judged in (see Acoustic Assessment). The amount suggested below meets every band where one can.`}</Note>
         : a.status === 'below'
           ? <Note tone="warn">The room is below the target range. Adding absorption would make it drier still, so treatment is not recommended. You can continue without it.</Note>
-          : <Note tone="good">The room already meets the target in every band it is judged in. Treatment is optional: continue without it, or choose a product to explore.</Note>}
+          : <Note tone="good">{`The room already meets the target ${a.verdict.complete ? 'in every band it is judged in' : 'where measured (not every band it is judged in has a value)'}. Treatment is optional: continue without it, or choose a product to explore.`}</Note>}
       {removed ? <div className="undo-bar" role="status"><Icon name="trash" size={15} sw={1.9} /><span>{`Removed #${removed.no} ${removed.name} from the plan.`}</span><Btn action="undoRemove" size="sm">Undo</Btn></div> : null}
       {plan.items.length ? <PlanCard p={p} plan={plan} pred={pred} a={a} sel={sel} /> : null}
       <Explorer ctx={ctx} />

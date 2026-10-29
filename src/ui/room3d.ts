@@ -1,14 +1,15 @@
-/* The room in 3D for Room Setup (three.js): its box to scale, each part of each wall, the floor and the ceiling in their
+/* The room in 3D for Room Setup and Treatment (three.js): its box to scale, each part of each wall, the floor and the ceiling in their
    type's colour and texture (src/ui/looks.ts), doors and windows, and a camera that glides to the surface being
    edited. Walls between the camera and the room lower themselves, as on an architect's model. It builds up as the
    room is entered: nothing, then the floor (length and width), then the walls (height). It draws what the screen hands
-   it (Snapshot) and nothing else: it measures and estimates nothing. createRoom3D returns null where WebGL is not
+   it (Snapshot, and on Treatment the plan's product pieces) and nothing else: it measures and estimates nothing. createRoom3D returns null where WebGL is not
    available (the screen keeps its flat sketch). It draws only while something moves, then rests; one material per type
    is shared by every piece of it, and the shadows are worked out again only when the room changes. */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { lookOf } from './looks';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -20,7 +21,15 @@ export interface Snapshot {
   L: number; W: number; H: number; floorOk: boolean; wallsOk: boolean; size: string; message: string;
   walls: Wall3D[]; floor: { type: string; info: string }; ceiling: { type: string; info: string };
 }
-export interface Room3D { update(s: Snapshot): void; mark(k: string): void; focus(k: string): void; orbit(dir: number): void; tour(): void; dispose(): void }
+/* A product piece to draw (the Treatment step, from AM.services.placement): on a wall (u along it from its left end, z up
+   from the floor, in m) or on the ceiling (x along the length, z along the width, from the room's centre; w × h its
+   footprint). look: how its face is drawn; shape: its outline on the ceiling; depth and gap (off the surface) in m. */
+export interface Piece3D {
+  key: string; ghost: boolean; look: string; shape: string; depth: number; gap: number; hung: boolean; info: string;
+  u0?: number; u1?: number; z0?: number; z1?: number; x?: number; z?: number; w?: number; h?: number;
+}
+export type View3D = 'overview' | 'wall' | 'eye';
+export interface Room3D { update(s: Snapshot): void; mark(k: string): void; focus(k: string): void; orbit(dir: number): void; tour(): void; products(list: Piece3D[]): void; view(v: View3D, k?: string): void; dispose(): void }
 
 const T = 0.12, CUT = 0.14;   // wall thickness (m); a lowered wall keeps 14 % of its height
 // Wall 1 runs along the length, Wall 2 along the width, and so on round the room (corners as fractions of L and W).
@@ -118,6 +127,17 @@ export function createRoom3D(host: HTMLElement, onPick: (k: string | null) => vo
       base(c); g.fillStyle = 'rgba(0,0,0,.32)'; for (let y = 8; y < N; y += 16) for (let x = 8; x < N; x += 16) { g.beginPath(); g.arc(x, y, 2.6, 0, Math.PI * 2); g.fill(); }
     } else if (lk === 'drywall') {
       base(c); speck(1500, 0.025); g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(N - 3, 0, 3, N);
+    } else if (lk === 'emboss') {   // a treatment product's pressed relief: soft waves, light above and shade below
+      base(c); speck(5000, 0.04, 1.2); g.lineWidth = 10;
+      for (let y = -32; y < N + 32; y += 32) {
+        [[-4, 'rgba(255,255,255,.16)'], [5, 'rgba(0,0,0,.16)']].forEach(([d, col]) => { g.strokeStyle = col as string; g.beginPath(); for (let x = 0; x <= N; x += 8) g.lineTo(x, y + (d as number) + Math.sin(x / 40) * 10); g.stroke(); });
+      }
+    } else if (lk === 'rain') {     // short pressed strokes, as on the rain-pattern panel
+      base(c); speck(4000, 0.04, 1.2);
+      for (let i = 0; i < 420; i++) { const x = r() * N, y = r() * N, l = 10 + r() * 22; g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(x, y, 3, l); g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(x - 2, y, 2, l); }
+    } else if (lk === 'print') {    // a printed panel: soft shapes over felt
+      base(c); speck(6000, 0.04, 1.2);
+      for (let i = 0; i < 7; i++) { const x = r() * N, y = r() * N, rad = 60 + r() * 140, gr = g.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, `rgba(255,255,255,${0.10 + r() * 0.1})`); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(x - rad, y - rad, 2 * rad, 2 * rad); }
     } else { base(c); speck(2600, 0.035); }
     const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = aniso;
     return t;
@@ -238,7 +258,71 @@ export function createRoom3D(host: HTMLElement, onPick: (k: string | null) => vo
       if (c.isCSS2DObject && c.element.parentNode) c.element.parentNode.removeChild(c.element);
     });
   }
+  /* ---------- treatment products (the Treatment step): drawn on the walls and ceiling at their real size ----------
+     A panel is a solid of its own thickness with softened edges, held off the wall by its air gap (its shadow shows
+     it); a cloud hangs 450 mm below the ceiling on four wires; a ghost is a free spot where more of the product being
+     edited would go. The colours only tell products apart. */
+  const PRODUCT: Record<string, [string, string]> = {
+    felt: ['#565B64', 'felt'], fluted: ['#7B7064', 'panels'], emboss: ['#8A8D92', 'emboss'], rain: ['#7E8288', 'rain'], strips: ['#6E6458', 'slots'],
+    print: ['#666B74', 'print'], tile: ['#4F5966', 'felt'], roll: ['#B8B1A7', 'plaster'], wool: ['#CFC8BC', 'felt'], cloud: ['#E4DFD8', 'felt'], cloud3d: ['#D8D2C9', 'emboss'],
+  };
+  function productMat(look: string) {
+    const key = `product:${look}`, [c, lk] = PRODUCT[look] || PRODUCT.felt;
+    if (!mats[key]) { const t = cache[key] || (cache[key] = paint(key, c, lk)); mats[key] = keep(new THREE.MeshStandardMaterial({ map: t, bumpMap: t, bumpScale: lk === 'emboss' || lk === 'rain' ? 2.5 : 0.8, roughness: 0.92, envMapIntensity: 0.45 })); }
+    return mats[key];
+  }
+  const GHOST = keep(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false }));
+  const GHOST_EDGE = keep(new THREE.MeshBasicMaterial({ color: 0x8A8180 }));
+  const WIRE = keep(new THREE.MeshStandardMaterial({ color: 0x9C9394, roughness: 0.4, metalness: 0.6 }));
+  let pieces: Piece3D[] = [], drawn: THREE.Object3D[] = [];
+  // A mesh centred on a wall at u along it and z up, off in front of its inner face.
+  function atWall(m: THREE.Mesh, f: ReturnType<typeof frameOf>, u: number, z: number, off: number) {
+    const s = snap!; m.position.set(f.A.x + f.d.x * u + f.n.x * off - s.L / 2, z, f.A.y + f.d.y * u + f.n.y * off - s.W / 2); m.rotation.y = -Math.atan2(f.d.y, f.d.x);
+    return m;
+  }
+  // A cloud's outline, lying flat: round, hexagon, petal (three lobes), else a rounded square or oblong.
+  function cloudGeo(shape: string, w: number, h: number, t: number): THREE.BufferGeometry {
+    if (shape === 'round' || shape === 'hex') return new THREE.CylinderGeometry(w / 2, w / 2, t, shape === 'hex' ? 6 : 56);
+    if (shape === 'petal') {
+      const R = Math.max(w, h) / 2, sh = new THREE.Shape();
+      for (let i = 0; i <= 96; i++) { const a = (i / 96) * Math.PI * 2, r = R * (0.8 + 0.2 * Math.cos(3 * a)); if (i) sh.lineTo(r * Math.cos(a), r * Math.sin(a)); else sh.moveTo(r, 0); }
+      const g = new THREE.ExtrudeGeometry(sh, { depth: t * 0.6, bevelEnabled: true, bevelThickness: t * 0.2, bevelSize: t * 0.2, bevelSegments: 2, curveSegments: 4 });
+      g.rotateX(-Math.PI / 2); g.translate(0, -t / 2, 0);
+      return g;
+    }
+    return new RoundedBoxGeometry(w, t, h, 2, Math.min(0.01, t / 2));
+  }
+  function clearProducts() { drawn.forEach(m => { if (m.parent) m.parent.remove(m); m.traverse((c: any) => { if (c.isMesh) c.geometry.dispose(); }); }); drawn = []; }
+  function drawProducts() {
+    if (!snap || !room || !snap.wallsOk) return;
+    const H = snap.H, put = (parent: THREE.Object3D, m: THREE.Mesh, info?: string, k?: string) => { if (info) m.userData = { k, info }; parent.add(m); drawn.push(m); return m; };
+    pieces.forEach(p => {
+      if (p.u0 != null && p.u1 != null && p.z0 != null && p.z1 != null && walls[p.key]) {
+        const f = frameOf(p.key), g = walls[p.key], w = p.u1 - p.u0, h = p.z1 - p.z0, u = (p.u0 + p.u1) / 2, z = (p.z0 + p.z1) / 2;
+        if (p.ghost) {
+          const e = 0.02, t = 0.014;
+          put(g, atWall(new THREE.Mesh(new THREE.PlaneGeometry(w - 2 * e, h - 2 * e), GHOST), f, u, z, 0.004));
+          [[w - 2 * e, t, 0, h / 2 - e], [w - 2 * e, t, 0, -h / 2 + e], [t, h - 2 * e, -w / 2 + e, 0], [t, h - 2 * e, w / 2 - e, 0]]
+            .forEach(([a, b, du, dz]) => put(g, atWall(new THREE.Mesh(new THREE.PlaneGeometry(a, b), GHOST_EDGE), f, u + du, z + dz, 0.006)));
+          return;
+        }
+        const d = Math.max(0.002, p.depth), m = put(g, atWall(new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 2, Math.min(0.005, d / 2)), productMat(p.look)), f, u, z, p.gap + d / 2), p.info, p.key);
+        m.castShadow = true; m.receiveShadow = true;
+      } else if (p.x != null && p.z != null && p.w != null && p.h != null) {
+        const flat = !p.hung, t = flat ? Math.max(0.004, p.depth) : p.look === 'cloud3d' ? 0.08 : 0.045;
+        if (p.ghost) { put(room!, new THREE.Mesh(cloudGeo(flat ? 'square' : p.shape, p.w, p.h, 0.004), GHOST)).position.set(p.x, H - 0.012, p.z); return; }
+        const y = flat ? H - p.gap - t / 2 : H - 0.45, m = put(room!, new THREE.Mesh(cloudGeo(flat ? 'square' : p.shape, p.w, p.h, t), productMat(p.look)), p.info, 'ceiling');
+        m.position.set(p.x, y, p.z); m.castShadow = true; m.receiveShadow = true;
+        if (!flat) [[1, 1], [-1, 1], [1, -1], [-1, -1]].forEach(([a, b]) => {
+          const len = H - (y + t / 2), wire = put(room!, new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, len, 6), WIRE));
+          wire.position.set(p.x! + a * p.w! * 0.25, y + t / 2 + len / 2, p.z! + b * p.h! * 0.25);
+        });
+      }
+    });
+    shade();
+  }
   function build() {
+    drawn = [];   // the old room's products go with it
     const s = snap!, { L, W, H, floorOk, wallsOk } = s, prevCut: Record<string, number> = {};
     Object.entries(walls).forEach(([k, g]) => { prevCut[k] = g.scale.y; });
     if (room) { scene.remove(room); dispose(room); }
@@ -266,7 +350,7 @@ export function createRoom3D(host: HTMLElement, onPick: (k: string | null) => vo
       const b = badge(w.key, w.key.slice(4), false); badges[w.key] = b; room!.add(b);
     });
     const bc = badge('ceiling', 'Ceiling', true); bc.position.set(0, H + 0.25, 0); badges.ceiling = bc; room.add(bc);
-    drawGlow();
+    drawGlow(); drawProducts();
   }
 
   /* ---------- the camera: views and glides ---------- */
@@ -398,12 +482,28 @@ export function createRoom3D(host: HTMLElement, onPick: (k: string | null) => vo
       glideTo({ t: controls.target.clone(), r: sph.radius, phi: sph.phi, theta: sph.theta + dir * Math.PI / 2, maxPolar: controls.maxPolarAngle }, 800);
     },
     tour,
+    products(list: Piece3D[]) { pieces = list; if (snap && room) { clearProducts(); drawProducts(); wake(); } },
+    /* The Treatment step's views: the whole room; a wall from a little above and to one side, with a wider lens so the
+       pieces read; or standing in the room at eye level (1.6 m) by the wall opposite, with a wider lens still, as a person
+       sees it. */
+    view(v: View3D, k?: string) {
+      if (!snap) return;
+      camera.fov = v === 'eye' ? 58 : v === 'wall' ? 44 : 34; camera.updateProjectionMatrix();
+      if (v === 'overview' || !k || !walls[k]) { glideTo(viewFor('overview'), 1100); return; }
+      const s = snap, f = frameOf(k), mx = f.A.x + f.d.x * f.len / 2 - s.L / 2, mz = f.A.y + f.d.y * f.len / 2 - s.W / 2, depth = Math.abs(f.n.x) > 0.5 ? s.L : s.W;
+      const vf = camera.fov * Math.PI / 180, hf = 2 * Math.atan(Math.tan(vf / 2) * camera.aspect), fit = Math.max(f.len / 2 / Math.tan(hf / 2), s.H / 2 / Math.tan(vf / 2)) * 1.08;
+      const eye = v === 'eye', dist = eye ? depth * 0.96 : fit * 1.12, side = eye ? 0 : 0.22, th = eye ? 1.5 : s.H * 0.45, ch = eye ? 1.6 : s.H * 1.15;
+      const nx = f.n.x * Math.cos(side) - f.n.y * Math.sin(side), ny = f.n.x * Math.sin(side) + f.n.y * Math.cos(side);
+      const t = new THREE.Vector3(mx, th, mz), sph = new THREE.Spherical().setFromVector3(new THREE.Vector3(mx + nx * dist, ch, mz + ny * dist).sub(t));
+      glideTo({ t, r: sph.radius, phi: sph.phi, theta: sph.theta, maxPolar: Math.PI * (eye ? 0.98 : 0.49) }, 1100);
+    },
     dispose() {
       if (raf) cancelAnimationFrame(raf);
       clearTimeout(settle); ro.disconnect(); controls.dispose();
       cv.removeEventListener('pointermove', onMove); cv.removeEventListener('pointerleave', onLeave); cv.removeEventListener('pointerdown', onDown); cv.removeEventListener('pointerup', onUp); cv.removeEventListener('pointercancel', onCancel);
+      clearProducts();
       if (room) dispose(room);
-      Object.values(cache).forEach(t => t.dispose()); [...Object.values(mats), BLANK, FRAME, WHITE, LEAF, PANE, GLOW, LAMP].forEach(m => m.dispose()); env.dispose(); pmrem.dispose();
+      Object.values(cache).forEach(t => t.dispose()); [...Object.values(mats), BLANK, FRAME, WHITE, LEAF, PANE, GLOW, LAMP, GHOST, GHOST_EDGE, WIRE].forEach(m => m.dispose()); env.dispose(); pmrem.dispose();
       renderer.dispose(); renderer.forceContextLoss();
       host.innerHTML = '';
     },

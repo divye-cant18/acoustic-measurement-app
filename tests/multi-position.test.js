@@ -300,6 +300,61 @@
       check('A6 The plain "low sounds" status follows its bands\' own limits (any band above its limit: too echoey)', low.status === (lowRows.includes('above') ? 'above' : lowRows.includes('below') ? 'below' : lowRows.length ? 'within' : 'none'), `${low.status} from ${lowRows.join(', ')}`);
     }
 
+    /* ===== A6b reliability, the difference from the target, and "where measured" (29 October 2026) ===== */
+    status('Reliability…');
+    {
+      const keep = { processing: copy(p.processing), target: copy(p.target), room: copy(p.room), treatment: copy(p.treatment) };
+      const dom = h => { const d = document.createElement('div'); d.innerHTML = h; return d; };
+      const set = (v1, v2) => { p.processing.positions = Object.assign({ P1: result('r1', 'P1', v1) }, v2 ? { P2: result('r2', 'P2', v2) } : {}); p.processing.result = p.processing.positions[v2 ? 'P2' : 'P1']; S.emit(); return D.assessment(p); };
+      // Target 0.55 s (0.45–0.62 s); 500 Hz is judged by every criterion, so the cases below change only 500 Hz.
+      const base = [0.58, 0.56, 0.55, 0.54, 0.52, 0.50], with500 = (v, x) => v.map((y, i) => (i === 2 ? x : y));
+      const good = set(base, base.map(x => x * 1.05)), one = set(base), gone = set(with500(base, null), with500(base, null)), thin = set(base, with500(base, null));
+      // 500 Hz: 0.55 and 0.70 s, mean 0.625 s, apart 0.15 s = 24 % of it (more than 20 %); 0.55 and 0.62 s: 12 %.
+      const wide = set(base, with500(base, 0.70)), near = set(base, with500(base, 0.62)), fair = set(base, with500(base, band(500, 0.55, { quality: 'Fair', confidence: 'Medium' })));
+      const same = set(base, base);
+      check('A6b Reliability, in one word and one reason: Good when every judged band is measured cleanly at two positions that agree; Limited at one position, or with a judged band not measured; Fair with a judged band at one position (naming it), positions 24 % apart (more than 20 %), or a judged band without the T30 check; 12 % apart is Good',
+        good.reliability.level === 'good' && /measured cleanly at 2 positions/.test(good.reliability.reason)
+          && one.reliability.level === 'limited' && /Measured at 1 position only/.test(one.reliability.reason)
+          && gone.reliability.level === 'limited' && /500 Hz could not be measured/.test(gone.reliability.reason)
+          && thin.reliability.level === 'fair' && /500 Hz has no value at P2\. Measure P2 again/.test(thin.reliability.reason)
+          && wide.reliability.level === 'fair' && /differ by 24 % at 500 Hz/.test(wide.reliability.reason) && near.reliability.level === 'good'
+          && fair.reliability.level === 'fair' && /At 500 Hz/.test(fair.reliability.reason),
+        [good, one, gone, thin, wide, near, fair].map(a => `${a.reliability.word}: ${a.reliability.reason}`).join(' · '));
+      check('A6b Reliability changes no value: the same RT60 and verdict whether a band is Good or Fair', fair.rt === same.rt && fair.status === same.status && same.reliability.level === 'good', `${fair.rt} / ${same.rt}`);
+
+      // On the screen: the room's RT60, the target, the difference worked out here from the figures as shown, and reliability.
+      const aw = set(base, with500(base, 0.70)), ad = dom(W.get('assessment').view(ctx()).body);
+      const d = Math.round(Number(aw.rt.toFixed(2)) * 100) - 55, want = `${d > 0 ? '+' : d < 0 ? '−' : ''}${(Math.abs(d) / 100).toFixed(2)}s`;
+      const diffEl = ad.querySelector('[data-watch="assessment-diff"]'), relEl = ad.querySelector('[data-watch="assessment-reliability"]');
+      check('A6b Assessment shows the difference from the target (worked out here from the values as shown) with where the average lies, and the reliability word with its reason',
+        diffEl && diffEl.querySelector('.av-n').textContent === want && /from the target · (within the range|0\.\d\d s (above|below) the range)/.test(diffEl.textContent)
+          && relEl && relEl.querySelector('.av-n').textContent === 'Fair' && relEl.textContent.includes(aw.reliability.reason),
+        `${diffEl && diffEl.textContent} · ${relEl && relEl.textContent}`);
+
+      // A judged band not measured, every other judged band within: "where measured" on every screen that gives the verdict.
+      const prod = AM.services.catalog.getProducts().find(q => q.size.options.some(o => o.areaM2 > 0) && AM.services.catalog.getAcousticConfigurations(q.id).some(c => !AM.services.catalog.getOctaveAbsorption(c.id, B).missing.length));
+      const cfg = AM.services.catalog.getAcousticConfigurations(prod.id).find(c => !AM.services.catalog.getOctaveAbsorption(c.id, B).missing.length);
+      p.treatment = { items: [{ id: 'w1', productId: prod.id, configurationId: cfg.id, size: String(prod.size.options.findIndex(o => o.areaM2 > 0)), quantity: 1, placement: 'Walls', amountBy: 'user' }], active: 'w1' };
+      const wm = set(with500(base, null), with500(base, null)), pr = D.prediction(p);
+      const views = ['assessment', 'treatment', 'prediction', 'final'].map(id => [id, textOf(W.get(id).view(ctx()).body)]);
+      check('A6b A judged band not measured (500 Hz), the rest within: Assessment, Treatment, Predicted Result and the final page say "meets the target where measured", never a plain "meets the target"',
+        wm.status === 'within' && !wm.verdict.complete && pr && pr.predictedStatus === 'within' && pr.verdict.complete === false
+          && views.every(([, t]) => /meets the target where measured/i.test(t)) && !bad(views.map(v => v[1]).join(' ')),
+        views.map(([id, t]) => `${id}: ${(t.match(/meets the target[^.·]{0,40}/i) || ['—'])[0]}`).join(' · '));
+
+      // An office (NBC 2016: 500 Hz only): low and high sounds are measured but not judged, "No target here", never "Not measured".
+      p.room = Object.assign(copy(p.room), { type: 'Private office', use: 'Focused desk work', L: 5, W: 4, H: 3 });
+      p.target = { form: 'max', preferred: null, min: null, max: 0.75, source: 'custom', basis: 'Test' };
+      set(base, base);
+      const rows = [...dom(W.get('assessment').view(ctx()).body).querySelectorAll('.fix-row')].map(r => r.textContent.replace(/\s+/g, ' '));
+      const low = rows.find(t => /Low sounds/.test(t)) || '', high = rows.find(t => /High sounds/.test(t)) || '';
+      check('A6b A measured group the target sets no limit for (an office judged at 500 Hz only) says "No target here", not "Not measured"',
+        /No target here/.test(low) && /No target here/.test(high) && !/Not measured/.test(low + high) && /0\.\d\ds/.test(low), `${low} | ${high}`);
+
+      Object.assign(p, keep);
+      S.emit();
+    }
+
     /* ===== A7 the PDF and the record agree with the room ===== */
     status('Report…');
     {

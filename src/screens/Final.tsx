@@ -174,7 +174,7 @@ export function FinalScreen({ ctx }: { ctx: Ctx }) {
       ? ['good', 'check', 'No treatment needed', `The room's RT60 is ${fmt.s(a.rt)}, already within the target (${TGT.rangeText(t)}).`]
       : ['warn', 'arrowDn', 'Below the target', `The room's RT60 is ${fmt.s(a.rt)}, below the target range. More absorption would make it drier, so no treatment was selected.`])
     : !totalArea ? ['warn', 'minus', 'No treatment amount yet', `The room stays at ${fmt.s(pred.measured)} until an amount is chosen in Treatment.`]
-      : st === 'within' ? ['good', 'check', 'Meets the target', `With ${what}, ${drop}.`]
+      : st === 'within' ? ['good', 'check', pv && pv.complete === false ? 'Meets the target where measured' : 'Meets the target', `With ${what}, ${drop}.`]
         : st === 'above' ? ['warn', 'arrowUp', pv && pv.masked ? 'Nearly on target' : 'Still above the target', `With ${what}, ${drop}.${bandsOut ? ` ${cap(bandsOut)}.` : ''}`]
           : a.status === 'below' ? ['warn', 'arrowDn', 'Treatment not recommended', `The room was already below the target, and ${what} would make it drier still.`]
             : ['warn', 'arrowDn', 'Drier than the target', `With ${what}, ${drop}, below the target range. Less treatment would do.`];

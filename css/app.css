@@ -1401,6 +1401,15 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
 .rp-wrap figcaption{font-size:12px;color:var(--muted);line-height:1.45}
 .rp-key{display:inline-block;width:9px;height:9px;margin:0 4px 0 2px;border-radius:2px;vertical-align:-1px;background:var(--sc-face-2);box-shadow:inset 0 0 0 1px var(--sc-lo-2)}
 .rp-key.is-other{background:var(--sc-other)}
+/* Treatment: the Room Setup room in 3D with the plan's products (src/screens/Treatment.tsx PlanRoom) */
+.plan3d{margin:0;display:flex;flex-direction:column;gap:8px}
+.plan3d-bar{display:inline-flex;align-self:flex-start;gap:2px;padding:3px;border-radius:10px;background:var(--well)}
+.plan3d-bar button{border:0;background:transparent;font:inherit;font-size:12.5px;color:var(--ink-2);padding:5px 11px;border-radius:8px;cursor:pointer}
+.plan3d-bar button.on{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:var(--sh-1)}
+.plan3d-bar button:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+.plan3d-view{height:clamp(300px,46vh,460px)}
+.plan3d figcaption{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--ink-2);line-height:1.45}
+.plan3d figcaption .muted{color:var(--muted)}
 .rp-on{transform-box:fill-box;transform-origin:center;animation:rpin .32s var(--ease) both}
 .rp-drop{animation:rpdrop .45s var(--ease) both}
 .rp .is-other polygon{fill:var(--sc-other)}
@@ -1806,6 +1815,9 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
 .av-fig.is-room .av-n{color:var(--acoustic-ink)}
 .av-n small{font-family:var(--font);font-size:14px;font-weight:600;margin-left:3px;letter-spacing:0;color:var(--muted)}
 .av-sub{font-size:12px;color:var(--muted)}
+.av-fig.is-rel .av-n{font-family:var(--font);font-size:26px;letter-spacing:-.015em}
+.av-fig.is-rel.is-good .av-n{color:var(--good-ink)}
+.av-fig.is-rel.is-fair .av-n,.av-fig.is-rel.is-limited .av-n{color:var(--warn-ink)}
 .av-scale{grid-column:1/-1}
 .fix-card{gap:14px}
 .fix-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}

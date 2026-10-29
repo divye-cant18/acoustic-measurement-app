@@ -22,7 +22,8 @@ const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
 function sentence(pred: any, t: any, st: string, area: number, measuredStatus: string): string {
   if (!area) return 'No treatment area yet, so the prediction equals the measured value.';
   const gain = `Shortens the average RT60 by ${fmt.s(pred.measured - pred.predicted)}`, v = pred.verdict;
-  if (st === 'within' || !v) return `${gain}, ${st === 'within' ? 'within the target in every band it is judged in' : 'with no verdict (the target is not complete)'}.`;
+  // A judged band not measured (often 125 Hz on a phone): within the target where measured, as Assessment says it.
+  if (st === 'within' || !v) return `${gain}, ${st === 'within' ? (v && v.complete === false ? 'within the target where measured' : 'within the target in every band it is judged in') : 'with no verdict (the target is not complete)'}.`;
   const parts = [
     v.tmFails ? `the room's Tm, ${fmt.s(v.tm)}, is outside ${t.min.toFixed(2)}–${fmt.s(t.max)}` : '',
     v.above.length ? `longer than allowed at ${bandList(v.above)}` : '',
@@ -70,7 +71,7 @@ export function PredictionScreen({ ctx }: { ctx: Ctx }) {
   const st = pred.predictedStatus || acoustics.classify(pred.predicted, t), v = pred.verdict, area = pred.plan.areaM2;
   // The "reach the target" suggestion is for the product being edited, given what the others add.
   const sel = items.find(i => i.id === ((D.treatmentSelection(p) || {}) as any).id) || items[items.length - 1];
-  const goal = D.treatmentForTarget(p, sel);
+  const goal = D.treatmentForTarget(p, sel), appAmt = D.autoAmount(p, sel) as any;
   const k = h.items, V = g.V;
   // Where Room Setup says what finish an item covers, its own absorption is replaced: area × (α − finish α).
   const addedRows: [string, string, ReactNode, string?][] = items.map((it, i) => {
@@ -96,7 +97,7 @@ export function PredictionScreen({ ctx }: { ctx: Ctx }) {
   const aboveF: number[] = v ? v.above.map((r: any) => r.f) : [], belowF: number[] = v ? v.below.map((r: any) => r.f) : [];
   const masked = !!(v && v.masked);
   const [tone, icon, word] = !area ? ['warn', 'minus', 'No treatment yet']
-    : st === 'within' ? ['good', 'check', 'Meets the target']
+    : st === 'within' ? ['good', 'check', v && v.complete === false ? 'Meets the target where measured' : 'Meets the target']
       : st === 'above' ? ['warn', 'arrowUp', masked ? 'Nearly on target' : 'Still above the target']
         : ['warn', 'arrowDn', 'Drier than the target'];
   const plan = fmt.list(items.filter(it => (it.mode === 'units' ? it.quantity > 0 : it.areaM2 > 0)).map(it => (it.mode === 'units' ? `${it.quantity} × ${it.product.name}` : `${fmt.m2(it.areaM2)} of ${it.product.name}`)));
@@ -126,7 +127,9 @@ export function PredictionScreen({ ctx }: { ctx: Ctx }) {
   const tip: string | null = !area || st === 'within' ? null
     : st === 'below' ? (a.status === 'below' ? 'The room was already drier than the target before treatment, so no treatment is recommended.' : 'Less treatment would do: move the bar below to the left.')
       : goal && goal.meetsBands === false ? `${sel.product.name} alone cannot fix every pitch. ${soundsAdvice(goal.above, goal.below)}`
-        : goal && !D.isAutoAmount(p, sel) ? "The app's amount reaches the target: press “Go back to the app's amount” below."
+        // Promised only when the app's own amount (its plan: within the free surface, whole panels) does meet it.
+        : goal && !D.isAutoAmount(p, sel) && appAmt && appAmt.meets ? "The app's amount reaches the target: press “Go back to the app's amount” below."
+          : goal && appAmt && !appAmt.meets && appAmt.capped ? `Meeting the target needs more ${sel.product.name} than the free surface where it goes allows. Place it on a larger surface, or add another product.`
           : !goal ? `No amount of ${sel.product.name} alone reaches the target. Combine it with another product, or choose another mounting.`
             : soundsAdvice(aboveF, belowF);
 
