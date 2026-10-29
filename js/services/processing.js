@@ -37,8 +37,9 @@
    gets a value, from warnDb it costs confidence. A background above the sweep that was quieter while the sweep played
    than before it (analysis.js aboveSweep, CRITERIA.take.sweepGain) means the device turned its input down while the
    sound played, which nothing in a room does: from failDb no band gets a value, from warnDb it costs confidence.
-   The browser's own counts of lost input frames and output underruns during the take (take.integrity, where the
-   browser keeps them) make the take not valid when they show any. */
+   The browser's own counts of lost input frames and output underruns while the test signal played and the decay was
+   recorded (take.integrity, where the browser keeps them; services/measurement.js) make the take not valid when they
+   show any. */
 (function (AM) {
   'use strict';
   const C = AM.analysis.CRITERIA, D = C.decay;
@@ -99,7 +100,10 @@
     }
     out.path = usable('T20') ? 'T20' : null; // the reported value; T30 (above) is the check
     if (!out.path) {
-      out.reason = dist && b.decayRangeDb >= REQUIRED.T20
+      // The recording, not the background, ended the decay (a room that rings longer than the recording lasts).
+      out.reason = b.reachedEnd && R < REQUIRED.T20
+        ? `This band rings longer than the recording lasts: its decay had not reached the background when the recording ended, so only ${short(R, REQUIRED.T20)} dB of it could be read. T20 needs ${REQUIRED.T20} dB.`
+        : dist && b.decayRangeDb >= REQUIRED.T20
         ? `Sounds during the take, such as voices, knocks or movement, rose ${Math.round(dist.db)} dB above the background in this band (${dist.events} times). Counted as recording background noise, they leave ${short(R, REQUIRED.T20)} dB of the room's own decay; T20 needs ${REQUIRED.T20} dB. Measure again while the room is quiet.`
         : b.decayRangeDb < REQUIRED.T20
           ? `Only ${short(b.decayRangeDb, REQUIRED.T20)} dB of the room's own decay above the recording background noise${b.headDb >= 3 ? ` (after the direct sound, which lies ${Math.round(b.headDb)} dB above it)` : ''}. T20 needs ${REQUIRED.T20} dB.`
@@ -201,12 +205,12 @@
         issues: bands.map(b => `${b.f} Hz: ${b.reason}`),
       });
     }
-    // Lost or late audio that the browser itself counted during the take (measurement.js, integrity): even a few
-    // frames lost shift and click the recording, so the take is not used.
+    // Lost or late audio that the browser itself counted while the test signal played and the decay was recorded
+    // (measurement.js, integrity): even a few frames lost shift and click the recording, so the take is not used.
     const ig = take.integrity;
     if (ig && ((ig.inputLostFrames || 0) > 0 || (ig.outputUnderruns || 0) > 0)) {
       const what = [ig.inputLostFrames > 0 ? `${ig.inputLostFrames} audio frames from the microphone were lost` : null, ig.outputUnderruns > 0 ? `the sound output ran dry ${ig.outputUnderruns} time${ig.outputUnderruns > 1 ? 's' : ''} (the test signal had a gap)` : null].filter(Boolean).join(', and ');
-      const why = `The browser reports that during the take ${what}. That breaks the recording's continuity and distorts the decay, so no RT60 is given.`;
+      const why = `The browser reports that, while the test signal and the room's decay were recorded, ${what}. That breaks the recording's continuity and distorts the decay, so no RT60 is given.`;
       bands.forEach(b => { if (b.rt60 != null) Object.assign(b, { rt60: null, path: null, quality: 'Insufficient', confidence: 'None', notes: [], reason: why }); });
       return Object.assign(base, {
         bands, status: 'invalid', warnings: (take.warnings || []).slice(),
@@ -283,5 +287,5 @@
     return { done, cancel() { if (cancelled) return; cancelled = true; clearTimeout(timer); rejectDone(new Error('cancelled')); } };
   }
 
-  AM.services.processing = { kind: 'live', STEPS, REQUIRED, SPAN, FACTOR, evaluate, run, details, decideBand };
+  AM.services.processing = { kind: 'live', STEPS, REQUIRED, SPAN, FACTOR, evaluate, run, details, decideBand, short };
 })(window.AM);

@@ -492,7 +492,13 @@ the synthetic tests (15–63 dB); uncaught, one such loss read the 500–2000 Hz
 distortion folding back, a loud sound stopping abruptly) show none. A loss before about 0.5 s reaches no band's decay;
 one in the reverberant tail leaves almost no click and changes no result. Where the browser keeps counts
 (`MediaStreamTrack.stats`, `AudioContext.playbackStats`: Chrome and Edge), the frames the microphone captured but did not
-deliver and the times the output ran dry during the take are read (`take.integrity`); any loss makes the take not valid.
+deliver and the times the output ran dry are read (`take.integrity`). The input's from when the test signal starts to the
+end of the recording (the room's decay is recorded after the sweep). The output's are refreshed by the browser only about
+once a second, so they are read at every refresh while the take records (`services/measurement.js` `outputLoss`): a loss
+counts when the stretch since the refresh before the one that shows it reaches into the test signal. A dropout in the
+silence before the sweep that the browser shows before the sweep starts, or one after it, cannot harm the take and is not
+counted; one shown only at the first refresh after the sweep starts still counts, to be safe. Any loss
+counted makes the take not valid (29 October 2026; before, the whole take was counted).
 The same frames above the sweep, above its 7.5th harmonic, give the input level while the sweep played against before it
 (`CRITERIA.take.sweepGain`): nothing in a room makes the background quieter while the test signal plays, a device turning
 its input down does, so from 6 dB quieter the take is not valid and from 3 dB it costs confidence. This catches automatic
@@ -506,7 +512,23 @@ information). When sounds recur (at least twice), they act as a noise floor that
 decay is counted from their level and the band may get no value, with that reason. Before this, speech-like sounds 15 dB
 above the background gave 1000 Hz +12.6 % and 4000 Hz +17.1 % as valid values. Onset: within
 10 ms before the peak, the first point within 20 dB of the peak (ISO 3382-1). A take that fails a check never replaces
-the latest good take or the current measurement.
+the latest good take or the current measurement, and is never repeated by the app itself: the user measures again.
+A band whose decay had not reached the background when the recording ended (a room ringing longer than the 4 s recorded
+after the sweep allow: `lundeby` `reachedEnd`) says so ("This band rings longer than the recording lasts …") instead of
+blaming the background noise.
+
+**Phones: three short tones (29 October 2026).** With the Phone profile (`setup.deviceKind` 'mobile', chosen or
+detected) a take plays three 2 s tones from 150 Hz to 10 kHz, 3 s apart, from one buffer, instead of one 5 s sweep from
+50 Hz (`CRITERIA.take.phone`, `analysis.sweepPlan(fs, 'mobile')`; 16 s in all). On two phones and a laptop every 5 s take
+broke 3.5–4.5 s into the sweep (a "click" at the same moment each time: the speaker's protection or sound effects turning
+a long loud tone down), and a phone speaker rattles on the deep start. Each tone's stretch of the recording is checked as
+a take of its own (`analyseTake`, unchanged); a tone the browser counted lost audio in is set aside too; the tones that
+pass (at least 2) are averaged sample by sample and analysed as one take (`analysis.analyseTones`), so the calculation is
+the same, with √3 less noise. One press is still one take: with fewer than 2 clean tones the take is not used, with the
+first tone's reason, and the user measures again. 125 Hz, below the tones, is not measured on a phone (its speaker cannot
+play it). In the synthetic tests (tests/validation.html, "Phone test sound") rooms of 0.3–1.2 s read within the usual
+tolerance; a click in one tone sets that tone aside and keeps the value; and a modelled speaker protection (6 dB down
+after 3.4 s of tone) that the 5 s sweep does not catch, reading 1000 Hz about 13 % long, leaves the 2 s tones untouched.
 
 **Bands.** Octave bands 125, 250, 500, 1000, 2000 and 4000 Hz (nominal), centred on the exact base-10 midband frequencies
 of IEC 61260-1:2014 (fm = 1000·10^(0.3k): 125.89 … 3981.1 Hz), edges fm·10^(∓0.15). Each band filter is
@@ -546,7 +568,7 @@ system, or by a gap in the recording after the sweep. It gets no value, with tha
 off 26–30 dB down read 11–16 % short and passed as valid.
 
 **Decision** (`processing.evaluate`): RT60 from T20 if ≥ 35 dB is usable, else no value ("Not reliable", with the
-reason). Where ≥ 45 dB is usable, T30 is worked out as well, as a check: the curvature C = 100·(T30/T20 − 1) says whether
+reason; the numbers in it and on Processing are rounded so that 34.6 dB never reads "35 dB … not enough"). Where ≥ 45 dB is usable, T30 is worked out as well, as a check: the curvature C = 100·(T30/T20 − 1) says whether
 the decay is one straight line. T20 is reported since 20 October 2026 (before, T30 was used from 45 dB): ISO 3382-2 gives
 the 20 dB range its preference, and switching to T30 at 45 dB made a curved decay's result depend on the background (a
 double-slope room read 0.801 s with 45.7 dB usable and 0.677 s with 44.6 dB). Projects processed before are brought over
@@ -563,6 +585,13 @@ changed since the noise check. Browser processing reported on: no value at all (
 RT60 measurement" and nothing is estimated. A valid take becomes the CURRENT measurement and the previous one is kept as
 SUPERSEDED (`processing.history`); the later steps then run again. An invalid take is kept as `processing.attempt` and the
 current measurement stays in force.
+
+**Very short rooms at 250 Hz (checked 29 October 2026; no change).** In the sweep study (tests/sweep-study.html) rooms of
+0.25–0.5 s read up to 4–12 % off at 250 Hz against the reference room. The cause is the reflections from surfaces near the
+device (the table it stands on, nearby walls), which the reference room does not have. Against the same room with those
+reflections, read from its own start as ISO 3382 does, the app is within 0.9 % on average at 250 Hz (16 synthetic rooms,
+0.25–0.5 s); without them it is within 0.3 %. The app reads the room as it sounds where the device stands, so the
+calculation is unchanged; separating those reflections would also change how a room with a two-stage decay is read.
 
 **What this measurement is.** A browser-based measurement with a device's built-in speaker and microphone. The RT60 comes
 from the room's measured decay, but the microphone and the speaker are not calibrated and no correction is applied for

@@ -61,7 +61,8 @@
   }
 
   function measure(rec, s, settings) {
-    const a = AN.analyseTake(rec, s.plan, s.sweep);
+    // A phone plan (three short tones): each tone checked, the clean ones averaged and analysed as one take.
+    const a = s.plan.count ? AN.analyseTones(rec, s.plan, s.sweep) : AN.analyseTake(rec, s.plan, s.sweep);
     const r = PROC.evaluate({ id: 'v', takenAt: '', status: a.status, reason: a.reason, levels: a.levels, plan: s.plan, sampleRate: s.plan.fs, analysis: a, warnings: [], settings }, {});
     return { a, r };
   }
@@ -207,6 +208,47 @@
           () => runCase('Browser kept noise suppression on', { rec: clean, s: s48, room: d.room, expect: 'none', settings: { echoCancellation: false, noiseSuppression: true, autoGainControl: false } }),
           () => runCase('No test signal (background only)', { rec: Float32Array.from(FIX.background(Math.round(s48.plan.total * 48000), -50, 61)), s: s48, expect: 'rejected' }),
         ]);
+    }
+
+    /* A phone (analysis.js CRITERIA.take.phone): three 2 s tones from 150 Hz, 3 s apart, played from one buffer; each
+       checked on its own, the clean ones averaged and analysed as one take. The phone: one device (direct sound 28 dB,
+       desk reflections) whose small speaker plays nothing below about 300 Hz. */
+    {
+      const pp = AN.sweepPlan(48000, 'mobile'), sp = { plan: pp, sweep: AN.makeSweep(pp) };
+      sp.train = new Float32Array(Math.round(pp.span * 48000));
+      for (let k = 0; k < pp.count; k++) sp.train.set(sp.sweep.signal, Math.round(k * pp.period * 48000));
+      const speaker = ir => DSP.filter(ir, DSP.butterworthQ(4).map(Q => DSP.rbj('highpass', 300, 48000, Q)));
+      const phone = (rt, seed) => { const d = oneDevice(48000, rt, seed); return { room: d.room, ir: speaker(d.ir) }; };
+      const phoneTake = (ir, extra, signal) => FIX.recordSweep(Object.assign({ plan: pp, sweep: { signal: signal || sp.train }, ir, peakDbfs: -12, noiseDbfs: -65, noiseKind: 'pink', latency: 0.07 }, extra || {}));
+      // A click (a sharp broadband jump, as a dropped block or a speaker's protection leaves) 1 s into tone k.
+      const clickIn = (rec, ks) => { const y = Float32Array.from(rec); for (const k of ks) { const at = Math.round((pp.preRoll + 0.07 + k * pp.period + 1.0) * 48000); for (let i = 0; i < 24; i++) y[at + i] += (i % 2 ? -1 : 1) * 0.3; } return y; };
+      // A speaker's protection, as the hypothesis from the field: after 3.4 s of loud tone without a break, the level
+      // drops 6 dB within 1 ms.
+      const protect = sig => { const y = Float32Array.from(sig), on = Math.round(3.4 * 48000), ramp = 48, k = Math.pow(10, -6 / 20); let run = 0, quiet = 0;
+        for (let i = 0; i < y.length; i++) { if (Math.abs(sig[i]) > 1e-4) { run++; quiet = 0; } else if (++quiet > 4800) run = 0; if (run > on) y[i] *= 1 + (k - 1) * Math.min(1, (run - on) / ramp); }
+        return y; };
+      const d5 = phone(0.5, 251), s48 = setup(48000);
+      await section('Phone test sound (three 2 s tones from 150 Hz)', 'One phone (speaker playing nothing below 300 Hz, direct sound 28 dB, desk reflections), pink background −65 dBFS. Each tone checked on its own; the clean ones averaged. 125 Hz is not measured (below the tones). Never a wrong value.',
+        () => [
+          ...[0.3, 0.5, 0.8, 1.2].map(rt => () => { const d = phone(rt, seedOf(rt, 261)); return runCase(`RT ${rt.toFixed(2)} s`, { rec: phoneTake(d.ir, { seed: seedOf(rt, 270) }), s: sp, room: d.room, nominal: rt }); }),
+          ...[-58, -52].map(nz => () => runCase(`Background ${nz} dBFS (pink), RT 0.50 s`, { rec: phoneTake(d5.ir, { noiseDbfs: nz, seed: 290 - nz }), s: sp, room: d5.room, nominal: 0.5, expect: 'either' })),
+          () => runCase('A click in tone 2: that tone is set aside, the other two give the value', { rec: clickIn(phoneTake(d5.ir, { seed: 281 }), [1]), s: sp, room: d5.room, nominal: 0.5 }),
+          () => runCase('Clicks in tones 1 and 2: only one clean tone, the take is rejected with the reason', { rec: clickIn(phoneTake(d5.ir, { seed: 282 }), [0, 1]), s: sp, room: d5.room, expect: 'rejected' }),
+          () => runCase('Speaker protection (6 dB down after 3.4 s of tone), the phone\'s three 2 s tones: never 3.4 s of tone without a break, so the right value', { rec: phoneTake(d5.ir, { seed: 283 }, protect(sp.train)), s: sp, room: d5.room, nominal: 0.5 }),
+        ]);
+      // The same protection on the one 5 s sweep: a smooth step is no click, so nothing catches it, and it spreads into
+      // the decay of every band swept before it. Why phones get the short tones.
+      const ref = ownDecay(d5.room, 48000, 1000, 'T20');
+      const oldB = measure(FIX.recordSweep({ plan: s48.plan, sweep: { signal: protect(s48.sweep.signal) }, ir: d5.ir, peakDbfs: -12, noiseDbfs: -65, noiseKind: 'pink', latency: 0.07, seed: 283 }), s48).r.bands.find(b => b.f === 1000);
+      const newB = measure(phoneTake(d5.ir, { seed: 283 }, protect(sp.train)), sp).r.bands.find(b => b.f === 1000);
+      const off = b => (b.rt60 == null ? 'no value' : `${b.rt60.toFixed(3)} s (${b.rt60 >= ref ? '+' : ''}${(100 * (b.rt60 / ref - 1)).toFixed(1)} %)`);
+      V.display.push({ name: 'Speaker protection (6 dB down after 3.4 s of tone): the 5 s sweep gives no value or a wrong one (more than 8 % off), the phone\'s 2 s tones the room\'s value within 8 %',
+        ok: (oldB.rt60 == null || Math.abs(oldB.rt60 / ref - 1) > 0.08) && newB.rt60 != null && Math.abs(newB.rt60 / ref - 1) <= 0.08,
+        detail: `room ${ref.toFixed(3)} s at 1000 Hz · 5 s sweep ${off(oldB)} · phone tones ${off(newB)}` });
+      const one = AN.analyseTones(clickIn(phoneTake(d5.ir, { seed: 281 }), [1]), pp, sp.sweep), clean = AN.analyseTones(phoneTake(d5.ir, { seed: 281 }), pp, sp.sweep);
+      V.display.push({ name: 'Phone: the tone with the click is the one set aside (with its reason), the others used; a clean take uses all three; 125 Hz is not measured (below the tones)',
+        ok: one.status === 'captured' && one.tones.map(t => t.used).join() === 'true,false,true' && /click/.test(one.tones[1].reason || '') && clean.tones.every(t => t.used) && clean.bands.find(b => b.f === 125).supported === false,
+        detail: `with the click: ${one.tones.map(t => (t.used ? 'used' : `set aside (${(t.reason || '').slice(0, 40)}…)`)).join(' · ')} · clean: ${clean.tones.map(t => (t.used ? 'used' : 'set aside')).join(' · ')}` });
     }
 
     displayChecks();

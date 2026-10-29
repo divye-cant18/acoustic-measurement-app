@@ -45,10 +45,10 @@
 
   // The steps of one take, with the time each one starts and ends (seconds into the take).
   function phases(p) {
-    const s = p.preRoll, e = p.preRoll + p.seconds, end = p.total;
+    const s = p.preRoll, e = p.preRoll + (p.span || p.seconds), end = p.total;
     return [
       { id: 'prepare', label: 'Background', hint: 'Recording the room before the signal', from: 0, to: s },
-      { id: 'play', label: 'Play test signal', hint: 'Sweep from this device\'s speaker', from: s, to: e },
+      { id: 'play', label: 'Play test signal', hint: p.count ? `${p.count} short tones from this device's speaker` : 'Sweep from this device\'s speaker', from: s, to: e },
       { id: 'record', label: 'Record', hint: 'Capturing the response', from: 0, to: end },
       { id: 'monitor', label: 'Decay', hint: 'Listening to the room ring down', from: e, to: end },
       { id: 'quality', label: 'Analyse', hint: 'Impulse response and decay', from: end, to: end },
@@ -131,8 +131,9 @@
     };
   }
 
-  /* Lost audio the browser itself counted during a take, from readings before it (c0) and after it (cIn for the input,
-     cOut for the output; audio-io.js counters): { inputLostFrames, outputUnderruns, outputUnderrunMs } with null for a
+  /* Lost audio the browser itself counted during a take, from a reading when its test signal starts (c0) and readings
+     after it (cIn for the input, when the recording ends; cOut for the output; audio-io.js counters; a take reads the
+     output's counts through outputLoss instead, below): { inputLostFrames, outputUnderruns, outputUnderrunMs } with null for a
      count this browser does not keep. processing.js makes a take with any loss not valid. */
   function integrityOf(c0, cIn, cOut) {
     const lost = (a, b) => Math.max(0, (b.total - b.delivered) - (a.total - a.delivered));
@@ -196,8 +197,45 @@
     return { done, cancel: () => { cancelled = true; if (rec) rec.cancel(); } };
   }
 
+  /* The output's own counts (AudioContext.playbackStats) are refreshed by the browser about once a second (audio-io.js
+     counters), so a loss is only known to lie between the refresh before the one that first shows it and that one.
+     readings: the output's counts with the recording time each was read at ([{ at, output }], in order; a refresh is
+     any change in them, totalDuration moving on with each). A loss counts when that stretch reaches into the test signal
+     [from, to] (recording seconds); OUT_SLACK covers the time between two readings. A loss in the silence before or
+     after the test signal cannot harm the take and is not counted, unless the refresh that shows it came only after
+     the test signal had started: then it counts, to be safe. Returns { underruns, underrunSec }, or null when the browser
+     keeps no output counts. */
+  const OUT_SLACK = 0.25;
+  function outputLoss(readings, from, to) {
+    const rs = readings.filter(r => r.output);
+    if (!rs.length) return null;
+    let underruns = 0, underrunSec = 0, prev = rs[0];
+    for (const r of rs.slice(1)) {
+      const a = prev.output, b = r.output;
+      if (b.underruns === a.underruns && b.underrunSec === a.underrunSec && b.totalSec === a.totalSec) continue; // no refresh yet
+      if (b.underruns > a.underruns && prev.at - OUT_SLACK < to && r.at > from) { underruns += b.underruns - a.underruns; underrunSec += Math.max(0, b.underrunSec - a.underrunSec); }
+      prev = r;
+    }
+    return { underruns, underrunSec };
+  }
+  // Microphone frames the browser lost between two moments of the recording (readings: [{ at, input }], in order, the
+  // input's counts being current when read), or null when it keeps no input counts.
+  function inputLoss(readings, from, to) {
+    if (!readings.length) return null;
+    const lostAt = t => { let r = readings[0]; for (const x of readings) if (x.at <= t) r = x; return r.input.total - r.input.delivered; };
+    return Math.max(0, lostAt(to) - lostAt(from));
+  }
+  // A phone's tones (analysis.sweepPlan kind 'mobile') in one buffer, plan.period s apart, so they keep their spacing to
+  // the sample.
+  function toneTrain(tone, plan) {
+    const out = new Float32Array(Math.round(plan.span * plan.fs));
+    for (let k = 0; k < plan.count; k++) out.set(tone, Math.round(k * plan.period * plan.fs));
+    return out;
+  }
+
   /* context: { position, deviceKind, profileChosen } from the project. The take keeps the configuration it was made
-     with (config), so the result and the report describe what was used, not what is selected later. */
+     with (config), so the result and the report describe what was used, not what is selected later. One take per
+     call: a take that cannot be used is returned with its reason, and the user measures again. */
   function measureRT60({ deviceId, outputId, context = {}, levelDb = 0, onPhase, onProgress, onLevel }) {
     let cancelled = false, rec = null, play = null;
     const done = (async () => {
@@ -209,34 +247,63 @@
         const output = await IO.outputLabel(s.output && s.output.applied);
         // The reference sweep (and the inverse filter made from it) stays at the default level; only the copy that is
         // played carries the chosen level's gain, so it is applied once and never to the recording.
-        const level = AN.sweepLevel(levelDb), plan = Object.assign(AN.sweepPlan(s.sampleRate), { levelDb: level });
+        // A phone (profile 'mobile') plays three short tones from 150 Hz instead of one long sweep (analysis.js, phone).
+        const kind = context.deviceKind || IO.deviceKind();
+        const level = AN.sweepLevel(levelDb), plan = Object.assign(AN.sweepPlan(s.sampleRate, kind), { levelDb: level });
         const sweep = AN.makeSweep(plan), played = AN.playbackSignal(sweep.signal, level), total = Math.round(plan.total * plan.fs);
+        const signal = plan.count ? toneTrain(played.signal, plan) : played.signal, playEnd = plan.preRoll + (plan.span || plan.seconds);
         let phase = '';
-        const at = sec => (sec < plan.preRoll ? 'prepare' : sec < plan.preRoll + plan.seconds ? 'play' : 'monitor');
+        const at = sec => (sec < plan.preRoll ? 'prepare' : sec < playEnd ? 'play' : 'monitor');
         const step = id => { if (id !== phase) { phase = id; if (onPhase) onPhase(id); } };
         step('prepare');
-        const c0 = s.counters ? s.counters() : null;
-        rec = s.record(total, (sec, frac, chunk, offset) => { step(at(sec)); if (onProgress) onProgress(sec, frac, chunk, offset, total, plan); });
-        play = s.play(played.signal, plan.preRoll);
+        // The browser's own counts (where it keeps them). The input's from when the test signal starts to the end of the
+        // recording (the room's decay is recorded after the sweep); the output's from every refresh seen while recording
+        // (outputLoss), so a dropout in the silence before or after the test signal, which cannot harm the take, is not
+        // counted.
+        const c0 = s.counters ? s.counters() : null, outs = c0 ? [{ at: 0, output: c0.output }] : [], ins = c0 && c0.input ? [{ at: 0, input: c0.input }] : [];
+        let cStart = null;
+        const watch = sec => {
+          const c = s.counters();
+          if (!cStart && sec >= plan.preRoll) cStart = c;
+          if (c.input && ins.length) ins.push({ at: sec, input: c.input });
+          const o = c.output, p = outs[outs.length - 1].output;
+          if (o && (!p || o.underruns !== p.underruns || o.underrunSec !== p.underrunSec || o.totalSec !== p.totalSec)) outs.push({ at: sec, output: o });
+        };
+        rec = s.record(total, (sec, frac, chunk, offset) => {
+          step(at(sec));
+          if (c0) watch(sec);
+          if (onProgress) onProgress(sec, frac, chunk, offset, total, plan);
+        });
+        play = s.play(signal, plan.preRoll);
         const x = await rec.done;
         if (cancelled) throw new IO.AudioError('cancelled', IO.MESSAGES.cancelled);
         step('quality');
-        // The browser's own counts over the take (where it keeps them): the input's at once, the output's a second later,
-        // when its totals have caught up; the analysis waits, so nothing else keeps the page busy meanwhile.
         const cIn = s.counters ? s.counters() : null;
-        await new Promise(r => setTimeout(r, c0 && c0.output ? 1100 : 40));
-        const cOut = s.counters ? s.counters() : null;
-        const integrity = integrityOf(c0, cIn, cOut);
-        if (cancelled) throw new IO.AudioError('cancelled', IO.MESSAGES.cancelled);
-        const a = AN.analyseTake(x, plan, sweep);
+        let integrity, a;
+        if (plan.count) {
+          // A phone: each tone on its own. Audio the browser lost while a tone played (the output) or while it and its
+          // decay were recorded (the input) sets that tone aside; the take keeps the counts of the tones it uses (none).
+          if (cIn && cIn.input && ins.length) ins.push({ at: plan.total, input: cIn.input });
+          const skip = Array.from({ length: plan.count }, (_, k) => {
+            const from = plan.preRoll + k * plan.period, li = inputLoss(ins, from, from + plan.seconds + plan.tail), lo = outputLoss(outs, from, from + plan.seconds);
+            return (li || 0) > 0 || (lo && lo.underruns > 0) ? 'The browser reports that audio was lost while this test tone played. Close other apps and tabs, keep the screen on and the app in front, and measure again.' : null;
+          });
+          a = AN.analyseTones(x, plan, sweep, skip);
+          integrity = { inputLostFrames: ins.length ? 0 : null, outputUnderruns: outs.some(r => r.output) ? 0 : null, outputUnderrunMs: outs.some(r => r.output) ? 0 : null };
+        } else {
+          const lostOut = outputLoss(outs, plan.preRoll, plan.preRoll + plan.seconds);
+          integrity = Object.assign(integrityOf(cStart || c0, cIn, null), lostOut ? { outputUnderruns: lostOut.underruns, outputUnderrunMs: Math.round(lostOut.underrunSec * 1000) } : {});
+          a = AN.analyseTake(x, plan, sweep);
+        }
         return {
           id: newId('r'), takenAt: new Date().toISOString(), status: a.status, reason: a.reason,
           deviceId: s.deviceId, deviceLabel: s.label, outputLabel: output, deviceKind: context.deviceKind || IO.deviceKind(), position: context.position || null,
           sampleRate: plan.fs, settings: pickSettings(s.settings), tap: s.tap.kind,
-          plan: { f1: plan.f1, f2: plan.f2, seconds: plan.seconds, preRoll: plan.preRoll, tail: plan.tail, total: plan.total, amplitude: plan.amplitude, fadeIn: AN.CRITERIA.take.fadeIn,
-            levelDb: played.levelDb, playedPeakDbfs: Math.round(200 * Math.log10(played.peak)) / 10 },
+          plan: { f1: plan.f1, f2: plan.f2, seconds: plan.seconds, preRoll: plan.preRoll, tail: plan.tail, total: plan.total, amplitude: plan.amplitude, fadeIn: plan.fadeIn != null ? plan.fadeIn : AN.CRITERIA.take.fadeIn,
+            count: plan.count || 1, period: plan.period || null, levelDb: played.levelDb, playedPeakDbfs: Math.round(200 * Math.log10(played.peak)) / 10 },
           levels: a.levels, waveform: a.waveform,
-          analysis: { latencySec: a.latencySec, arrivalClarityDb: a.arrivalClarityDb, onsetSec: a.onsetSec, irSeconds: a.irSeconds, distortion: a.distortion, timing: a.timing, clicks: a.clicks, sweepGain: a.sweepGain, bands: a.bands },
+          // tones: on a phone, each test tone and whether it was used (and if not, why).
+          analysis: { latencySec: a.latencySec, arrivalClarityDb: a.arrivalClarityDb, onsetSec: a.onsetSec, irSeconds: a.irSeconds, distortion: a.distortion, timing: a.timing, clicks: a.clicks, sweepGain: a.sweepGain, bands: a.bands, tones: a.tones || null },
           config: configOf(s, { profile: context.deviceKind, profileChosen: context.profileChosen }, output),
           integrity,
           warnings: processingWarnings(s.settings),
@@ -249,6 +316,6 @@
   AM.services.measurement = {
     kind: 'live', STATES, phases, plan: AN.sweepPlan, support: IO.support, permissionState: IO.permissionState, devices: IO.devices,
     outputs: IO.outputs, canSelectOutput: IO.canSelectOutput, deviceKind: IO.deviceKind, outputLabel: IO.outputLabel, REQUESTED: IO.REQUESTED,
-    requestAccess, monitor, measureNoise, measureRT60, calibration, levelText, processingWarnings, processingState, processingText, processingShort, configOf, browserFamily, integrityOf,
+    requestAccess, monitor, measureNoise, measureRT60, calibration, levelText, processingWarnings, processingState, processingText, processingShort, configOf, browserFamily, integrityOf, outputLoss, inputLoss,
   };
 })(window.AM);

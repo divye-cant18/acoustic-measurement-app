@@ -10,15 +10,18 @@
         included), no direct sound (timing check not made), gaps, invalid samples, an incomplete or clipped recording;
         the input turned down while the sweep plays (a fast compressor the background check cannot see)
      A3 processing: a gain or background change during the take, the input turned down during the sweep, the browser's
-        own counts of lost audio, reported / unreported / on browser processing, the wording never claiming "off" for an
-        unreported feature, threshold text rounding
+        own counts of lost audio (the output's read refresh by refresh), reported / unreported / on browser processing,
+        the wording never claiming "off" for an unreported feature, threshold text rounding, a decay cut short by the
+        end of the recording
      A4 the headline: the bands from 125 to 4000 Hz that have a value, a band left out named; none below half of them
      A5 device profiles and configuration: switching Laptop → Phone → Laptop through the Setup step's actions, readiness
         of the selected output, the configuration record, and the report using the take's configuration; Results naming a
         newer take it does not include (not processed, or rejected); the diagnostics record (no names or labels)
    Part B, button, the whole app with a virtual device (tests/virtual-room.js): permission denied, no device, access with
      the configuration read back, a take recorded with its configuration and the browser's own counts, a take during
-     which the browser counts lost microphone frames (not valid), then takes interrupted by a hidden page, a muted
+     which the browser counts lost microphone frames (not valid), an output that ran dry before the sweep (not counted)
+     and while it played (not valid), a phone take (three short tones, each checked, the clean ones averaged), then
+     takes interrupted by a hidden page, a muted
      track and a disconnected microphone, none of which is analysed. Part B needs this tab in front: a hidden page
      interrupts every take, by design. */
 (function () {
@@ -258,6 +261,26 @@
         !step.valid && step.meta.levelChangeDb >= 6 && Math.abs(step.meta.sweepGainDb) < 1.5 && /most likely the room's background changed/.test(step.reason), `${step.meta.levelChangeDb} dB after, ${step.meta.sweepGainDb} dB during · ${(step.reason || '').slice(0, 200)}`);
       check('A3 A smaller change of the background (about +4 dB, every band): still valid, with a warning, so no band is High confidence',
         bump.valid && bump.warnings.some(w => /louder after the test signal/.test(w)) && bump.bands.every(b => b.confidence !== 'High'), `${bump.meta.levelChangeDb} dB · ${bump.warnings.join(' ').slice(0, 120)}`);
+
+      // The output's counts arrive with the browser's refresh (about once a second): a loss counts only when the stretch
+      // since the refresh before the one that shows it reaches into the test signal (here 1–6 s of the recording).
+      const O = (at, u, t) => ({ at, output: { underruns: u, underrunSec: u * 0.003, totalSec: t } }), OL = MEAS.outputLoss;
+      const early = OL([O(0, 0, 0), O(0.4, 1, 0.4), O(1.4, 1, 1.4), O(2.4, 1, 2.4), O(7.4, 1, 7.4)], 1, 6);
+      const during = OL([O(0, 0, 0), O(2.4, 0, 2.4), O(3.4, 1, 3.4), O(4.4, 1, 4.4)], 1, 6);
+      const straddle = OL([O(0, 0, 0), O(0.7, 0, 0.7), O(1.7, 1, 1.7)], 1, 6);
+      const late = OL([O(0, 0, 0), O(6.6, 0, 6.6), O(7.6, 1, 7.6)], 1, 6);
+      const noTotal = OL([{ at: 0, output: { underruns: 0, underrunSec: 0 } }, { at: 3, output: { underruns: 2, underrunSec: 0.006 } }], 1, 6);
+      check('A3 The output\'s counts read refresh by refresh: a loss shown before the test signal starts is not counted, one during it is, one whose refresh stretch reaches into it is, one after it is not; without totalDuration a loss still counts; no counts: none',
+        early.underruns === 0 && during.underruns === 1 && straddle.underruns === 1 && late.underruns === 0 && noTotal.underruns === 2 && OL([{ at: 0, output: null }], 1, 6) === null,
+        `before ${early.underruns} · during ${during.underruns} · across the start ${straddle.underruns} · after ${late.underruns} · no totalDuration ${noTotal.underruns}`);
+
+      // A band whose decay the recording itself cut short (a room ringing 12 s, 4 s recorded after the sweep): the reason
+      // names the recording, not the background.
+      const plan12 = AN.sweepPlan(48000), sweep12 = AN.makeSweep(plan12), ir12 = FIX.roomIR({ fs: 48000, seconds: 5, rt: 12, seed: 41, directDb: 18 });
+      const l12 = AN.analyseTake(FIX.recordSweep({ plan: plan12, sweep: sweep12, ir: ir12, latency: 0.07, peakDbfs: -12, noiseDbfs: -75, noiseKind: 'pink', seed: 42 }), plan12, sweep12);
+      const b12a = l12.bands.find(b => b.f === 1000), b12 = PROC.decideBand(b12a);
+      check('A3 A room ringing longer than the recording lasts (RT 12 s): no value at 1000 Hz, and the reason names the recording, not the background noise',
+        b12a.reachedEnd && b12.rt60 == null && /rings longer than the recording lasts/.test(b12.reason || ''), (b12.reason || String(b12.rt60)).slice(0, 120));
     }
     {
       const partial = PROC.evaluate(take({ refl: DESK }, { echoCancellation: false }), {});
@@ -468,6 +491,42 @@
     check('B The browser counts 96 microphone frames lost during a take: the take is recorded but not valid, with the reason',
       lost.rec && lost.rec.integrity && lost.rec.integrity.inputLostFrames === 96 && lostRes && !lostRes.valid && /96 audio frames from the microphone were lost/.test(lostRes.reason),
       lost.rec ? `${JSON.stringify(lost.rec.integrity)} · ${lostRes && lostRes.reason.slice(0, 100)}` : (lost.failed && lost.failed.reason));
+    // The context's own playback stats (every AudioContext), refreshed the way Chrome refreshes them: about once a second
+    // (here 0.4, 1.4, 2.4 … s after the take is started), each refresh moving totalDuration on and showing the underruns
+    // that happened before it. lossAt: when the output runs dry once (ms after the start).
+    const ps = Object.getOwnPropertyDescriptor(AudioContext.prototype, 'playbackStats');
+    const refreshing = lossAt => {
+      const t0 = performance.now();
+      let shown = { underrunEvents: 0, underrunDuration: 0, totalDuration: 0 }, k0 = -1;
+      Object.defineProperty(AudioContext.prototype, 'playbackStats', { configurable: true, get: () => {
+        const t = performance.now() - t0, k = Math.floor((t - 400) / 1000);
+        if (t >= 400 && k > k0) { k0 = k; const at = 400 + k * 1000, n = lossAt <= at ? 1 : 0; shown = { underrunEvents: n, underrunDuration: n * 0.003, totalDuration: at / 1000 }; }
+        return shown;
+      } });
+    };
+    const wet = () => { if (ps) Object.defineProperty(AudioContext.prototype, 'playbackStats', ps); else delete AudioContext.prototype.playbackStats; };
+    let dryBefore, dryDuring;
+    try { refreshing(150); dryBefore = await takeWith('output dry before the sweep'); refreshing(2500); dryDuring = await takeWith('output dry during the sweep'); } finally { wet(); }
+    const dbRes = dryBefore.rec ? AM.services.processing.evaluate(dryBefore.rec, {}) : null, ddRes = dryDuring.rec ? AM.services.processing.evaluate(dryDuring.rec, {}) : null;
+    check('B The sound output ran dry in the silence before the sweep (the browser shows it at its next refresh, still before the sweep): not counted, since it cannot harm the take; the take is valid',
+      dryBefore.rec && dryBefore.rec.integrity.outputUnderruns === 0 && dbRes && dbRes.valid,
+      dryBefore.rec ? `${JSON.stringify(dryBefore.rec.integrity)} · ${dbRes.valid ? 'valid' : (dbRes.reason || '').slice(0, 80)}` : (dryBefore.failed && dryBefore.failed.reason));
+    check('B The sound output ran dry while the sweep played: counted, and the take is recorded but not valid, with the reason (measured again only when the user presses it)',
+      dryDuring.rec && dryDuring.rec.integrity.outputUnderruns === 1 && ddRes && !ddRes.valid && /ran dry 1 time/.test(ddRes.reason || ''),
+      dryDuring.rec ? `${JSON.stringify(dryDuring.rec.integrity)} · ${(ddRes.reason || 'valid').slice(0, 80)}` : (dryDuring.failed && dryDuring.failed.reason));
+    // A phone (profile 'mobile'): three short tones from 150 Hz in one take, each checked, the clean ones averaged.
+    const kindWas = p.setup.deviceKind;
+    AM.store.update(pp => { pp.setup.deviceKind = 'mobile'; });
+    const ph = await takeWith('a phone take', null, 60000);
+    AM.store.update(pp => { pp.setup.deviceKind = kindWas; });
+    const phRes = ph.rec ? AM.services.processing.evaluate(ph.rec, {}) : null, phPlan = ph.rec ? ph.rec.plan : {};
+    // A tone the browser reports lost audio in (this test browser does, now and then, on its first sound) is set aside
+    // with its reason; the take stands on the others.
+    const tones = (ph.rec && ph.rec.analysis.tones) || [];
+    check('B A phone take: three 2 s tones from 150 Hz in one 16 s take, each checked, at least two used (a tone set aside says why), the result valid, and 125 Hz (below the tones) not measured',
+      ph.rec && phPlan.count === 3 && phPlan.f1 === 150 && phPlan.seconds === 2 && Math.abs(phPlan.total - 16) < 0.01 && tones.length === 3 && tones.filter(t => t.used).length >= 2 && tones.every(t => t.used || !!t.reason)
+        && phRes && phRes.valid && phRes.bands.find(b => b.f === 125).quality === 'Not measured',
+      ph.rec ? `${phPlan.count} × ${phPlan.seconds} s from ${phPlan.f1} Hz, ${phPlan.total} s · tones ${ph.rec.analysis.tones ? ph.rec.analysis.tones.map(t => (t.used ? 'used' : 'set aside')).join(', ') : '—'} · ${phRes.valid ? `valid, 1000 Hz ${phRes.bands.find(b => b.f === 1000).rt60} s` : (phRes.reason || '').slice(0, 80)}` : (ph.failed && ph.failed.reason));
     const keep = p.measurement.recording && p.measurement.recording.id;
     const hidden = await takeWith('hidden page', { after: 2500, act: () => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); } });
     delete document.hidden;

@@ -11,7 +11,7 @@ import { LevelMeter, MicLine } from '../ui/blocks';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface MeasureModel {
   takeFor(p: Project): any; noiseRun(p: Project): boolean; evaluated(p: Project, rec: any): boolean; failedLatest(p: Project): boolean;
-  startBlocker(p: Project, auto?: boolean): string | null; noiseElsewhere(p: Project): boolean; needsNoise(p: Project): boolean; screenState(p: Project): string; curPlan(): any; primaryFor(p: Project): PrimaryAction | null;
+  startBlocker(p: Project, auto?: boolean): string | null; noiseElsewhere(p: Project): boolean; needsNoise(p: Project): boolean; screenState(p: Project): string; curPlan(p?: Project): any; primaryFor(p: Project): PrimaryAction | null;
 }
 const M = () => stageModel<MeasureModel>('measure');
 
@@ -201,7 +201,7 @@ export function MeasureScreen({ ctx }: { ctx: Ctx }) {
   const p = ctx.project, m = M(), take = m.takeFor(p), rec = p.measurement.recording as any, cur = D.measured(p);
   const st0 = m.screenState(p), st = st0 === 'measuring-noise' && LIVE.state.noise && LIVE.state.noise.auto ? 'auto-noise' : st0;
   let [title, sub, tone, pill] = HEAD[st] || HEAD['ready-for-rt60'];
-  const plan = m.curPlan(), phases: any[] = MEAS.phases(plan), running = !!take, sec: number = take ? take.sec : 0;
+  const plan = m.curPlan(p), phases: any[] = MEAS.phases(plan), running = !!take, sec: number = take ? take.sec : 0;
   const pos = DEMO.POSITIONS.find((x: { id: string }) => x.id === p.setup.position) || DEMO.POSITIONS[0];
   const kind = LIVE.kindOf(p), K = DEMO.DEVICE_KINDS[kind];
   const retry = p.measurement.retry;

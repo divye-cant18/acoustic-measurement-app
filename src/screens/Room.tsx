@@ -108,6 +108,7 @@ function RoomView({ r }: { r: any }) {
   const host = useRef<HTMLDivElement>(null), view = useRef<Room3D | null>(null), selRef = useRef('wall1'), follow = useRef(true), room = useRef(r);
   room.current = r;
   const [failed, setFailed] = useState(false), [sel, setSel] = useState('wall1'), [turn, setTurn] = useState(true), [picked, setPicked] = useState<string | null>(null);
+  const narrow = useNarrow(); // one column: the 3D room sits below the wall cards, so Edit points up
   const pick = (k: string) => {
     if (k === selRef.current) return;
     selRef.current = k; setSel(k);
@@ -167,7 +168,7 @@ function RoomView({ r }: { r: any }) {
           <div className="v-pick" role="status">
             <span className="v-pick-dot" aria-hidden="true" />
             <span className="v-pick-t"><b>{info.name}</b>{` · ${info.text}`}</span>
-            <button type="button" className="btn btn-primary btn-sm" onClick={() => edit(picked)}>Edit<Icon name="arrowD" size={14} sw={2.4} /></button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => edit(picked)}>Edit<Icon name={narrow ? 'arrowUp' : 'arrowD'} size={14} sw={2.4} /></button>
             <button type="button" className="v-pick-x" aria-label="Close" onClick={() => setPicked(null)}><Icon name="x" size={14} sw={2.4} /></button>
           </div>
         ) : null}

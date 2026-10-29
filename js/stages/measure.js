@@ -13,7 +13,8 @@
   const W = AM.workflow, S = AM.store, ui = AM.ui;
   const LIVE = AM.live, MEAS = AM.services.measurement, AN = AM.analysis;
 
-  const curPlan = () => AN.sweepPlan(LIVE.state.mic.sampleRate || 48000);
+  // The test signal for this project's device (a phone: three short tones, analysis.js sweepPlan).
+  const curPlan = p => AN.sweepPlan(LIVE.state.mic.sampleRate || 48000, p ? LIVE.kindOf(p) : undefined);
   const takeFor = p => (LIVE.state.take && LIVE.state.take.pid === p.id ? LIVE.state.take : null);
   const noiseRun = p => !!(LIVE.state.noise && LIVE.state.noise.pid === p.id);
   const evaluated = (p, rec) => !!rec && ((p.processing.result && p.processing.result.recordingId === rec.id) || (p.processing.attempt && p.processing.attempt.recordingId === rec.id));
@@ -115,12 +116,13 @@
     };
     const regions = plan => {
       const X = t => (t / plan.total) * w;
-      g.fillStyle = col('--scope-region'); g.fillRect(X(plan.preRoll), 0, X(plan.preRoll + plan.seconds) - X(plan.preRoll), h);
-      g.fillStyle = col('--scope-dim'); g.fillText('Test signal', X(plan.preRoll) + 8, 16); g.fillText('Decay', X(plan.preRoll + plan.seconds) + 8, 16);
+      const end = plan.preRoll + (plan.span || plan.seconds);
+      g.fillStyle = col('--scope-region'); g.fillRect(X(plan.preRoll), 0, X(end) - X(plan.preRoll), h);
+      g.fillStyle = col('--scope-dim'); g.fillText('Test signal', X(plan.preRoll) + 8, 16); g.fillText('Decay', X(end) + 8, 16);
     };
     g.fillStyle = col('--scope-grid'); g.fillRect(0, Math.round(mid), w, 1);
     if (take) {
-      regions(curPlan());
+      regions(curPlan(p));
       env(take.envelope, take.envelope.length);
       g.fillStyle = col('--brand'); g.fillRect(take.frac * w - 1, 0, 2, h);
     } else if (L.mic.status === 'live' && L.levels.length) {

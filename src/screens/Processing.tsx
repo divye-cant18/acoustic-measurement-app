@@ -19,19 +19,20 @@ function Cascade({ band }: { band: any }) {
   if (band.decayRangeDb == null) return <ol className="cascade"><li className="cq is-fail"><span className="cq-q">No usable decay</span><span className="cq-need">{band.reason || 'Not measured'}</span><span className="cq-a">Stop</span></li></ol>;
   // Sounds during the take (voices, knocks) count as background: the usable decay is what lies above them as well.
   const dist = band.disturbanceDb || 0, has = band.decayRangeDb - dist;
-  const hasText = dist ? `has ${Math.round(has)} dB (${Math.round(band.decayRangeDb)} dB less ${Math.round(dist)} dB of sounds during the take)` : `has ${Math.round(has)} dB`;
+  // Rounded against the level it had to reach (processing.js short), so 34.6 dB never reads "has 35 dB … No".
+  const hasText = (need: number) => (dist ? `has ${PROC.short(has, need)} dB (${Math.round(band.decayRangeDb)} dB less ${Math.round(dist)} dB of sounds during the take)` : `has ${PROC.short(has, need)} dB`);
   const yes = band.path === 'T20', enough = yes || band.t20 != null, C = band.curvature, lim = PROC_CURVATURE();
   const checkText = band.t30 == null ? 'Not available: the confidence stays medium'
     : `T30 ${fmt.s(band.t30)}, ${C == null ? '' : `${C > 0 ? '+' : C < 0 ? '−' : ''}${Math.abs(C)} % from T20: `}${C != null && Math.abs(C) <= lim ? 'the decay is one straight line' : 'the decay is curved (see the notes)'}`;
   return (
     <ol className="cascade">
       <li className={`cq ${enough ? 'is-yes' : 'is-no'}`}>
-        <span className="cq-q">Enough decay for T20?</span><span className="cq-need">{`Needs ${PROC.REQUIRED.T20} dB, ${hasText}`}</span><span className="cq-a">{enough ? 'Yes' : 'No'}</span>
+        <span className="cq-q">Enough decay for T20?</span><span className="cq-need">{`Needs ${PROC.REQUIRED.T20} dB, ${hasText(PROC.REQUIRED.T20)}`}</span><span className="cq-a">{enough ? 'Yes' : 'No'}</span>
         {yes ? <span className="cq-calc">{`RT60 = T20, fitted from 5 to 25 dB below the start of the room's decay, extrapolated to 60 dB: ${fmt.s(band.rt60)}${band.r2 != null ? ` (r² ${band.r2.toFixed(4)})` : ''}`}</span> : null}
       </li>
       {yes ? (
         <li className={`cq ${band.t30 != null ? 'is-yes' : 'is-skipped'}`}>
-          <span className="cq-q">Enough decay for the T30 check?</span><span className="cq-need">{`Needs ${PROC.REQUIRED.T30} dB, ${hasText}`}</span><span className="cq-a">{band.t30 != null ? 'Yes' : 'No'}</span>
+          <span className="cq-q">Enough decay for the T30 check?</span><span className="cq-need">{`Needs ${PROC.REQUIRED.T30} dB, ${hasText(PROC.REQUIRED.T30)}`}</span><span className="cq-a">{band.t30 != null ? 'Yes' : 'No'}</span>
           <span className="cq-calc">{checkText}</span>
         </li>
       ) : <li className="cq is-fail"><span className="cq-q">Measurement insufficient</span><span className="cq-need">{band.reason || 'Repeat or adjust the measurement'}</span><span className="cq-a">Stop</span></li>}

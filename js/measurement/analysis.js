@@ -9,7 +9,8 @@
      125 ms frame levels ("fast"), Leq, L10/L50/L90, spread, change between the first and last third, clipping, octave-band
      Leq. The verdict uses the bands RT60 is measured in (88 Hz–5.7 kHz): sounds (the loudest moment above the median, in
      any octave band) and a changing level give a caution; only a silent or overloaded input has to be measured again.
-   sweepPlan(fs) / makeSweep(plan)    exponential sine sweep and its inverse filter (Farina 2000, ISO 18233)
+   sweepPlan(fs, kind) / makeSweep(plan)  exponential sine sweep and its inverse filter (Farina 2000, ISO 18233); on a
+                                      phone, three short tones from 150 Hz (CRITERIA.take.phone, analyseTones)
    analyseTake(recording, plan, sweep)
      1. raw recording checks: complete, not silent, not clipped, sweep clearly above the pre-roll noise
      2. deconvolution: recording ∗ inverse sweep → impulse response; the arrival time (the device's playback-to-recording
@@ -75,6 +76,13 @@
       preRoll: 1.0,        // s recorded before the sweep starts: the background during the take
       sweepSeconds: 5,     // sweep length
       tail: 4.0,           // s recorded after the sweep ends: room for the decay and for the noise floor after it
+      // A phone (profile 'mobile'): `count` short tones from f1 instead of one long one from 50 Hz. A phone's small
+      // speaker rattles on deep bass, and its protection turns a long loud tone down part-way (the click check rightly
+      // rejects both: on two phones and a laptop every take broke 3.5–4.5 s into the 5 s sweep). Each tone is followed by
+      // `gap` s of silence for the room's decay, and is checked as a take of its own; the clean ones (at least minTones)
+      // are averaged and analysed as one take (analyseTones). Below f1 nothing is measured (the 125 Hz band, which a phone
+      // speaker cannot play anyway); fadeIn is shorter so that the 250 Hz band keeps its full level.
+      phone: { f1: 150, seconds: 2, count: 3, gap: 3, fadeIn: 0.1, minTones: 2 },
       f1: 50,              // sweep start frequency, Hz
       f2: 10000,           // sweep end frequency, Hz, limited to 45 % of the sample rate
       nyquistShare: 0.45,
@@ -334,9 +342,12 @@
     return { signal: out, levelDb: level, gain: g, peak };
   }
 
-  function sweepPlan(fs) {
-    const c = CRITERIA.take, f2 = Math.min(c.f2, Math.floor(c.nyquistShare * fs));
-    return { fs, f1: c.f1, f2, seconds: c.sweepSeconds, amplitude: c.amplitude, preRoll: c.preRoll, tail: c.tail, total: c.preRoll + c.sweepSeconds + c.tail };
+  // kind 'mobile' (a phone): CRITERIA.take.phone's tones, `period` s apart, played over `span` s; otherwise one sweep.
+  function sweepPlan(fs, kind) {
+    const c = CRITERIA.take, f2 = Math.min(c.f2, Math.floor(c.nyquistShare * fs)), ph = c.phone;
+    if (kind !== 'mobile') return { fs, f1: c.f1, f2, seconds: c.sweepSeconds, amplitude: c.amplitude, preRoll: c.preRoll, tail: c.tail, total: c.preRoll + c.sweepSeconds + c.tail };
+    const period = ph.seconds + ph.gap, span = ph.count * ph.seconds + (ph.count - 1) * ph.gap;
+    return { fs, f1: ph.f1, f2, seconds: ph.seconds, amplitude: c.amplitude, fadeIn: ph.fadeIn, preRoll: c.preRoll, tail: ph.gap, count: ph.count, period, span, total: c.preRoll + span + ph.gap };
   }
 
   // Exponential sine sweep x(t) = A·sin(K·(e^(t·R/T) − 1)), R = ln(f2/f1), K = 2π·f1·T/R, with short raised-cosine fades.
@@ -345,7 +356,7 @@
   function makeSweep(plan) {
     const { fs, f1, f2, seconds: T, amplitude } = plan, c = CRITERIA.take;
     const n = Math.round(T * fs), R = Math.log(f2 / f1), K = 2 * Math.PI * f1 * T / R;
-    const fi = Math.round(c.fadeIn * fs), fo = Math.round(c.fadeOut * fs);
+    const fi = Math.round((plan.fadeIn != null ? plan.fadeIn : c.fadeIn) * fs), fo = Math.round(c.fadeOut * fs);
     const signal = new Float32Array(n), inverse = new Float64Array(n);
     for (let i = 0; i < n; i++) {
       const w = i < fi ? 0.5 - 0.5 * Math.cos(Math.PI * i / fi) : i > n - 1 - fo ? 0.5 - 0.5 * Math.cos(Math.PI * (n - 1 - i) / fo) : 1;
@@ -397,7 +408,10 @@
     if (!fit) return { ok: false, reason: 'No decay could be fitted above the noise in this band.' };
     // Energy that the straight-line decay would still contain after the crossing (added to the Schroeder integral).
     const k = -fit.slope * Math.LN10 / 10, eCross = Math.pow(10, (fit.intercept + fit.slope * cross / fs) / 10);
-    return { ok: true, cross, noise, slope: fit.slope, tail: eCross * fs / k };
+    // The decay had no room to sink 10 dB below the crossing before the last 10 % of the response, where the noise was
+    // then read: that "noise" is most likely the decay itself, still falling when the recording ended.
+    const reachedEnd = cross + (10 / -fit.slope) * fs >= 0.9 * n;
+    return { ok: true, cross, noise, slope: fit.slope, tail: eCross * fs / k, reachedEnd };
   }
 
   function fitDecay(edcDb, fs, top, bottom, cross) {
@@ -436,7 +450,7 @@
 
   function analyseBand(seg, o, f, plan) {
     const fs = plan.fs, band = DSP.octaveBand(f, fs), D = CRITERIA.decay;
-    const out = { f, lo: r1(band.lo), hi: r1(band.hi), bandwidth: r1(band.bandwidth), supported: true, reason: null, decayRangeDb: null, noiseFloorDb: null, peakToNoiseDb: null, headDb: null, crossSec: null, cutoff: null, disturbance: null, backgroundChangeDb: null, fits: {}, curve: null };
+    const out = { f, lo: r1(band.lo), hi: r1(band.hi), bandwidth: r1(band.bandwidth), supported: true, reason: null, decayRangeDb: null, noiseFloorDb: null, peakToNoiseDb: null, headDb: null, crossSec: null, reachedEnd: false, cutoff: null, disturbance: null, backgroundChangeDb: null, fits: {}, curve: null };
     if (band.hi >= plan.f2 || band.lo <= plan.f1) {
       return Object.assign(out, { supported: false, reason: `Outside the test signal's range (${plan.f1}–${plan.f2} Hz at a ${plan.fs / 1000} kHz sample rate).` });
     }
@@ -495,7 +509,8 @@
     }
     return Object.assign(out, {
       decayRangeDb: r1(reverb), headDb: head == null ? null : r1(head), peakToNoiseDb: r1(range), noiseFloorDb: r1(-range),
-      crossSec: r3(cross / fs), curve: { dt: step / fs, env, edc: dc },
+      // The decay had not met the background when the recording ended: the recording, not the noise, limited it.
+      crossSec: r3(cross / fs), reachedEnd: L.reachedEnd, curve: { dt: step / fs, env, edc: dc },
       reason: head == null ? 'The decay is too short to separate the room\'s reverberation from the direct sound.' : null,
     });
   }
@@ -796,6 +811,25 @@
     return out;
   }
 
+  /* A phone take (sweepPlan kind 'mobile'): plan.count tones, plan.period s apart. Each tone's stretch of the recording
+     (the second before it, the tone, the plan.tail s after it) is checked as a take of its own (analyseTake, unchanged),
+     and so is a tone the browser counted lost audio in (skip[k], its reason). The tones that pass are averaged sample by
+     sample (one context plays and records them, so they line up to the sample) and the average is analysed as one take:
+     the same calculation, with √n less noise. Returns that analysis with tones: [{ used, reason }], or, when fewer than
+     CRITERIA.take.phone.minTones pass, the first failed tone's analysis (its reason), with tones. */
+  function analyseTones(rec, plan, sweep, skip = []) {
+    const fs = plan.fs, one = Object.assign({}, plan, { count: 1, span: plan.seconds, total: plan.preRoll + plan.seconds + plan.tail });
+    const n = Math.round(one.total * fs), at = k => Math.round(k * plan.period * fs);
+    const segs = Array.from({ length: plan.count }, (_, k) => rec.subarray(at(k), at(k) + n));
+    const each = segs.map((x, k) => (skip[k] ? { status: 'failed', reason: skip[k] } : analyseTake(x, one, sweep)));
+    const tones = each.map(a => ({ used: a.status === 'captured', reason: a.status === 'captured' ? null : a.reason }));
+    const good = segs.filter((x, k) => tones[k].used);
+    if (good.length < CRITERIA.take.phone.minTones) return Object.assign(each.find(a => a.status !== 'captured'), { tones });
+    const avg = new Float32Array(n);
+    for (const x of good) for (let i = 0; i < n; i++) avg[i] += x[i] / good.length;
+    return Object.assign(analyseTake(avg, one, sweep), { tones });
+  }
+
   // Sounds in the take's own background, per band (CRITERIA.take.disturbance). Each segment is judged against its own
   // median, so a background that changed between them (ventilation switching on) is a change of level, not a sound; a
   // sound is a run of frames that starts `db` above the median, continues while it stays within 3 dB of that, and lasts
@@ -826,5 +860,5 @@
     });
   }
 
-  AM.analysis = { CRITERIA, analyseNoise, sweepPlan, makeSweep, levelRange, sweepLevel, levelGain, playbackSignal, analyseTake, analyseBand, sweepTiming, aboveSweep, lundeby, regress, waveform };
+  AM.analysis = { CRITERIA, analyseNoise, sweepPlan, makeSweep, levelRange, sweepLevel, levelGain, playbackSignal, analyseTake, analyseTones, analyseBand, sweepTiming, aboveSweep, lundeby, regress, waveform };
 })(window.AM);
