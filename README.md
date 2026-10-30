@@ -538,10 +538,25 @@ detected) a take plays three 2 s tones from 150 Hz to 10 kHz, 3 s apart, from on
 50 Hz (`CRITERIA.take.phone`, `analysis.sweepPlan(fs, 'mobile')`; 16 s in all). On two phones and a laptop every 5 s take
 broke 3.5–4.5 s into the sweep (a "click" at the same moment each time: the speaker's protection or sound effects turning
 a long loud tone down), and a phone speaker rattles on the deep start. Each tone's stretch of the recording is checked as
-a take of its own (`analyseTake`, unchanged); a tone the browser counted lost audio in is set aside too; the tones that
-pass (at least 2) are averaged sample by sample and analysed as one take (`analysis.analyseTones`), so the calculation is
-the same, with √3 less noise. One press is still one take: with fewer than 2 clean tones the take is not used, with the
-first tone's reason, and the user measures again. 125 Hz, below the tones, is not measured on a phone (its speaker cannot
+a take of its own (`analyseTake`, unchanged); the tones that pass (at least 2) are lined up where each actually arrived,
+averaged sample by sample and analysed as one take (`analysis.analyseTones`), so the calculation is the same, with √3 less
+noise. One press is still one take: with fewer than 2 clean tones the take is not used, with how many tones could be used
+and the first tone's reason, and the user measures again.
+
+**Phones: dropped audio (30 October 2026).** Chrome on Android drops a few milliseconds of microphone audio now and then
+(frames "discarded because they cannot be delivered on time", Media Capture Extensions) and its output runs dry now and
+then; the browser counts both (`MediaStreamTrack.stats`, `AudioContext.playbackStats`). Rejecting every tone such a count
+fell in made every phone take fail on a phone in the field ("audio was lost while this test tone played", P1 and P2). The
+recording is now what is judged: a drop while a tone plays breaks that tone's own checks (timing, click or gap) and sets
+it aside; a drop between tones moves every later tone earlier, which lining the tones up where they arrived undoes; a tone
+whose next tone arrives more than 1 ms off its planned spacing is kept only when its echo still matches the next tone's
+(same room, sound and phone: two whole echoes differ only by the background) or the browser's count places the loss
+after its echo had died away. The counts are kept with the take (`browser`, measurement.js `lossSpans`) and shown under the
+take's details on Acoustic Measurement. In the synthetic tests drops of 10–100 ms between tones, in an echo or after every
+tone leave every band within 2.5 % (500–2000 Hz within 0.4 %) for rooms of 0.3–1.2 s; drops while two tones play reject
+the take. A phone also gets the larger `latencyHint: 'playback'` audio buffer (audio-io.js), which runs dry less often;
+the delay it adds is read from each recording. The laptop's sweep keeps its rule: any audio the browser counts lost
+during the sweep or the decay makes the take not valid. 125 Hz, below the tones, is not measured on a phone (its speaker cannot
 play it). In the synthetic tests (tests/validation.html, "Phone test sound") rooms of 0.3–1.2 s read within the usual
 tolerance; a click in one tone sets that tone aside and keeps the value; and a modelled speaker protection (6 dB down
 after 3.4 s of tone) that the 5 s sweep does not catch, reading 1000 Hz about 13 % long, leaves the 2 s tones untouched.

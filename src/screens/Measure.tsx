@@ -131,6 +131,23 @@ function PositionsCard({ p, busy, blocker }: { p: Project; busy: boolean; blocke
   );
 }
 
+/* A phone's take in a line: its test tones (used or set aside) and the audio the browser counted lost, with when
+   (measurement.js lossSpans). null for a take without tones. */
+function phoneText(tones: any[] | null, browser: any): string | null {
+  if (!tones || !tones.length) return null;
+  const used = tones.filter(t => t.used).length;
+  const say = [`Test tones: ${used} of ${tones.length} used${used < tones.length ? ` (set aside: ${tones.map((t, i) => (t.used ? null : `tone ${i + 1}`)).filter(Boolean).join(', ')})` : ''}.`];
+  if (browser) {
+    const inp = browser.input, out = browser.output, at = (xs: any[]) => xs.map(x => `${x.from.toFixed(1)}–${x.to.toFixed(1)} s`).join(', ');
+    const lost = inp ? inp.reduce((s: number, x: any) => s + x.frames, 0) : 0, dry = out ? out.reduce((s: number, x: any) => s + x.underruns, 0) : 0;
+    if (inp && lost) say.push(`The phone dropped ${lost} microphone samples (${at(inp)}).`);
+    if (out && dry) say.push(`Its sound output ran dry ${dry} time${dry > 1 ? 's' : ''} (${at(out)}).`);
+    if ((inp || out) && !lost && !dry) say.push('The browser counted no lost audio.');
+    if (lost || dry) say.push('The tones were lined up where they arrived and each was checked, so this alone does not spoil the result.');
+  }
+  return say.join(' ');
+}
+
 // The latest take: what was recorded, or why it could not be used.
 function TakeCard({ p }: { p: Project }) {
   const rec = p.measurement.recording as any, f = p.measurement.failed as any, cur = D.measured(p);
@@ -138,6 +155,7 @@ function TakeCard({ p }: { p: Project }) {
     return (
       <Card icon="doc" title="Latest take" sub={`${fmt.when(f.takenAt)} · sweep level ${ui.levelDb(f.levelDb)}`} right={<Pill tone="critical" text="Not used" icon="x" />}>
         <Note tone="critical"><b>This take could not be used.</b>{` ${f.reason}`}</Note>
+        {phoneText(f.tones, f.browser) ? <p className="small muted" data-watch="take-phone">{phoneText(f.tones, f.browser)}</p> : null}
         {cur ? <p className="small muted">{`The current measurement from ${fmt.when(cur.takenAt)} is kept.`}</p> : null}
       </Card>
     );
@@ -174,6 +192,7 @@ function TakeCard({ p }: { p: Project }) {
           ['Distortion', <>{ui.distortionText(rec.analysis.distortion)}<KvNote>harmonics against the main response</KvNote></>],
         ]} />
       </div>
+      {phoneText(rec.analysis.tones, rec.browser) ? <p className="small muted" data-watch="take-phone">{phoneText(rec.analysis.tones, rec.browser)}</p> : null}
       </Details>
       <p className="small muted">Recorded audio is analysed straight away and not stored; the project keeps the analysis.</p>
     </Card>

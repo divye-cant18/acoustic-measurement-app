@@ -119,7 +119,8 @@
     } catch (e) { return []; }
   }
 
-  // The kind of device this page runs on, from what the browser reports. Only used to word the placement advice.
+  // The kind of device this page runs on, from what the browser reports: the placement advice, the test signal's default
+  // and the audio buffer (Session) follow it.
   function deviceKind() {
     const nav = navigator, ua = nav.userAgent || '';
     if (nav.userAgentData && nav.userAgentData.mobile) return 'mobile';
@@ -214,7 +215,9 @@
       track.addEventListener('unmute', () => this.setStatus(this.ctx && this.ctx.state === 'running' ? 'live' : 'suspended'));
 
       const C = AC();
-      this.ctx = new C({ latencyHint: 'interactive' });
+      // A phone gets the larger 'playback' buffer: a small one runs dry (underruns: gaps in the test signal) far more
+      // often there. The delay it adds does not matter: each take reads its own arrival from the recording.
+      this.ctx = new C({ latencyHint: deviceKind() === 'mobile' ? 'playback' : 'interactive' });
       this.sampleRate = this.ctx.sampleRate;
       // The output, where the browser can choose it; otherwise the system's current one, not confirmable from here.
       this.output = { requested: this.outputId, selectable: canSelectOutput(), applied: null, error: null };

@@ -286,6 +286,14 @@
       check('A3 The output\'s counts read refresh by refresh: a loss shown before the test signal starts is not counted, one during it is, one whose refresh stretch reaches into it is, one after it is not; without totalDuration a loss still counts; no counts: none',
         early.underruns === 0 && during.underruns === 1 && straddle.underruns === 1 && late.underruns === 0 && noTotal.underruns === 2 && OL([{ at: 0, output: null }], 1, 6) === null,
         `before ${early.underruns} · during ${during.underruns} · across the start ${straddle.underruns} · after ${late.underruns} · no totalDuration ${noTotal.underruns}`);
+      // A phone take's record of where the browser counted audio lost (measurement.js lossSpans): each rise in the
+      // microphone's lost frames between two readings, and each refresh of the output's counts that shows new underruns.
+      const I = (at, total, delivered) => ({ at, input: { total, delivered } });
+      const spans = MEAS.lossSpans([I(0, 100, 100), I(1.2, 900, 900), I(1.3, 1380, 900), I(5, 6000, 5520), I(5.1, 6480, 5520)], [O(0, 0, 0), O(0.4, 0, 0.4), O(1.4, 2, 1.4), O(2.4, 2, 2.4)]);
+      const none = MEAS.lossSpans([], [{ at: 0, output: null }]);
+      check('A3 A phone take records where the browser counted audio lost: 480 microphone samples between 1.2 and 1.3 s and 480 more between 5.0 and 5.1 s; 2 underruns shown at the 1.4 s refresh (from 0.15 s); no counts: none',
+        JSON.stringify(spans.input) === JSON.stringify([{ from: 1.2, to: 1.3, frames: 480 }, { from: 5, to: 5.1, frames: 480 }]) && spans.output.length === 1 && spans.output[0].underruns === 2 && Math.abs(spans.output[0].from - 0.15) < 1e-9 && spans.output[0].to === 1.4
+          && none.input === null && none.output === null, JSON.stringify(spans));
 
       // A band whose decay the recording itself cut short (a room ringing 12 s, 4 s recorded after the sweep): the reason
       // names the recording, not the background.
@@ -531,6 +539,10 @@
     const kindWas = p.setup.deviceKind;
     AM.store.update(pp => { pp.setup.deviceKind = 'mobile'; });
     const ph = await takeWith('a phone take', null, 60000);
+    // A phone whose browser counts microphone frames lost (raised by 480 from 4.5 s into the take, between tones 1 and 2)
+    // while the recording itself is whole: the count is kept with the take, and no tone is set aside for it.
+    const phLost = await takeWith('a phone take, frames counted lost', { after: 4500, act: () => { const t = VR.lastTrack, real = Object.getOwnPropertyDescriptor(MediaStreamTrack.prototype, 'stats'); Object.defineProperty(t, 'stats', { configurable: true, get: () => { const s = real.get.call(t); return { totalFrames: s.totalFrames + 480, deliveredFrames: s.deliveredFrames }; } }); } }, 60000);
+    if (VR.lastTrack) delete VR.lastTrack.stats;
     AM.store.update(pp => { pp.setup.deviceKind = kindWas; });
     const phRes = ph.rec ? AM.services.processing.evaluate(ph.rec, {}) : null, phPlan = ph.rec ? ph.rec.plan : {};
     // A tone the browser reports lost audio in (this test browser does, now and then, on its first sound) is set aside
@@ -540,6 +552,10 @@
       ph.rec && phPlan.count === 3 && phPlan.f1 === 150 && phPlan.seconds === 2 && Math.abs(phPlan.total - 16) < 0.01 && tones.length === 3 && tones.filter(t => t.used).length >= 2 && tones.every(t => t.used || !!t.reason)
         && phRes && phRes.valid && phRes.bands.find(b => b.f === 125).quality === 'Not measured',
       ph.rec ? `${phPlan.count} × ${phPlan.seconds} s from ${phPlan.f1} Hz, ${phPlan.total} s · tones ${ph.rec.analysis.tones ? ph.rec.analysis.tones.map(t => (t.used ? 'used' : 'set aside')).join(', ') : '—'} · ${phRes.valid ? `valid, 1000 Hz ${phRes.bands.find(b => b.f === 1000).rt60} s` : (phRes.reason || '').slice(0, 80)}` : (ph.failed && ph.failed.reason));
+    const plRes = phLost.rec ? AM.services.processing.evaluate(phLost.rec, {}) : null, plTones = (phLost.rec && phLost.rec.analysis.tones) || [];
+    check('B A phone whose browser counts 480 microphone frames lost between tones while the recording is whole: the count is kept with the take, the tones are still used, the result is valid',
+      phLost.rec && phLost.rec.browser && phLost.rec.browser.input && phLost.rec.browser.input.reduce((s, x) => s + x.frames, 0) === 480 && plTones.filter(t => t.used).length >= 2 && plRes && plRes.valid,
+      phLost.rec ? `counted ${JSON.stringify(phLost.rec.browser.input)} · tones ${plTones.map(t => (t.used ? 'used' : `set aside (${(t.reason || '').slice(0, 50)})`)).join(', ')} · ${plRes.valid ? 'valid' : (plRes.reason || '').slice(0, 80)}` : (phLost.failed && phLost.failed.reason));
     const keep = p.measurement.recording && p.measurement.recording.id;
     const hidden = await takeWith('hidden page', { after: 2500, act: () => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); } });
     delete document.hidden;

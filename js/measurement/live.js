@@ -203,7 +203,8 @@
   function applyTake(p, take) {
     if (!isOpen(p)) return;
     if (take.status !== 'captured') {
-      S().update(pp => { pp.measurement.failed = { reason: take.reason, takenAt: take.takenAt, levels: take.levels, levelDb: take.plan ? take.plan.levelDb : 0, position: take.position || pp.setup.position || null }; });
+      // A phone's take keeps its tones and the browser's counts too: what the phone did, for the take's details.
+      S().update(pp => { pp.measurement.failed = { reason: take.reason, takenAt: take.takenAt, levels: take.levels, levelDb: take.plan ? take.plan.levelDb : 0, position: take.position || pp.setup.position || null, tones: (take.analysis && take.analysis.tones) || null, browser: take.browser || null }; });
       S().toast(p.measurement.recording || p.processing.result ? 'This take could not be used. The previous measurement is kept.' : 'This take could not be used. See the reason and measure again.');
       return;
     }

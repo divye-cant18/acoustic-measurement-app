@@ -218,12 +218,22 @@
     }
     return { underruns, underrunSec };
   }
-  // Microphone frames the browser lost between two moments of the recording (readings: [{ at, input }], in order, the
-  // input's counts being current when read), or null when it keeps no input counts.
-  function inputLoss(readings, from, to) {
-    if (!readings.length) return null;
-    const lostAt = t => { let r = readings[0]; for (const x of readings) if (x.at <= t) r = x; return r.input.total - r.input.delivered; };
-    return Math.max(0, lostAt(to) - lostAt(from));
+  /* Where in the recording the browser counted audio lost (a phone take's record, and what analysis.analyseTones places
+     drops by): input [{ from, to, frames }] between two readings of the microphone's counts, output [{ from, to,
+     underruns, ms }] between two refreshes of the output's (OUT_SLACK before the earlier one, as outputLoss). null for
+     counts this browser does not keep. */
+  function lossSpans(ins, outs) {
+    const input = ins.length ? [] : null, output = outs.some(r => r.output) ? [] : null;
+    for (let i = 1; i < ins.length; i++) {
+      const f = (ins[i].input.total - ins[i].input.delivered) - (ins[i - 1].input.total - ins[i - 1].input.delivered);
+      if (f > 0) input.push({ from: ins[i - 1].at, to: ins[i].at, frames: f });
+    }
+    const os = outs.filter(r => r.output);
+    for (let i = 1; i < os.length; i++) {
+      const a = os[i - 1].output, b = os[i].output;
+      if (b.underruns > a.underruns) output.push({ from: Math.max(0, os[i - 1].at - OUT_SLACK), to: os[i].at, underruns: b.underruns - a.underruns, ms: Math.round(1000 * Math.max(0, b.underrunSec - a.underrunSec)) });
+    }
+    return { input, output };
   }
   // A phone's tones (analysis.sweepPlan kind 'mobile') in one buffer, plan.period s apart, so they keep their spacing to
   // the sample.
@@ -279,16 +289,15 @@
         if (cancelled) throw new IO.AudioError('cancelled', IO.MESSAGES.cancelled);
         step('quality');
         const cIn = s.counters ? s.counters() : null;
-        let integrity, a;
+        let integrity, a, browser = null;
         if (plan.count) {
-          // A phone: each tone on its own. Audio the browser lost while a tone played (the output) or while it and its
-          // decay were recorded (the input) sets that tone aside; the take keeps the counts of the tones it uses (none).
+          // A phone: the recording is what is judged. Phones drop a few milliseconds of audio now and then; each tone is
+          // checked for damage on its own, the tones are lined up by where they actually arrived, and the browser's own
+          // counts (where it keeps them) only say where a drop happened (analysis.analyseTones). They are kept with the
+          // take (browser) to show what the phone did; the tones used were checked whole, so the take's own counts are 0.
           if (cIn && cIn.input && ins.length) ins.push({ at: plan.total, input: cIn.input });
-          const skip = Array.from({ length: plan.count }, (_, k) => {
-            const from = plan.preRoll + k * plan.period, li = inputLoss(ins, from, from + plan.seconds + plan.tail), lo = outputLoss(outs, from, from + plan.seconds);
-            return (li || 0) > 0 || (lo && lo.underruns > 0) ? 'The browser reports that audio was lost while this test tone played. Close other apps and tabs, keep the screen on and the app in front, and measure again.' : null;
-          });
-          a = AN.analyseTones(x, plan, sweep, skip);
+          browser = lossSpans(ins, outs);
+          a = AN.analyseTones(x, plan, sweep, browser);
           integrity = { inputLostFrames: ins.length ? 0 : null, outputUnderruns: outs.some(r => r.output) ? 0 : null, outputUnderrunMs: outs.some(r => r.output) ? 0 : null };
         } else {
           const lostOut = outputLoss(outs, plan.preRoll, plan.preRoll + plan.seconds);
@@ -305,7 +314,7 @@
           // tones: on a phone, each test tone and whether it was used (and if not, why).
           analysis: { latencySec: a.latencySec, arrivalClarityDb: a.arrivalClarityDb, onsetSec: a.onsetSec, irSeconds: a.irSeconds, distortion: a.distortion, timing: a.timing, clicks: a.clicks, sweepGain: a.sweepGain, bands: a.bands, tones: a.tones || null },
           config: configOf(s, { profile: context.deviceKind, profileChosen: context.profileChosen }, output),
-          integrity,
+          integrity, browser,
           warnings: processingWarnings(s.settings),
         };
       } finally { off(); if (play) play.stop(); IO.release('take'); }
@@ -316,6 +325,6 @@
   AM.services.measurement = {
     kind: 'live', STATES, phases, plan: AN.sweepPlan, support: IO.support, permissionState: IO.permissionState, devices: IO.devices,
     outputs: IO.outputs, canSelectOutput: IO.canSelectOutput, deviceKind: IO.deviceKind, outputLabel: IO.outputLabel, REQUESTED: IO.REQUESTED,
-    requestAccess, monitor, measureNoise, measureRT60, calibration, levelText, processingWarnings, processingState, processingText, processingShort, configOf, browserFamily, integrityOf, outputLoss, inputLoss,
+    requestAccess, monitor, measureNoise, measureRT60, calibration, levelText, processingWarnings, processingState, processingText, processingShort, configOf, browserFamily, integrityOf, outputLoss, lossSpans,
   };
 })(window.AM);

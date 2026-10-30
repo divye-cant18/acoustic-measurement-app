@@ -227,6 +227,11 @@
       const protect = sig => { const y = Float32Array.from(sig), on = Math.round(3.4 * 48000), ramp = 48, k = Math.pow(10, -6 / 20); let run = 0, quiet = 0;
         for (let i = 0; i < y.length; i++) { if (Math.abs(sig[i]) > 1e-4) { run++; quiet = 0; } else if (++quiet > 4800) run = 0; if (run > on) y[i] *= 1 + (k - 1) * Math.min(1, (run - on) / ramp); }
         return y; };
+      // Audio a phone drops (Chrome on Android discards microphone frames it cannot deliver on time): ms removed at
+      // `sec` s of the recording, everything after it arriving that much earlier (the recording runs on to its length).
+      const dropAt = (rec, sec, ms) => { const at = Math.round(sec * 48000), n = Math.round(ms * 48), y = new Float32Array(rec.length); y.set(rec.subarray(0, at)); y.set(rec.subarray(at + n), at); y.set(rec.subarray(rec.length - n), rec.length - n); return y; };
+      const repeatAt = (rec, sec, ms) => { const at = Math.round(sec * 48000), n = Math.round(ms * 48), y = new Float32Array(rec.length); y.set(rec.subarray(0, at)); y.set(rec.subarray(at - n, at), at); y.set(rec.subarray(at, rec.length - n), at + n); return y; };
+      const toneEnd = k => pp.preRoll + 0.07 + k * pp.period + pp.seconds;
       const d5 = phone(0.5, 251), s48 = setup(48000);
       await section('Phone test sound (three 2 s tones from 150 Hz)', 'One phone (speaker playing nothing below 300 Hz, direct sound 28 dB, desk reflections), pink background −65 dBFS. Each tone checked on its own; the clean ones averaged. 125 Hz is not measured (below the tones). Never a wrong value.',
         () => [
@@ -235,6 +240,14 @@
           () => runCase('A click in tone 2: that tone is set aside, the other two give the value', { rec: clickIn(phoneTake(d5.ir, { seed: 281 }), [1]), s: sp, room: d5.room, nominal: 0.5 }),
           () => runCase('Clicks in tones 1 and 2: only one clean tone, the take is rejected with the reason', { rec: clickIn(phoneTake(d5.ir, { seed: 282 }), [0, 1]), s: sp, room: d5.room, expect: 'rejected' }),
           () => runCase('Speaker protection (6 dB down after 3.4 s of tone), the phone\'s three 2 s tones: never 3.4 s of tone without a break, so the right value', { rec: phoneTake(d5.ir, { seed: 283 }, protect(sp.train)), s: sp, room: d5.room, nominal: 0.5 }),
+          // Dropped audio (29 October 2026): the tones are placed where they arrived, so a drop between them or in an
+          // echo leaves the right value; a drop while a tone plays sets that tone aside.
+          () => runCase('The phone drops 10 ms of audio between tones 1 and 2: the tones are lined up where they arrived, the right value', { rec: dropAt(phoneTake(d5.ir, { seed: 284 }), toneEnd(0) + 2.5, 10), s: sp, room: d5.room, nominal: 0.5 }),
+          () => runCase('The phone drops 20 ms of audio in tone 1\'s echo (0.3 s after it): the right value', { rec: dropAt(phoneTake(d5.ir, { seed: 285 }), toneEnd(0) + 0.3, 20), s: sp, room: d5.room, nominal: 0.5 }),
+          () => runCase('The phone drops 10 ms of audio while tone 2 plays: that tone is set aside, the others give the value', { rec: dropAt(phoneTake(d5.ir, { seed: 286 }), toneEnd(1) - 1.0, 10), s: sp, room: d5.room, nominal: 0.5 }),
+          () => runCase('The phone drops 10 ms after each tone: the right value', { rec: dropAt(dropAt(dropAt(phoneTake(d5.ir, { seed: 287 }), toneEnd(0) + 0.2, 10), toneEnd(1) + 0.19, 10), toneEnd(2) + 0.18, 10), s: sp, room: d5.room, nominal: 0.5 }),
+          () => runCase('The phone repeats 10 ms of audio between tones 2 and 3: the right value', { rec: repeatAt(phoneTake(d5.ir, { seed: 288 }), toneEnd(1) + 2.5, 10), s: sp, room: d5.room, nominal: 0.5 }),
+          () => runCase('The phone drops audio while tones 1 and 3 play: only one tone is whole, the take is rejected with the reason', { rec: dropAt(dropAt(phoneTake(d5.ir, { seed: 289 }), toneEnd(0) - 1.0, 10), toneEnd(2) - 1.01, 10), s: sp, room: d5.room, expect: 'rejected' }),
         ]);
       // The same protection on the one 5 s sweep: a smooth step is no click, so nothing catches it, and it spreads into
       // the decay of every band swept before it. Why phones get the short tones.
@@ -245,6 +258,15 @@
       V.display.push({ name: 'Speaker protection (6 dB down after 3.4 s of tone): the 5 s sweep gives no value or a wrong one (more than 8 % off), the phone\'s 2 s tones the room\'s value within 8 %',
         ok: (oldB.rt60 == null || Math.abs(oldB.rt60 / ref - 1) > 0.08) && newB.rt60 != null && Math.abs(newB.rt60 / ref - 1) <= 0.08,
         detail: `room ${ref.toFixed(3)} s at 1000 Hz · 5 s sweep ${off(oldB)} · phone tones ${off(newB)}` });
+      // The browser's count only places a drop; the recording is judged. A count with nothing lost in the recording leaves
+      // every tone used; a drop between tones shows as the later tones' shift; a rejected take says how many tones were whole.
+      {
+        const base = phoneTake(d5.ir, { seed: 284 }), counted = AN.analyseTones(base, pp, sp.sweep, { input: [{ from: toneEnd(0) + 0.5, to: toneEnd(0) + 0.52, frames: 480 }], output: [{ from: 0.2, to: 1.4, underruns: 1, ms: 3 }] });
+        const moved = AN.analyseTones(dropAt(base, toneEnd(0) + 2.5, 10), pp, sp.sweep), two = AN.analyseTones(dropAt(dropAt(phoneTake(d5.ir, { seed: 289 }), toneEnd(0) - 1.0, 10), toneEnd(2) - 1.01, 10), pp, sp.sweep);
+        V.display.push({ name: 'Phone: the browser counting lost audio with the recording whole sets no tone aside; 10 ms dropped between tones 1 and 2 shows as tones 2 and 3 arriving 10 ms early; a rejected take says how many of its tones could be used',
+          ok: counted.status === 'captured' && counted.tones.every(t => t.used) && moved.status === 'captured' && Math.abs(moved.tones[1].shiftMs + 10) < 0.5 && Math.abs(moved.tones[2].shiftMs + 10) < 0.5 && two.status === 'failed' && /^Only 1 of the 3 test tones could be used \(2 are needed\)/.test(two.reason),
+          detail: `counted: ${counted.tones.map(t => (t.used ? 'used' : 'set aside')).join(', ')} · shifts ${moved.tones.map(t => t.shiftMs).join(', ')} ms · ${(two.reason || '').slice(0, 70)}…` });
+      }
       const one = AN.analyseTones(clickIn(phoneTake(d5.ir, { seed: 281 }), [1]), pp, sp.sweep), clean = AN.analyseTones(phoneTake(d5.ir, { seed: 281 }), pp, sp.sweep);
       V.display.push({ name: 'Phone: the tone with the click is the one set aside (with its reason), the others used; a clean take uses all three; 125 Hz is not measured (below the tones)',
         ok: one.status === 'captured' && one.tones.map(t => t.used).join() === 'true,false,true' && /click/.test(one.tones[1].reason || '') && clean.tones.every(t => t.used) && clean.bands.find(b => b.f === 125).supported === false,

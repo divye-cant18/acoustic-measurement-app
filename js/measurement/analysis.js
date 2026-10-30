@@ -82,7 +82,9 @@
       // `gap` s of silence for the room's decay, and is checked as a take of its own; the clean ones (at least minTones)
       // are averaged and analysed as one take (analyseTones). Below f1 nothing is measured (the 125 Hz band, which a phone
       // speaker cannot play anyway); fadeIn is shorter so that the 250 Hz band keeps its full level.
-      phone: { f1: 150, seconds: 2, count: 3, gap: 3, fadeIn: 0.1, minTones: 2 },
+      // shiftMs: how far a tone may arrive off its planned spacing before a drop of audio is assumed; matchDb,
+      // matchAboveDb: how closely a tone's echo must match the next one's to count as whole (analyseTones).
+      phone: { f1: 150, seconds: 2, count: 3, gap: 3, fadeIn: 0.1, minTones: 2, shiftMs: 1, matchDb: 6, matchAboveDb: 15 },
       f1: 50,              // sweep start frequency, Hz
       f2: 10000,           // sweep end frequency, Hz, limited to 45 % of the sample rate
       nyquistShare: 0.45,
@@ -730,6 +732,7 @@
     for (let i = 0; i < full.length; i++) { const a = Math.abs(full[i]); if (a > pk) { pk = a; pi = i; } }
     const arrival = pi - (L - 1), latency = arrival - sw0;
     if (latency < -0.05 * fs || latency > C.maxLatency * fs) return fail('The test signal could not be found in the recording. Check that the sound comes from this device\'s own speaker and measure again.');
+    out.arrivalAt = arrival; // the sample the test signal arrived at (a phone's tones are lined up by it: analyseTones)
 
     // Gaps in the recording while the test signal was arriving: the longest run of identical samples that sits at least
     // 20 dB below the signal on either side of it (5 ms each), where that signal is at least 10 dB above the background.
@@ -815,21 +818,80 @@
   }
 
   /* A phone take (sweepPlan kind 'mobile'): plan.count tones, plan.period s apart. Each tone's stretch of the recording
-     (the second before it, the tone, the plan.tail s after it) is checked as a take of its own (analyseTake, unchanged),
-     and so is a tone the browser counted lost audio in (skip[k], its reason). The tones that pass are averaged sample by
-     sample (one context plays and records them, so they line up to the sample) and the average is analysed as one take:
-     the same calculation, with √n less noise. Returns that analysis with tones: [{ used, reason }], or, when fewer than
-     CRITERIA.take.phone.minTones pass, the first failed tone's analysis (its reason), with tones. */
-  function analyseTones(rec, plan, sweep, skip = []) {
-    const fs = plan.fs, one = Object.assign({}, plan, { count: 1, span: plan.seconds, total: plan.preRoll + plan.seconds + plan.tail });
-    const n = Math.round(one.total * fs), at = k => Math.round(k * plan.period * fs);
-    const segs = Array.from({ length: plan.count }, (_, k) => rec.subarray(at(k), at(k) + n));
-    const each = segs.map((x, k) => (skip[k] ? { status: 'failed', reason: skip[k] } : analyseTake(x, one, sweep)));
-    const tones = each.map(a => ({ used: a.status === 'captured', reason: a.status === 'captured' ? null : a.reason }));
-    const good = segs.filter((x, k) => tones[k].used);
-    if (good.length < CRITERIA.take.phone.minTones) return Object.assign(each.find(a => a.status !== 'captured'), { tones });
-    const avg = new Float32Array(n);
-    for (const x of good) for (let i = 0; i < n; i++) avg[i] += x[i] / good.length;
+     (the second before it, the tone, the plan.tail s after it) is checked as a take of its own (analyseTake, unchanged):
+     a gap, a click or samples dropped while the tone played set it aside. The tones that pass are lined up by their own
+     arrival and averaged sample by sample, and the average is analysed as one take: the same calculation, with √n less
+     noise.
+     Phones drop a few milliseconds of microphone audio now and then (Chrome on Android: frames "discarded because they
+     cannot be delivered on time"). A drop between two tones moves every later tone earlier by its length; averaged at
+     their planned spacing, the tones then smear the decay. So each tone is placed where it actually arrived, and a tone
+     whose next tone arrived more than CRITERIA.take.phone.shiftMs off its planned spacing is set aside, because the drop
+     may lie in its own decay: unless the browser's own count (browser.input: [{ from, to, frames }], recording seconds,
+     where it keeps one) shows the audio was lost after that decay had died away. The last tone, with no next tone to time
+     it by, is set aside when the browser counted a loss within its decay. The browser's counts never set a tone aside on
+     their own otherwise: the recording is what is judged.
+     Returns that analysis with tones: [{ used, reason, arrivalSec, shiftMs }], or, when fewer than minTones pass, the
+     first failed tone's analysis with a reason saying how many tones could be used, and tones. */
+  function analyseTones(rec, plan, sweep, browser = null) {
+    const fs = plan.fs, P = CRITERIA.take.phone, one = Object.assign({}, plan, { count: 1, span: plan.seconds, total: plan.preRoll + plan.seconds + plan.tail });
+    const n = Math.round(one.total * fs), at = k => Math.round(k * plan.period * fs), period = Math.round(plan.period * fs), L = sweep.inverse.length;
+    const each = Array.from({ length: plan.count }, (_, k) => analyseTake(rec.subarray(at(k), at(k) + n), one, sweep));
+    const arr = each.map((a, k) => (a.arrivalAt != null ? at(k) + a.arrivalAt : null)); // arrival in the whole recording
+    const lost = (browser && browser.input) || null, shiftMin = Math.round(P.shiftMs / 1000 * fs);
+    // The end of a tone's decay that the analysis uses: where its last band met the background, 0.1 s on.
+    const decayEnd = k => arr[k] + L + Math.round(((each[k].bands || []).reduce((m, b) => Math.max(m, b.crossSec || 0), 0) + 0.1) * fs);
+    const lostBetween = (a, b) => (lost || []).filter(x => x.frames > 0 && x.to * fs > a && x.from * fs < b);
+    const tones = each.map((a, k) => ({ used: a.status === 'captured', reason: a.status === 'captured' ? null : a.reason, arrivalSec: arr[k] != null ? r3(arr[k] / fs) : null, shiftMs: null }));
+    // Spacing is timed between the tones that passed (a damaged tone's own arrival is not reliable). A shift between two
+    // of them that a damaged tone in between already accounts for (its timing check measured that jump) is that tone's.
+    const known = arr.map((v, k) => k).filter(k => arr[k] != null && each[k].status === 'captured');
+    const explained = (k, j) => each.slice(k + 1, j).reduce((s, a) => s + (a.timing && a.timing.checked && a.timing.stepMs ? a.timing.stepMs : 0), 0) / 1000 * fs;
+    /* Whether tone k's echo is whole: compared with tone j's, both placed where they arrived. Same room, same sound, same
+       phone: two whole echoes differ only by the background, while an echo a drop broke stops matching from the drop on.
+       Read in 20 ms frames from the end of the tone while the echo stands P.matchAboveDb above the background; whole when
+       the difference stays P.matchDb below the echo in every frame. */
+    function whole(k, j) {
+      const fr = Math.round(0.02 * fs), d = arr[j] - arr[k], b0 = arr[k] - Math.round(0.6 * fs), b1 = arr[k] - Math.round(0.05 * fs);
+      if (b0 < 0) return false;
+      let bg = 0; for (let i = b0; i < b1; i++) bg += rec[i] * rec[i]; bg /= (b1 - b0);
+      for (let s = arr[k] + L; s + fr <= decayEnd(k) && s + d + fr <= rec.length; s += fr) {
+        let e = 0, x = 0;
+        for (let i = 0; i < fr; i++) { const p = rec[s + i], q = rec[s + d + i]; e += p * p + q * q; x += (p - q) * (p - q); }
+        if (e / (2 * fr) < bg * Math.pow(10, P.matchAboveDb / 10)) break;
+        if (10 * Math.log10(x / e) > -P.matchDb) return false;
+      }
+      return true;
+    }
+    known.forEach((k, i) => {
+      const j = known[i + 1], p = known[i - 1];
+      if (j == null) { // the last tone that passed: only the browser's count tells of a loss in its decay; its echo then
+        const l = lostBetween(arr[k], decayEnd(k)); // has to match the tone before it
+        if (l.length && !(p != null && whole(k, p))) Object.assign(tones[k], { used: false, reason: `The phone dropped a moment of audio while this tone's echo was being recorded (the browser counted ${l.reduce((s, x) => s + x.frames, 0)} lost samples), so it is set aside.` });
+        return;
+      }
+      const off = arr[j] - arr[k] - (j - k) * period;
+      tones[j].shiftMs = r1(1000 * (arr[j] - arr[known[0]] - (j - known[0]) * period) / fs);
+      if (Math.abs(off) < shiftMin || Math.abs(off - explained(k, j)) < shiftMin) return;
+      // Something was dropped or repeated between this tone and the next. The tone stays when its echo still matches the
+      // next tone's, or when the browser's count places the loss after this tone's echo had died away.
+      const after = lost && !lostBetween(arr[k], decayEnd(k)).length && lostBetween(arr[k], arr[j]).length > 0;
+      if (!after && !whole(k, j)) Object.assign(tones[k], { used: false, reason: `The phone ${off < 0 ? 'dropped' : 'repeated'} about ${Math.abs(1000 * off / fs).toFixed(0)} ms of audio while this tone's echo was being recorded, so it is set aside.` });
+    });
+    const used = tones.map((t, k) => k).filter(k => tones[k].used);
+    if (used.length < P.minTones) {
+      const first = each.find((a, k) => !tones[k].used && a.status !== 'captured') || each[tones.findIndex(t => !t.used)];
+      const why = tones.find(t => !t.used).reason;
+      return Object.assign({}, first, { status: 'failed', tones, reason: `Only ${used.length} of the ${plan.count} test tones could be used (${P.minTones} are needed). ${why}` });
+    }
+    // Each tone placed where it arrived, relative to the first one used (a difference under shiftMs is the peak's own
+    // scatter: drops come in blocks of several milliseconds).
+    const ref = arr[used[0]] - at(used[0]), avg = new Float32Array(n);
+    for (const k of used) {
+      let d = arr[k] - at(k) - ref;
+      if (Math.abs(d) < shiftMin) d = 0;
+      const s = at(k) + d;
+      for (let i = 0; i < n; i++) { const v = rec[s + i]; if (v !== undefined) avg[i] += v / used.length; }
+    }
     return Object.assign(analyseTake(avg, one, sweep), { tones });
   }
 
