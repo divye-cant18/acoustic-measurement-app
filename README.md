@@ -541,7 +541,10 @@ a long loud tone down), and a phone speaker rattles on the deep start. Each tone
 a take of its own (`analyseTake`, unchanged); the tones that pass (at least 2) are lined up where each actually arrived,
 averaged sample by sample and analysed as one take (`analysis.analyseTones`), so the calculation is the same, with √3 less
 noise. One press is still one take: with fewer than 2 clean tones the take is not used, with how many tones could be used
-and the first tone's reason, and the user measures again.
+and the first tone's reason, and the user measures again. 125 Hz, below the tones, is not measured on a phone (its speaker cannot
+play it). In the synthetic tests (tests/validation.html, "Phone test sound") rooms of 0.3–1.2 s read within the usual
+tolerance; a click in one tone sets that tone aside and keeps the value; and a modelled speaker protection (6 dB down
+after 3.4 s of tone) that the 5 s sweep does not catch, reading 1000 Hz about 13 % long, leaves the 2 s tones untouched.
 
 **Phones: dropped audio (30 October 2026).** Chrome on Android drops a few milliseconds of microphone audio now and then
 (frames "discarded because they cannot be delivered on time", Media Capture Extensions) and its output runs dry now and
@@ -556,10 +559,22 @@ take's details on Acoustic Measurement. In the synthetic tests drops of 10–100
 tone leave every band within 2.5 % (500–2000 Hz within 0.4 %) for rooms of 0.3–1.2 s; drops while two tones play reject
 the take. A phone also gets the larger `latencyHint: 'playback'` audio buffer (audio-io.js), which runs dry less often;
 the delay it adds is read from each recording. The laptop's sweep keeps its rule: any audio the browser counts lost
-during the sweep or the decay makes the take not valid. 125 Hz, below the tones, is not measured on a phone (its speaker cannot
-play it). In the synthetic tests (tests/validation.html, "Phone test sound") rooms of 0.3–1.2 s read within the usual
-tolerance; a click in one tone sets that tone aside and keeps the value; and a modelled speaker protection (6 dB down
-after 3.4 s of tone) that the 5 s sweep does not catch, reading 1000 Hz about 13 % long, leaves the 2 s tones untouched.
+during the sweep or the decay makes the take not valid.
+
+**Phones: continuity judged across the tones (30 October 2026).** On a phone in the field every take failed with "from
+about 566 Hz on, the test signal arrived 4.7 ms earlier" in all three tones while the browser counted no lost audio: the
+phone's own playback processing plays the low part of the sound a few milliseconds later than the rest (reproduced in the
+synthetic tests by delaying everything below 560 Hz by 4.7 ms), which the continuity check (`sweepTiming`) of one tone
+alone cannot tell from samples dropped at that moment. Dropped samples move the segments after them in one tone only;
+the phone's own delay is the same in every tone. So a phone's tones are judged against each other (`analyseTones`,
+`analyseTake` with `byTones`): a tone is continuous when its arrival, segment by segment, follows another tone's with no
+step over `maxStepMs`; a tone with no other to compare with is judged alone; the laptop's one sweep is judged alone as
+before. On such a phone 1000–4000 Hz read within 2 % of the room's own decay; 250 and 500 Hz, where the delayed and the
+undelayed sound overlap, are either a value or an honest "not a straight line" (no value), never a wrong value passed. A
+drop while one tone plays still sets that tone aside, and drops in two tones reject the take. From there a phone's bands
+go to the room's RT60 by the laptop's rule (a band with no value left out and named, at least 3 of the 6 needed): that
+phone at two positions gives the room's RT60 over 1000–4000 Hz ("3 of 6 bands"), as the laptop gives it over 5 of 6
+when 125 Hz has no value.
 
 **Bands.** Octave bands 125, 250, 500, 1000, 2000 and 4000 Hz (nominal), centred on the exact base-10 midband frequencies
 of IEC 61260-1:2014 (fm = 1000·10^(0.3k): 125.89 … 3981.1 Hz), edges fm·10^(∓0.15). Each band filter is

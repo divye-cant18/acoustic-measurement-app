@@ -588,7 +588,8 @@
     let k = 1;
     for (let i = 2; i < seg.length; i++) if (Math.abs(seg[i].ms - seg[i - 1].ms) > Math.abs(seg[k].ms - seg[k - 1].ms)) k = i;
     const step = seg[k].ms - seg[k - 1].ms;
-    return { segments: seg.length, maxStepMs: r3(Math.abs(step)), stepMs: r3(step), atHz: seg[k].f, driftMs: r3(seg[seg.length - 1].ms - seg[0].ms) };
+    // profile: each segment's arrival, for comparing a phone's tones with each other (analyseTones)
+    return { segments: seg.length, maxStepMs: r3(Math.abs(step)), stepMs: r3(step), atHz: seg[k].f, driftMs: r3(seg[seg.length - 1].ms - seg[0].ms), profile: seg };
   }
 
   /* The recording above the sweep (CRITERIA.take.clicks, sweepGain): clicks, and the input level while the sweep played.
@@ -703,7 +704,9 @@
   }
 
   /* ---------- one take ---------- */
-  function analyseTake(rec, plan, sweep) {
+  // Why a take is not continuous (sweepTiming): a step of stepMs from about atHz on.
+  const notContinuous = (stepMs, atHz) => `The recording is not continuous: from about ${atHz} Hz on, the test signal arrived ${Math.abs(stepMs).toFixed(1)} ms ${stepMs < 0 ? 'earlier' : 'later'} than before it. The device or browser ${stepMs < 0 ? 'dropped' : 'repeated'} audio samples during the take, which distorts the result even though no gap shows in the recording. Close other apps and tabs, keep the screen on and the app in front, and measure again.`;
+  function analyseTake(rec, plan, sweep, opts = {}) {
     const fs = plan.fs, C = CRITERIA.take, n = rec.length;
     const out = { status: 'failed', reason: null, levels: {}, waveform: waveform(rec), latencySec: null, arrivalClarityDb: null, onsetSec: null, irSeconds: null, gap: null, clicks: null, sweepGain: null, timing: null, distortion: null, bands: [] };
     const fail = reason => Object.assign(out, { status: 'failed', reason });
@@ -804,9 +807,9 @@
     const heads = out.bands.map(b => b.headDb).filter(v => v != null), head = heads.length ? Math.max(...heads) : null;
     if (head != null && head >= C.timing.minHeadDb) {
       const t = out.timing = Object.assign({ checked: true }, sweepTiming(rec, plan, sweep, arrival) || { checked: false, reason: 'too few parts of the sweep stood clear of the background' });
-      if (t.checked && t.maxStepMs > C.timing.maxStepMs) {
-        return fail(`The recording is not continuous: from about ${t.atHz} Hz on, the test signal arrived ${Math.abs(t.stepMs).toFixed(1)} ms ${t.stepMs < 0 ? 'earlier' : 'later'} than before it. The device or browser ${t.stepMs < 0 ? 'dropped' : 'repeated'} audio samples during the take, which distorts the result even though no gap shows in the recording. Close other apps and tabs, keep the screen on and the app in front, and measure again.`);
-      }
+      // A phone's tones (opts.byTones) are judged against each other instead (analyseTones), so each keeps its timing.
+      if (!opts.byTones) delete t.profile;
+      if (t.checked && t.maxStepMs > C.timing.maxStepMs && !opts.byTones) return fail(notContinuous(t.stepMs, t.atHz));
     } else out.timing = { checked: false, reason: 'no dominant direct sound to time the sweep by' };
 
     backgroundSounds(rec, out.bands, fs, [
@@ -835,17 +838,40 @@
   function analyseTones(rec, plan, sweep, browser = null) {
     const fs = plan.fs, P = CRITERIA.take.phone, one = Object.assign({}, plan, { count: 1, span: plan.seconds, total: plan.preRoll + plan.seconds + plan.tail });
     const n = Math.round(one.total * fs), at = k => Math.round(k * plan.period * fs), period = Math.round(plan.period * fs), L = sweep.inverse.length;
-    const each = Array.from({ length: plan.count }, (_, k) => analyseTake(rec.subarray(at(k), at(k) + n), one, sweep));
+    const each = Array.from({ length: plan.count }, (_, k) => analyseTake(rec.subarray(at(k), at(k) + n), one, sweep, { byTones: true }));
     const arr = each.map((a, k) => (a.arrivalAt != null ? at(k) + a.arrivalAt : null)); // arrival in the whole recording
     const lost = (browser && browser.input) || null, shiftMin = Math.round(P.shiftMs / 1000 * fs);
     // The end of a tone's decay that the analysis uses: where its last band met the background, 0.1 s on.
     const decayEnd = k => arr[k] + L + Math.round(((each[k].bands || []).reduce((m, b) => Math.max(m, b.crossSec || 0), 0) + 0.1) * fs);
     const lostBetween = (a, b) => (lost || []).filter(x => x.frames > 0 && x.to * fs > a && x.from * fs < b);
     const tones = each.map((a, k) => ({ used: a.status === 'captured', reason: a.status === 'captured' ? null : a.reason, arrivalSec: arr[k] != null ? r3(arr[k] / fs) : null, shiftMs: null }));
-    // Spacing is timed between the tones that passed (a damaged tone's own arrival is not reliable). A shift between two
-    // of them that a damaged tone in between already accounts for (its timing check measured that jump) is that tone's.
-    const known = arr.map((v, k) => k).filter(k => arr[k] != null && each[k].status === 'captured');
-    const explained = (k, j) => each.slice(k + 1, j).reduce((s, a) => s + (a.timing && a.timing.checked && a.timing.stepMs ? a.timing.stepMs : 0), 0) / 1000 * fs;
+    /* Continuity (CRITERIA.take.timing), judged across the tones. A phone's own playback processing can delay part of the
+       sweep (seen in the field: everything from about 566 Hz on arriving 4.7 ms before the rest, in every tone, with no
+       audio counted lost), which one tone alone cannot tell from samples dropped at that moment; dropped samples move the
+       segments after them in that tone only. So a tone is continuous when its arrival, segment by segment, follows another
+       tone's with no step over maxStepMs between the two; a tone with no other to compare with is judged on its own.
+       dropMs: the step a tone set aside here showed against the others. */
+    const TC = CRITERIA.take.timing, prof = k => (each[k].status === 'captured' && each[k].timing && each[k].timing.checked ? each[k].timing.profile : null);
+    const against = (k, j) => {
+      const a = prof(k), b = prof(j);
+      if (!a || !b) return null;
+      const m = new Map(b.map(s => [s.f, s.ms])), d = a.filter(s => m.has(s.f)).map(s => ({ f: s.f, ms: s.ms - m.get(s.f) }));
+      if (d.length < 3) return null;
+      let w = 1;
+      for (let i = 2; i < d.length; i++) if (Math.abs(d[i].ms - d[i - 1].ms) > Math.abs(d[w].ms - d[w - 1].ms)) w = i;
+      return { stepMs: d[w].ms - d[w - 1].ms, atHz: d[w].f };
+    };
+    each.map((a, k) => {
+      if (!prof(k)) return null;
+      const others = each.map((b, j) => (j === k ? null : against(k, j))).filter(Boolean);
+      if (!others.length) return a.timing.maxStepMs > TC.maxStepMs ? { stepMs: a.timing.stepMs, atHz: a.timing.atHz } : null;
+      const best = others.reduce((x, y) => (Math.abs(y.stepMs) < Math.abs(x.stepMs) ? y : x));
+      return Math.abs(best.stepMs) > TC.maxStepMs ? best : null;
+    }).forEach((v, k) => { if (v) Object.assign(tones[k], { used: false, reason: notContinuous(v.stepMs, v.atHz), dropMs: r3(v.stepMs) }); });
+    // Spacing is timed between the tones still used (a damaged tone's own arrival is not reliable). A shift between two of
+    // them that a tone in between, set aside as not continuous, already accounts for (its step) is that tone's.
+    const known = arr.map((v, k) => k).filter(k => arr[k] != null && tones[k].used);
+    const explained = (k, j) => tones.slice(k + 1, j).reduce((s, t) => s + (t.dropMs || 0), 0) / 1000 * fs;
     /* Whether tone k's echo is whole: compared with tone j's, both placed where they arrived. Same room, same sound, same
        phone: two whole echoes differ only by the background, while an echo a drop broke stops matching from the drop on.
        Read in 20 ms frames from the end of the tone while the echo stands P.matchAboveDb above the background; whole when
@@ -892,7 +918,10 @@
       const s = at(k) + d;
       for (let i = 0; i < n; i++) { const v = rec[s + i]; if (v !== undefined) avg[i] += v / used.length; }
     }
-    return Object.assign(analyseTake(avg, one, sweep), { tones });
+    // The average carries the phone's own delay too: its continuity is the tones' (above), so it is not judged alone.
+    const res = analyseTake(avg, one, sweep, { byTones: true });
+    if (res.timing) delete res.timing.profile;
+    return Object.assign(res, { tones });
   }
 
   // Sounds in the take's own background, per band (CRITERIA.take.disturbance). Each segment is judged against its own

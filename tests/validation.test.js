@@ -267,6 +267,45 @@
           ok: counted.status === 'captured' && counted.tones.every(t => t.used) && moved.status === 'captured' && Math.abs(moved.tones[1].shiftMs + 10) < 0.5 && Math.abs(moved.tones[2].shiftMs + 10) < 0.5 && two.status === 'failed' && /^Only 1 of the 3 test tones could be used \(2 are needed\)/.test(two.reason),
           detail: `counted: ${counted.tones.map(t => (t.used ? 'used' : 'set aside')).join(', ')} · shifts ${moved.tones.map(t => t.shiftMs).join(', ')} ms · ${(two.reason || '').slice(0, 70)}…` });
       }
+      // The field failure (30 October 2026): a phone whose playback processing plays everything below about 560 Hz 4.7 ms
+      // later than the rest, in every tone, with no audio lost ("from about 566 Hz on, the test signal arrived 4.7 ms
+      // earlier", all three tones set aside). Continuity is judged across the tones: the same delay in every tone is the
+      // phone's own; a drop in one tone still sets that tone aside, and drops in two reject the take. The laptop's one
+      // sweep, with no tones to compare, keeps judging alone (the same delay there is still rejected).
+      {
+        const lr = (type, f) => [...DSP.butterworthQ(2), ...DSP.butterworthQ(2)].map(Q => DSP.rbj(type, f, 48000, Q));
+        const lateLow = (ir, fc, ms) => { const lo = DSP.filter(ir, lr('lowpass', fc)), hi = DSP.filter(ir, lr('highpass', fc)), d = Math.round(ms * 48), y = new Float64Array(ir.length + d); for (let i = 0; i < ir.length; i++) { y[i + d] += lo[i]; y[i] += hi[i]; } return y; };
+        const fieldPhone = rt => { const d = oneDevice(48000, rt, 41); return { room: d.room, ir: lateLow(speaker(d.ir), 560, 4.7) }; };
+        const toneOnly = rec => { const n = Math.round((pp.preRoll + pp.seconds + pp.tail) * 48000); return AN.analyseTake(rec.subarray(0, n), Object.assign({}, pp, { count: 1, span: pp.seconds, total: pp.preRoll + pp.seconds + pp.tail }), sp.sweep); };
+        const res = [0.3, 0.6, 1.0].map(rt => { const fp = fieldPhone(rt), rec = phoneTake(fp.ir, { seed: 300 + Math.round(rt * 10) }), m = measure(rec, sp); return { rt, fp, rec, m, alone: toneOnly(rec) }; });
+        const near = x => [1000, 2000, 4000].every(f => { const b = x.m.r.bands.find(q => q.f === f), ref = ownDecay(x.fp.room, 48000, f, 'T20'); return b && b.rt60 != null && Math.abs(b.rt60 / ref - 1) <= 0.05; });
+        const honest = x => [250, 500].every(f => { const b = x.m.r.bands.find(q => q.f === f); return b.rt60 != null || /not a straight line/.test(b.reason || ''); });
+        V.display.push({ name: 'The field failure: a phone playing everything below 560 Hz 4.7 ms later. One tone alone reads it as dropped samples ("from about 566 Hz on … earlier", as on the phone); judged across the tones, every tone is used, 1000–4000 Hz within 5 % of the room\'s own decay, and 250 and 500 Hz either a value or an honest "not a straight line", never a wrong value passed',
+          ok: res.every(x => x.alone.status === 'failed' && /not continuous: from about 566 Hz on/.test(x.alone.reason) && x.m.a.status === 'captured' && x.m.a.tones.every(t => t.used) && x.m.r.valid && near(x) && honest(x)),
+          detail: res.map(x => `RT ${x.rt}: one tone alone "${(x.alone.reason || 'passes').slice(0, 52)}…" · tones ${x.m.a.tones.map(t => (t.used ? 'U' : '-')).join('')} · ${[250, 500, 1000, 2000, 4000].map(f => { const b = x.m.r.bands.find(q => q.f === f), ref = ownDecay(x.fp.room, 48000, f, 'T20'); return `${f} ${b && b.rt60 != null ? `${(100 * (b.rt60 / ref - 1)).toFixed(1)} %` : 'no value'}`; }).join(', ')}`).join(' | ') });
+        const x6 = res[1], mid = k => pp.preRoll + 0.07 + k * pp.period + 1.0;
+        const dropped2 = measure(dropAt(x6.rec, mid(1), 10), sp), dropped13 = measure(dropAt(dropAt(x6.rec, mid(0), 10), mid(2) - 0.01, 10), sp);
+        const laptop = AN.analyseTake(FIX.recordSweep({ plan: s48.plan, sweep: s48.sweep, ir: x6.fp.ir, peakDbfs: -12, noiseDbfs: -65, noiseKind: 'pink', latency: 0.07, seed: 306 }), s48.plan, s48.sweep);
+        V.display.push({ name: 'The same phone: 10 ms dropped while tone 2 plays sets tone 2 aside (the others give the value); drops while tones 1 and 3 play reject the take; the laptop\'s one 5 s sweep with the same delay is still rejected as not continuous (its check is unchanged)',
+          ok: dropped2.a.status === 'captured' && dropped2.a.tones.map(t => t.used).join() === 'true,false,true' && dropped2.r.valid && dropped13.a.status === 'failed' && !dropped13.r.valid && laptop.status === 'failed' && /not continuous/.test(laptop.reason),
+          detail: `tone 2 dropped: ${dropped2.a.tones.map(t => (t.used ? 'U' : '-')).join('')} ${dropped2.r.valid ? 'valid' : 'not valid'} · tones 1 and 3: ${(dropped13.a.reason || '').slice(0, 60)}… · laptop: ${(laptop.reason || 'passes').slice(0, 60)}…` });
+        // From the bands to the room's RT60, as on the laptop: after its tones are analysed, a phone's take goes through the
+        // same steps (services/processing.js, the positions' average, services/rt60-average.js). A band with no value is
+        // left out and named, the bands with one are kept, and the room's RT60 is their mean when at least 3 of the 6 have
+        // one. The laptop reference: the same room on the laptop's one sweep through a small speaker, no value at 125 Hz.
+        const roomOf = rs => AM.services.spatial.aggregate(rs.map((r, k) => ({ id: `P${k + 1}`, name: `P${k + 1}`, result: r })));
+        const lapRec = seed => FIX.recordSweep({ plan: s48.plan, sweep: s48.sweep, ir: speaker(oneDevice(48000, 0.6, 41).ir), peakDbfs: -12, noiseDbfs: -65, noiseKind: 'pink', latency: 0.07, seed });
+        const devs = [['phone', [x6.m.r, measure(phoneTake(x6.fp.ir, { seed: 316 }), sp).r]], ['laptop', [measure(lapRec(321), s48).r, measure(lapRec(322), s48).r]]].map(([name, rs]) => { const room = roomOf(rs); return { name, rs, room, avg: RA.of(room) }; });
+        const fs = l => l.map(b => b.f).join();
+        const sameRule = d => { const have = d.room.bands.filter(RA.eligible);
+          return d.rs.every(r => r.valid) && d.room.bands.every(b => (b.rt60 != null) === d.rs.some(r => RA.eligible(r.bands.find(q => q.f === b.f))))
+            && d.avg.available === have.length >= 3 && fs(d.avg.included) === fs(have) && fs(d.avg.missing) === fs(d.room.bands.filter(b => !RA.eligible(b)))
+            && Math.abs(d.avg.value - have.reduce((s, b) => s + b.rt60, 0) / have.length) < 1e-12; };
+        const [ph, lp] = devs;
+        V.display.push({ name: 'The same phone at two positions, to the room\'s RT60 by the laptop\'s rule: every band with a value kept, each band without one (125 Hz below the tones; 250 or 500 Hz not a straight line) left out and named, the room\'s RT60 the mean of the rest; the laptop with no value at 125 Hz gives its room RT60 the same way',
+          ok: devs.every(sameRule) && ph.avg.available && /^125/.test(fs(ph.avg.missing)) && [1000, 2000, 4000].every(f => ph.avg.included.some(b => b.f === f)) && lp.avg.available && fs(lp.avg.missing) === '125',
+          detail: devs.map(d => `${d.name}: ${d.room.bands.map(b => `${b.f} ${b.rt60 != null ? b.rt60.toFixed(2) : '—'}`).join(', ')} → ${d.avg.available ? `${d.avg.value.toFixed(3)} s, ${RA.describe(d.avg)}` : d.avg.reason}`).join(' | ') });
+      }
       const one = AN.analyseTones(clickIn(phoneTake(d5.ir, { seed: 281 }), [1]), pp, sp.sweep), clean = AN.analyseTones(phoneTake(d5.ir, { seed: 281 }), pp, sp.sweep);
       V.display.push({ name: 'Phone: the tone with the click is the one set aside (with its reason), the others used; a clean take uses all three; 125 Hz is not measured (below the tones)',
         ok: one.status === 'captured' && one.tones.map(t => t.used).join() === 'true,false,true' && /click/.test(one.tones[1].reason || '') && clean.tones.every(t => t.used) && clean.bands.find(b => b.f === 125).supported === false,
