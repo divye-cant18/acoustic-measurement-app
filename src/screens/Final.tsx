@@ -185,7 +185,7 @@ export function FinalScreen({ ctx }: { ctx: Ctx }) {
       <Kv rows={[
         ['Target', <>{TGT.fullText(t)}{p.target.basis ? <KvNote>{`${p.target.basis}${p.target.note ? ` · ${p.target.note}` : ''}`}</KvNote> : null}</>],
         ['Average RT60', <>{fmt.s(a.rt)}<KvNote>{`${SHORT}, compared with the target`}</KvNote></>],
-        [`RT60 at ${fmt.hz(a.ref.f)}`, <>{`${fmt.s(a.ref.rt)} · ${a.ref.method}`}<KvNote>reference band, where a take's validity is decided</KvNote></>],
+        [`RT60 at ${fmt.hz(a.ref.f)}`, <>{a.ref.rt != null ? `${fmt.s(a.ref.rt)} · ${a.ref.method}` : 'No value'}<KvNote>{a.ref.rt != null ? 'reference band' : 'reference band: not measured reliably, the other bands give the result'}</KvNote></>],
         ['Confidence', <>{a.ref.confidence}<KvNote>{`at ${fmt.hz(a.ref.f)}`}</KvNote></>],
       ]} />
       {none ? <Kv rows={[['Treatment', 'None'], ['Predicted average', '—']]} />

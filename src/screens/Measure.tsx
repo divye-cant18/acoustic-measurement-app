@@ -11,7 +11,7 @@ import { LevelMeter, MicLine } from '../ui/blocks';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface MeasureModel {
   takeFor(p: Project): any; noiseRun(p: Project): boolean; evaluated(p: Project, rec: any): boolean; failedLatest(p: Project): boolean;
-  startBlocker(p: Project, auto?: boolean): string | null; noiseElsewhere(p: Project): boolean; needsNoise(p: Project): boolean; screenState(p: Project): string; curPlan(p?: Project): any; primaryFor(p: Project): PrimaryAction | null;
+  startBlocker(p: Project, auto?: boolean): string | null; noiseElsewhere(p: Project): boolean; needsNoise(p: Project): boolean; screenState(p: Project): string; curPlan(): any; primaryFor(p: Project): PrimaryAction | null;
 }
 const M = () => stageModel<MeasureModel>('measure');
 
@@ -110,7 +110,7 @@ function PositionsCard({ p, busy, blocker }: { p: Project; busy: boolean; blocke
           const w = word[r.status];
           const st = w ? <Pill tone={w[0]} text={w[1]} icon={w[2]} /> : r.id === s.next && !s.complete ? <Pill tone="acoustic" text="Needed next" icon="pin" /> : <Pill tone="neutral" text={s.complete ? 'Optional' : 'Needed'} />;
           const n = tries(r.id), count = n > 1 ? ` · ${n} takes` : '';
-          const what = r.result ? `${fmt.s(r.result.headline.rt60)} at ${fmt.hz(r.result.headline.f)} · ${fmt.when(r.result.takenAt)}${count}${r.issue ? ` · latest retry ${r.issue.kind === 'failed' ? 'not used' : 'not valid'}, the valid take is kept` : ''}`
+          const what = r.result ? `${r.result.headline.rt60 != null ? `${fmt.s(r.result.headline.rt60)} at ${fmt.hz(r.result.headline.f)}` : `Valid, no value at ${fmt.hz(r.result.headline.f)}`} · ${fmt.when(r.result.takenAt)}${count}${r.issue ? ` · latest retry ${r.issue.kind === 'failed' ? 'not used' : 'not valid'}, the valid take is kept` : ''}`
             : r.issue ? `${r.issue.kind === 'failed' ? 'Take not used' : 'Take not valid'}: ${r.issue.reason || 'see Processing'}${count}` : r.detail;
           // The position selected for the next take: measured or tried there already, it is measured again in one press.
           const tried = r.status === 'valid' || r.status === 'invalid' || r.status === 'failed';
@@ -131,23 +131,6 @@ function PositionsCard({ p, busy, blocker }: { p: Project; busy: boolean; blocke
   );
 }
 
-/* A phone's take in a line: its test tones (used or set aside) and the audio the browser counted lost, with when
-   (measurement.js lossSpans). null for a take without tones. */
-function phoneText(tones: any[] | null, browser: any): string | null {
-  if (!tones || !tones.length) return null;
-  const used = tones.filter(t => t.used).length;
-  const say = [`Test tones: ${used} of ${tones.length} used${used < tones.length ? ` (set aside: ${tones.map((t, i) => (t.used ? null : `tone ${i + 1}`)).filter(Boolean).join(', ')})` : ''}.`];
-  if (browser) {
-    const inp = browser.input, out = browser.output, at = (xs: any[]) => xs.map(x => `${x.from.toFixed(1)}–${x.to.toFixed(1)} s`).join(', ');
-    const lost = inp ? inp.reduce((s: number, x: any) => s + x.frames, 0) : 0, dry = out ? out.reduce((s: number, x: any) => s + x.underruns, 0) : 0;
-    if (inp && lost) say.push(`The phone dropped ${lost} microphone samples (${at(inp)}).`);
-    if (out && dry) say.push(`Its sound output ran dry ${dry} time${dry > 1 ? 's' : ''} (${at(out)}).`);
-    if ((inp || out) && !lost && !dry) say.push('The browser counted no lost audio.');
-    if (lost || dry) say.push('The tones were lined up where they arrived and each was checked, so this alone does not spoil the result.');
-  }
-  return say.join(' ');
-}
-
 // The latest take: what was recorded, or why it could not be used.
 function TakeCard({ p }: { p: Project }) {
   const rec = p.measurement.recording as any, f = p.measurement.failed as any, cur = D.measured(p);
@@ -155,7 +138,6 @@ function TakeCard({ p }: { p: Project }) {
     return (
       <Card icon="doc" title="Latest take" sub={`${fmt.when(f.takenAt)} · sweep level ${ui.levelDb(f.levelDb)}`} right={<Pill tone="critical" text="Not used" icon="x" />}>
         <Note tone="critical"><b>This take could not be used.</b>{` ${f.reason}`}</Note>
-        {phoneText(f.tones, f.browser) ? <p className="small muted" data-watch="take-phone">{phoneText(f.tones, f.browser)}</p> : null}
         {cur ? <p className="small muted">{`The current measurement from ${fmt.when(cur.takenAt)} is kept.`}</p> : null}
       </Card>
     );
@@ -178,7 +160,7 @@ function TakeCard({ p }: { p: Project }) {
       <Details id="measure-take" summary="Show all recording details">
       <div className="grid g2">
         <Kv rows={[
-          ['Device', rec.deviceKind ? DEMO.DEVICE_KINDS[rec.deviceKind].name : '—'],
+          ['Device', DEMO.deviceName(rec.deviceKind) || '—'],
           ['Position', rpos ? `${rpos.id} · ${rpos.name}` : '—'],
           ['Microphone', rec.deviceLabel || '—'],
           ['Sound output', rec.outputLabel ? rec.outputLabel : 'Not named by this browser'],
@@ -192,7 +174,6 @@ function TakeCard({ p }: { p: Project }) {
           ['Distortion', <>{ui.distortionText(rec.analysis.distortion)}<KvNote>harmonics against the main response</KvNote></>],
         ]} />
       </div>
-      {phoneText(rec.analysis.tones, rec.browser) ? <p className="small muted" data-watch="take-phone">{phoneText(rec.analysis.tones, rec.browser)}</p> : null}
       </Details>
       <p className="small muted">Recorded audio is analysed straight away and not stored; the project keeps the analysis.</p>
     </Card>
@@ -220,9 +201,9 @@ export function MeasureScreen({ ctx }: { ctx: Ctx }) {
   const p = ctx.project, m = M(), take = m.takeFor(p), rec = p.measurement.recording as any, cur = D.measured(p);
   const st0 = m.screenState(p), st = st0 === 'measuring-noise' && LIVE.state.noise && LIVE.state.noise.auto ? 'auto-noise' : st0;
   let [title, sub, tone, pill] = HEAD[st] || HEAD['ready-for-rt60'];
-  const plan = m.curPlan(p), phases: any[] = MEAS.phases(plan), running = !!take, sec: number = take ? take.sec : 0;
+  const plan = m.curPlan(), phases: any[] = MEAS.phases(plan), running = !!take, sec: number = take ? take.sec : 0;
   const pos = DEMO.POSITIONS.find((x: { id: string }) => x.id === p.setup.position) || DEMO.POSITIONS[0];
-  const kind = LIVE.kindOf(p), K = DEMO.DEVICE_KINDS[kind];
+  const K = DEMO.DEVICE;
   const retry = p.measurement.retry;
   const blocker = m.startBlocker(p, true), canStart = !blocker;
   // The console speaks of the position selected for the next take: a take made at another position is not this one's.
@@ -257,7 +238,7 @@ export function MeasureScreen({ ctx }: { ctx: Ctx }) {
           <h2 className="mi-title">Measure how long the room echoes</h2>
           <p className="mi-text">{`The ${K.noun} plays a short test sound and listens to how the room rings. It takes about ${Math.round(plan.total)} seconds.`}</p>
           <ul className="mi-tips">
-            <li><Icon name={kind === 'mobile' ? 'phone' : 'laptop'} size={16} sw={2} /><span><b>{`${K.noun.charAt(0).toUpperCase()}${K.noun.slice(1)} at ${pos.id}`}</b>{`, ${pos.name.toLowerCase()}: on a table, not held`}</span></li>
+            <li><Icon name="laptop" size={16} sw={2} /><span><b>{`${K.noun.charAt(0).toUpperCase()}${K.noun.slice(1)} at ${pos.id}`}</b>{`, ${pos.name.toLowerCase()}: on a table, not held`}</span></li>
             <li><Icon name="speaker" size={16} sw={2} /><span><b>Volume up</b>, headphones unplugged</span></li>
             <li><Icon name="users" size={16} sw={2} /><span><b>Everyone quiet</b> and still until it finishes</span></li>
           </ul>

@@ -230,10 +230,14 @@
       check('A9 Someone talking throughout the take (25 dB above the background): the bands it covers give no value (their noise floor rises) rather than a biased one; no value given is off by more than 5 %',
         rbb.bands.length && rbb.bands.every(okVal) && b1 && b1.rt60 == null, b1 ? `1 kHz: ${b1.rt60 == null ? `no value (${b1.reason})` : f3(b1.rt60)}; other bands: ${rbb.bands.filter(b => b.f !== 1000).map(b => `${b.f} ${b.rt60 == null ? '—' : f3(b.rt60)}`).join(', ')}` : rbb.reason);
       // The same talking switched on and off between two samples (no ramp): every syllable edge is a click in the
-      // recording, and the take is not used at all; never a biased value either way.
+      // recording. Each costs the bands swept before it (analysis.js bandReach); clicks through the whole sweep reach
+      // every band, so the take is not valid; never a biased value either way.
       const hard = speech(n, -40, 95, [[0, plan.total]], 0), rh = evalRec(Float32Array.from(base, (v, i) => v + hard[i]));
-      check('A9 The same talking with syllables switched on and off between two samples: clicks in the recording, so the take is not used (no value in any band)',
-        rh.an.status === 'failed' && /click/.test(rh.an.reason) && !rh.res.valid && rh.res.bands.every(b => b.rt60 == null), (rh.an.reason || 'captured').slice(0, 140));
+      const TK = AN.CRITERIA.take, tOf = f => TK.sweepSeconds * Math.log(f / TK.f1) / Math.log(TK.f2 / TK.f1);
+      const lastClick = Math.max(-1, ...rh.an.damage.filter(d => d.kind === 'click').map(d => d.toSec));
+      check('A9 The same talking with syllables switched on and off between two samples: clicks in the recording, each costing the bands swept before it; through the whole sweep they reach every band, so the take is not valid (no value in any band)',
+        lastClick >= 0 && rh.res.bands.filter(b => tOf(b.f / 2) <= lastClick).every(b => b.rt60 == null && /click/.test(b.reason || '')) && rh.res.bands.every(okVal) && !rh.res.valid,
+        `${rh.an.damage.filter(d => d.kind === 'click').length} clicks, the last ${lastClick.toFixed(2)} s into the sweep · ${rh.res.valid ? 'valid' : (rh.res.reason || '').slice(0, 120)}`);
     }
 
     // A10. A band that fails, and the headline.
@@ -251,8 +255,12 @@
       let ms = 0; for (let i = 0; i < nb.length; i++) ms += nb[i] * nb[i];
       const g = Math.pow(10, -40 / 20) / Math.sqrt(ms / nb.length), x = Float32Array.from(rec, (v, i) => v + nb[i] * g);
       const r1k = evalRec(x).res, others = r1k.bands.filter(bb => bb.f !== 1000 && bb.rt60 != null).length, b1k = r1k.bands.length ? band(r1k, 1000) : null;
-      check('A10 Noise only in the 1 kHz octave: the 1 kHz band has no value, so there is no headline, even though other bands have values; nothing is averaged in its place',
-        !r1k.valid && r1k.headline === null && b1k && b1k.rt60 == null && others >= 3, `${others} other bands with a value; 1 kHz usable ${b1k && b1k.decayRangeDb} dB; ${r1k.reason}`);
+      // A take counts with at least 3 of the 6 bands (processing.js): the 1 kHz headline then stays empty, never another
+      // band's value, and the average leaves 1 kHz out and names it.
+      const a1k = AM.services.rt60Average.of(r1k);
+      check('A10 Noise only in the 1 kHz octave: the 1 kHz band has no value; the take still counts with the other bands (at least 3 of 6), its 1 kHz headline stays empty and nothing is put in its place; the average leaves 1 kHz out and names it',
+        r1k.valid && r1k.headline && r1k.headline.f === 1000 && r1k.headline.rt60 == null && b1k && b1k.rt60 == null && others >= 3 && a1k.available && a1k.missing.some(m => m.f === 1000) && !a1k.included.some(x => x.f === 1000),
+        `${others} other bands with a value; 1 kHz usable ${b1k && b1k.decayRangeDb} dB; headline ${r1k.headline ? `${r1k.headline.f} Hz ${r1k.headline.rt60}` : 'none'}; average ${a1k.available ? `${a1k.value.toFixed(3)} s, ${AM.services.rt60Average.describe(a1k)}` : a1k.reason}`);
       check('A10 The headline is the 1 kHz band itself (no average, no other band)', rn.headline.rt60 === band(rn, 1000).rt60 && rn.headline.f === 1000, `headline ${rn.headline.rt60} = 1 kHz ${band(rn, 1000).rt60}`);
     }
 

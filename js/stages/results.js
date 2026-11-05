@@ -5,7 +5,7 @@
    headline is the average over the bands the room's criterion sets (AM.derive.summaryRT60, e.g. 250 Hz–2 kHz for a
    meeting room under DIN 18041), with the average over all bands, 125–4000 Hz, beside it; each band keeps its own value
    in the tables and the chart. At least two valid positions are needed to continue (AM.services.spatial.MIN_POSITIONS).
-   1000 Hz stays marked as the reference band: it decides whether a take is valid (services/processing.js).
+   1000 Hz stays marked as the reference band; a take is valid with at least half of the bands (services/processing.js).
    The screen is drawn by the interface (src/screens/Results.tsx); this file keeps the step's check and actions. */
 (function (AM) {
   'use strict';

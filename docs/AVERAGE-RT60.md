@@ -40,12 +40,11 @@ measurement only) and `AM.derive.prediction(project)` (`measured`, `predicted`).
 | Traceable | Under the band table (Show technical details): the calculation, e.g. (0.580 + 0.600 + 0.450 + 0.560 + 0.400) ÷ 5 = 0.518 s, and the bands left out |
 
 **History.** Until app version 2026.10.15 the headline was the 500–2000 Hz mean. On 2026-10-15 it became all six bands
-with every band required, and then, the same day, after testing a real room where a phone-like device lost 125 Hz, the
+with every band required, and then, the same day, after testing a real room where a device lost 125 Hz, the
 bands that have a value, with the 500–2000 Hz average shown beside it.
 
-**Trade-off.** An average over the bands that were measured can change with a device's band coverage: in
-`tests/mobile-study.html` a small phone speaker that loses 125 Hz (the band that usually rings longest) read lower than
-a laptop in the same room. The app therefore always says how many bands an average uses and which were left out, and
+**Trade-off.** An average over the bands that were measured can change with a device's band coverage: a small speaker
+that loses 125 Hz (the band that usually rings longest) reads lower than one that keeps it in the same room. The app therefore always says how many bands an average uses and which were left out, and
 shows the 500–2000 Hz average, which every device measures most reliably, next to it. Standards state room targets
 mainly for the mid frequencies (DIN 18041 from 250 Hz to 2 kHz, with its own limits at 125 Hz and 4 kHz; NBC 2016 at
 500 Hz); the 125 and 4000 Hz bands, when measured, move the value the target is compared with.

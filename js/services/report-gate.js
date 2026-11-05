@@ -99,7 +99,8 @@
       measuredRt60: m ? r('measuredRt60', m.headline.rt60) : null,               // at 1000 Hz, the reference band, over the positions
       measuredRt60Avg: avg && avg.available ? r('measuredRt60Avg', avg.value) : null, // average of the bands measured: the room's RT60
       measurementMethod: m && m.headline.method ? cut(m.headline.method, PF.measurementMethod.maxLength) : '',
-      predictedRt60: pred ? r('predictedRt60', pred.headline.predicted) : null,  // at 1000 Hz
+      // at 1000 Hz only: the prediction's headline falls back to another band when 1000 Hz has none, which this field never takes
+      predictedRt60: pred && pred.headline && pred.headline.f === AM.demo.REFERENCE_BAND ? r('predictedRt60', pred.headline.predicted) : null,
       predictedRt60Avg: pred && pred.allBands ? r('predictedRt60Avg', pred.allBands.value) : null, // predicted average over the bands of the measured all-band average
       treatmentStatus,
       customMaterials: customMaterials(p.room, PF.customMaterials),

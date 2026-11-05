@@ -326,7 +326,7 @@ sources are listed there:
 **Possible, not tested on the user's device:**
 - **Operating-system processing.** It can shorten the end of a decay, and a browser cannot see it. A cut well above the
   noise is rejected (E4); a cut close to the noise reads short and is flagged only as "not perfectly straight".
-- **Positions and source.** A clap a metre away versus a phone's speaker beside its microphone.
+- **Positions and source.** A clap a metre away versus a device's speaker beside its microphone.
 
 **New this round.** Where speech or other sounds disturb a take, this app now gives no value with the reason. An app
 without such a check would show a value, which in the study read long (+12.6 % and +17.1 %).

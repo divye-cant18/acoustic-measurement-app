@@ -14,14 +14,14 @@
         the wording never claiming "off" for an unreported feature, threshold text rounding, a decay cut short by the
         end of the recording
      A4 the headline: the bands from 125 to 4000 Hz that have a value, a band left out named; none below half of them
-     A5 device profiles and configuration: switching Laptop → Phone → Laptop through the Setup step's actions, readiness
-        of the selected output, the configuration record, and the report using the take's configuration; Results naming a
-        newer take it does not include (not processed, or rejected); the diagnostics record (no names or labels)
+     A5 the measuring device and configuration: laptop only (no device to choose; on a phone or tablet no microphone
+        session opens), readiness of the selected output, the configuration record, and the report using the take's
+        configuration (a saved phone take keeps naming its device); Results naming a newer take it does not include (not
+        processed, or rejected); the diagnostics record (no names or labels)
    Part B, button, the whole app with a virtual device (tests/virtual-room.js): permission denied, no device, access with
      the configuration read back, a take recorded with its configuration and the browser's own counts, a take during
-     which the browser counts lost microphone frames (not valid), an output that ran dry before the sweep (not counted)
-     and while it played (not valid), a phone take (three short tones, each checked, the clean ones averaged), then
-     takes interrupted by a hidden page, a muted
+     which the browser counts lost microphone frames (the bands they could reach left out), an output that ran dry before
+     the sweep (not counted) and while it played (the bands it reached left out), then takes interrupted by a hidden page, a muted
      track and a disconnected microphone, none of which is analysed. Part B needs this tab in front: a hidden page
      interrupts every take, by design. */
 (function () {
@@ -142,13 +142,16 @@
       return { rec, plan, sweep };
     }
     const analyse = o => { const { rec, plan, sweep } = recording(o); return AN.analyseTake(rec, plan, sweep); };
+    // When the sweep played f, in seconds into it: damage at one moment reaches every band whose half-octave below was
+    // swept before it (analysis.js bandReach).
+    const BANDS = AM.demo.BANDS, TK = AN.CRITERIA.take, tOf = f => TK.sweepSeconds * Math.log(f / TK.f1) / Math.log(TK.f2 / TK.f1);
     const take = (o = {}, settings = {}, extra = {}) => {
       const { rec, plan, sweep } = recording(o), a = AN.analyseTake(rec, plan, sweep);
       return Object.assign({ id: `t${Math.random().toString(36).slice(2, 7)}`, takenAt: new Date().toISOString(), status: a.status === 'failed' ? 'failed' : 'captured', reason: a.reason, settings, sampleRate: plan.fs,
         plan: Object.assign({}, plan, { levelDb: 0 }), levels: a.levels, analysis: a, warnings: MEAS.processingWarnings(settings) }, extra);
     };
     {
-      // A phone-like take (quiet sweep, −30 dBFS peak) in a quiet room through an input with a DC offset of 0.05.
+      // A small-speaker take (quiet sweep, −30 dBFS peak) in a quiet room through an input with a DC offset of 0.05.
       const o = { dc: 0.05, level: -30, noise: -80, hp: 700, direct: 30, refl: DESK };
       const { rec, plan } = recording(o), a = analyse(o);
       const old = DSP.dbOf(DSP.meanSquare(rec, Math.round((plan.preRoll + 0.07) * fs), Math.round((plan.preRoll + plan.seconds) * fs))) - DSP.dbOf(DSP.meanSquare(rec, Math.round(0.1 * fs), Math.round((plan.preRoll - 0.05) * fs)));
@@ -158,16 +161,23 @@
     }
     {
       const drops = [['256 samples removed at 2.6 s', { splice: 2.6, n: 256, refl: DESK }], ['480 samples removed at 3.1 s', { splice: 3.1, n: 480, refl: DESK }], ['256 samples repeated at 3.7 s', { splice: 3.7, n: -256, refl: DESK }],
-        ['256 samples removed, phone-like', { splice: 2.2, n: 256, hp: 700, direct: 30, level: -24, refl: DESK }], ['256 samples removed at 44.1 kHz', { fs: 44100, splice: 3.0, n: 256, refl: DESK }]];
-      // Rejected by whichever check sees it first: the click the loss leaves (above the sweep), or the step in the
-      // sweep's timing.
-      const got = drops.map(([k, o]) => { const a = analyse(o); return { k, ok: a.status === 'failed' && /not continuous|has a click/.test(a.reason || ''), t: a.timing, r: a.reason }; });
-      check('A2 Samples dropped or repeated during the sweep, with no gap to see (256 or 480 samples, from about 1.8 s into the sweep): the take is rejected (for the click or the timing step), with the reason',
-        got.every(g => g.ok), got.map(g => `${g.k}: ${g.ok ? `rejected (${/click/.test(g.r) ? 'click' : 'timing'})` : `NOT rejected (${(g.r || '').slice(0, 40)})`}`).join(' · '));
-      const intact = [['laptop on a desk', { refl: DESK }], ['phone-like on a desk', { hp: 700, direct: 30, level: -24, refl: DESK }], ['steep 8th-order speaker high-pass at 400 Hz', { hp: 400, order: 8, refl: DESK }],
+        ['256 samples removed, small speaker', { splice: 2.2, n: 256, hp: 700, direct: 30, level: -24, refl: DESK }], ['256 samples removed at 44.1 kHz', { fs: 44100, splice: 3.0, n: 256, refl: DESK }]];
+      // Found by the click the loss leaves (above the sweep) or the step in the sweep's timing (or both). A click costs
+      // every band whose half-octave below was swept before it (analysis.js bandReach), a step the bands the sound arrived
+      // late in (lateBands); every band kept has the value of the same take without the loss (within 3 %).
+      const OFF1 = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+      const got = drops.map(([k, o]) => {
+        const d = PROC.evaluate(take(o, OFF1), {}), c = PROC.evaluate(take(Object.assign({}, o, { splice: null }), OFF1), {}), a = d.meta, an = take(o, OFF1).analysis;
+        const hit = f => an.damage.some(x => x.toSec != null && tOf(f / 2) <= x.toSec) || !!(an.timing && an.timing.late && an.timing.late[f] != null);
+        const ok = an.damage.length > 0 && d.bands.every(b => { const cb = c.bands.find(x => x.f === b.f); return hit(b.f) ? b.rt60 == null && !!b.reason : b.rt60 == null || (cb.rt60 != null && Math.abs(b.rt60 / cb.rt60 - 1) <= 0.03); });
+        return { k, ok, kinds: a.damage.map(x => x.kind), none: d.bands.filter(b => b.rt60 == null).map(b => b.f) };
+      });
+      check('A2 Samples dropped or repeated during the sweep, with no gap to see (256 or 480 samples, from about 1.8 s into the sweep): found (by the click it leaves or the step in the sweep\'s timing), the bands it reaches get no value with the reason, and every band kept has the value of the same take without the loss (within 3 %)',
+        got.every(g => g.ok), got.map(g => `${g.k}: ${g.ok ? '' : 'FAIL '}${g.kinds.join(' + ') || 'not found'}, no value at ${g.none.join(', ') || 'none'}`).join(' · '));
+      const intact = [['laptop on a desk', { refl: DESK }], ['small speaker on a desk', { hp: 700, direct: 30, level: -24, refl: DESK }], ['steep 8th-order speaker high-pass at 400 Hz', { hp: 400, order: 8, refl: DESK }],
         ['resonant speaker (Q 3 at 900 Hz)', { hp: 900, resonant: 3, direct: 30, refl: DESK }], ['44.1 kHz', { fs: 44100, refl: DESK }], ['noisy background −55 dBFS', { noise: -55, refl: DESK }], ['another noise seed', { seed: 9, refl: DESK }]];
-      const ok = intact.map(([k, o]) => { const a = analyse(o); return { k, ok: a.status === 'captured' && a.timing && a.timing.checked && a.timing.maxStepMs <= AN.CRITERIA.take.timing.maxStepMs && a.clicks && a.clicks.checked && !a.clicks.found.length, step: a.timing && a.timing.maxStepMs, w: a.clicks && a.clicks.worstDb }; });
-      check(`A2 Intact takes of seven kinds are never rejected by the continuity checks (largest step ≤ ${AN.CRITERIA.take.timing.maxStepMs} ms; no click, every frame below the ${AN.CRITERIA.take.clicks.db} dB click level)`, ok.every(g => g.ok), ok.map(g => `${g.k}: ${g.step} ms, ${g.w} dB`).join(' · '));
+      const ok = intact.map(([k, o]) => { const a = analyse(o); return { k, ok: a.status === 'captured' && a.timing && a.timing.checked && a.timing.maxStepMs <= AN.CRITERIA.take.timing.maxStepMs && a.clicks && a.clicks.checked && !a.clicks.found.length && !a.damage.length, step: a.timing && a.timing.maxStepMs, w: a.clicks && a.clicks.worstDb }; });
+      check(`A2 Intact takes of seven kinds never lose a band to the continuity checks (largest step ≤ ${AN.CRITERIA.take.timing.maxStepMs} ms; no click, every frame below the ${AN.CRITERIA.take.clicks.db} dB click level)`, ok.every(g => g.ok), ok.map(g => `${g.k}: ${g.step} ms, ${g.w} dB`).join(' · '));
       // Harmonics a digital limiter makes before the converter fold back below half the sample rate; a loud noise that
       // stops abruptly stands above one side only. Neither is a click.
       const A_ = AN.CRITERIA.take.amplitude, cubic = analyse({ refl: DESK, play: v => v - 4 * Math.pow(10, -30 / 20) / (A_ * A_) * v * v * v });
@@ -192,8 +202,8 @@
       // room's RT60 now) 36 % long; the bands it hits most read more than 50 % long.
       const at = [0.9, 2.3, 2.7, 3.9, 4.5], block = [];
       at.forEach(t => [128, -128].forEach(k => block.push([`${t} s ${k > 0 ? 'lost' : 'repeated'}`, { splice: t, n: k, refl: DESK }])));
-      block.push(['4.5 s lost, quiet room', { splice: 4.5, n: 128, refl: DESK, noise: -85 }], ['2.5 s lost, phone-like', { splice: 2.5, n: 128, hp: 700, direct: 30, level: -24, refl: DESK }]);
-      const caught = block.map(([k, o]) => { const a = analyse(o); return { k, ok: a.status === 'failed' && /has a click/.test(a.reason || ''), r: a.reason, db: a.clicks && a.clicks.found.length ? a.clicks.found[0].db : null }; });
+      block.push(['4.5 s lost, quiet room', { splice: 4.5, n: 128, refl: DESK, noise: -85 }], ['2.5 s lost, small speaker', { splice: 2.5, n: 128, hp: 700, direct: 30, level: -24, refl: DESK }]);
+      const caught = block.map(([k, o]) => { const a = analyse(o), hit = a.bands.filter(b => /click/.test(b.damage || '')).map(b => b.f); return { k, ok: a.status === 'captured' && a.damage.some(d => d.kind === 'click') && BANDS.filter(f => tOf(f / 2) <= o.splice).every(f => hit.includes(f)), db: a.clicks && a.clicks.found.length ? a.clicks.found[0].db : null }; });
       const saved = AN.CRITERIA.take.clicks.db;
       AN.CRITERIA.take.clicks.db = 999; // what the result would have been without the check
       let harm = null;
@@ -204,16 +214,20 @@
         const worst = Math.max(...ref.bands.map(b => { const x = bad.bands.find(y => y.f === b.f); return b.rt60 && x && x.rt60 ? 100 * (x.rt60 / b.rt60 - 1) : -Infinity; }));
         harm = av(ref) && av(bad) ? { avg: 100 * (av(bad) / av(ref) - 1), worst } : null;
       } finally { AN.CRITERIA.take.clicks.db = saved; }
-      check('A2 One render block (128 samples) lost or repeated at 0.9–4.5 s into the sweep, in a typical room, a quiet room and a phone-like take: each take rejected for the click it leaves, with the reason; uncaught, one of them read a band more than 50 % long and the six-band average more than 15 % long (T20: about 18 %; with T30 first it was about 36 %)',
-        caught.every(g => g.ok) && harm != null && harm.worst > 50 && harm.avg > 15, `${caught.map(g => `${g.k}: ${g.ok ? `click ${g.db} dB` : `NOT rejected (${(g.r || 'captured').slice(0, 40)})`}`).join(' · ')} · uncaught at 2.7 s: ${harm == null ? 'no average' : `average +${harm.avg.toFixed(0)} %, worst band +${harm.worst.toFixed(0)} %`}`);
+      check('A2 One render block (128 samples) lost or repeated at 0.9–4.5 s into the sweep, in a typical room, a quiet room and a small-speaker take: the click it leaves is found, and every band swept before it gets no value, with the reason; uncaught, one of them read a band more than 50 % long and the six-band average more than 15 % long (T20: about 18 %; with T30 first it was about 36 %)',
+        caught.every(g => g.ok) && harm != null && harm.worst > 50 && harm.avg > 15, `${caught.map(g => `${g.k}: ${g.ok ? `click ${g.db} dB` : 'NOT found'}`).join(' · ')} · uncaught at 2.7 s: ${harm == null ? 'no average' : `average +${harm.avg.toFixed(0)} %, worst band +${harm.worst.toFixed(0)} %`}`);
     }
     {
       const zero = analyse({ post: (x, rate, plan) => { const y = Float32Array.from(x); const at = Math.round((plan.preRoll + 2.5) * rate); y.fill(0, at, at + 256); return y; } });
       const nan = analyse({ post: x => { const y = Float32Array.from(x); y[200000] = NaN; return y; } });
       const short = analyse({ post: x => x.subarray(0, Math.round(x.length * 0.6)) });
       const clip = analyse({ level: 6 });
-      check('A2 A zero-filled gap, an invalid sample, an incomplete recording and a clipped recording: each take rejected with its own reason',
-        /gap/.test(zero.reason) && /corrupted/.test(nan.reason) && /incomplete/.test(short.reason) && /overloaded/.test(clip.reason), [zero.reason, nan.reason, short.reason, clip.reason].map(r => (r || '').slice(0, 45)).join(' | '));
+      // The zero-filled gap 2.5 s into the recording's sweep segment (2.43 s after the sweep arrives) costs the bands swept
+      // before it; an invalid sample, an incomplete or a clipped recording reaches every band and rejects the take.
+      const gapHit = zero.bands.filter(b => /gap/.test(b.damage || '')).map(b => b.f);
+      check('A2 A zero-filled gap: found, and every band swept before it gets no value, with the reason; an invalid sample, an incomplete recording and a clipped recording: each take rejected with its own reason',
+        zero.status === 'captured' && zero.damage.some(d => d.kind === 'gap') && BANDS.filter(f => tOf(f / 2) <= 2.43).every(f => gapHit.includes(f)) && /corrupted/.test(nan.reason) && /incomplete/.test(short.reason) && /overloaded/.test(clip.reason),
+        `gap: no value at ${gapHit.join(', ')} | ${[nan.reason, short.reason, clip.reason].map(r => (r || '').slice(0, 45)).join(' | ')}`);
     }
     {
       // A Bluetooth headset's low sample rate (8 and 11.025 kHz): the RT60 bands' upper edge lies above what the recording
@@ -223,10 +237,36 @@
       check('A2 At 8 and 11.025 kHz (a Bluetooth headset): the background and the take\'s levels are numbers, a normal take is captured, and a test signal too quiet for the background is rejected with that reason',
         rows.every(r => Number.isFinite(r.n.inBand.leqDbfs) && Number.isFinite(r.ok.levels.preRollDbfs) && Number.isFinite(r.ok.levels.snrDb) && r.ok.status === 'captured' && r.quiet.status === 'failed' && /above the background at the microphone/.test(r.quiet.reason || '')),
         rows.map(r => `${r.fs / 1000} kHz: background ${r.n.inBand.leqDbfs} dBFS · take ${r.ok.status}, signal ${r.ok.levels.snrDb} dB above · quiet take: ${(r.quiet.reason || r.quiet.status).slice(0, 60)}`).join(' | '));
-      // A click's reason names what was found in the field (sound effects or speaker protection) and what to do.
-      const ck = analyse({ splice: 2.7, n: -128, refl: DESK });
-      check('A2 A take rejected for a click says where such jumps come from (the device\'s sound effects or speaker protection, a dropped moment of audio, a tap) and what to do (sound effects off, the sweep level lower)',
-        ck.status === 'failed' && /has a click/.test(ck.reason || '') && /sound effects or speaker protection/.test(ck.reason) && /lower the sweep level/.test(ck.reason), (ck.reason || '').slice(0, 160));
+      // A take a click leaves with too few bands says where such jumps come from and what to do.
+      const ck = PROC.evaluate(take({ splice: 2.7, n: -128, refl: DESK }, { echoCancellation: false, noiseSuppression: false, autoGainControl: false }), {});
+      check('A2 A take a click leaves with too few bands is not valid, and says where such jumps come from (a dropped moment of audio, a tap, the device\'s sound effects) and what to do (other apps closed, the device still, sound effects off)',
+        !ck.valid && /^Only \d of the 6 bands could be measured/.test(ck.reason || '') && /A click in the recording/.test(ck.reason) && /audio the device or browser dropped/.test(ck.reason) && /sound effects/.test(ck.reason) && /keep the device still/.test(ck.reason), (ck.reason || '').slice(0, 160));
+      // What a real laptop's own audio processing does to the sweep (seen in real recordings, 5 November 2026): its level
+      // moves for about a millisecond, at the same points of the sweep in every take. No audio is lost and the waveform has
+      // no jump, so no band loses its value. Read just above the sweep, as before, this looked like a 16–36 dB click.
+      const OFF3 = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+      const dips = (db, ms, at) => (rec, rate, plan) => { const y = Float32Array.from(rec), k = Math.round(ms / 1000 * rate), g = 1 - Math.pow(10, -db / 20); at.forEach(t => { const a = Math.round((plan.preRoll + 0.07 + t) * rate); for (let i = 0; i < k; i++) y[a + i] *= 1 - g * 0.5 * (1 - Math.cos(2 * Math.PI * i / k)); }); return y; };
+      const WHERE = [4.2, 4.72, 4.81];
+      const dipped = [['3 dB over 0.7 ms', { post: dips(3, 0.7, WHERE), refl: DESK, noise: -55 }], ['6 dB over 0.7 ms', { post: dips(6, 0.7, WHERE), refl: DESK, noise: -55 }], ['6 dB over 1.5 ms', { post: dips(6, 1.5, WHERE), refl: DESK, noise: -55 }], ['3 dB over 0.7 ms, quiet room', { post: dips(3, 0.7, WHERE), refl: DESK, noise: -70 }]].map(([k, o]) => {
+        const r = PROC.evaluate(take(o, OFF3), {}), c = PROC.evaluate(take(Object.assign({}, o, { post: null }), OFF3), {}), a = take(o, OFF3).analysis;
+        const off = Math.max(...r.bands.map(b => { const x = c.bands.find(q => q.f === b.f); return b.rt60 != null && x.rt60 != null ? 100 * Math.abs(b.rt60 / x.rt60 - 1) : 0; }));
+        return { k, ok: r.valid && !a.clicks.found.length && !a.damage.length && r.bands.every(b => b.rt60 != null || c.bands.find(q => q.f === b.f).rt60 == null) && off <= 5, off, worst: a.clicks.worstDb };
+      });
+      check('A2 The level of the sweep moving for about a millisecond, as a laptop\'s own audio processing does (nothing lost, no jump in the waveform): no click, no band lost, the take valid, every band within 5 % of the same take without it',
+        dipped.every(g => g.ok), dipped.map(g => `${g.k}: ${g.ok ? '' : 'FAIL '}worst ${g.worst} dB, largest change ${g.off.toFixed(1)} %`).join(' · '));
+      // A lost or repeated render block whose join hides from the click check: the timing check finds it above 1 kHz, where
+      // a speaker adds little delay of its own. Left unseen it moves the start of the response, and with it every band.
+      const clicksWere = AN.CRITERIA.take.clicks.db;
+      AN.CRITERIA.take.clicks.db = 999; // the timing check alone
+      let hidden;
+      try { hidden = [[128, 3.6], [128, 4.0], [128, 4.4], [-128, 4.0]].map(([n, t]) => { const a = analyse({ splice: t, n, refl: DESK }); return { k: `${n} samples at ${t} s`, ok: a.damage.some(d => d.kind === 'late') && a.bands.some(b => b.damage), step: a.timing && a.timing.maxStepMs }; }); } finally { AN.CRITERIA.take.clicks.db = clicksWere; }
+      check('A2 One render block (128 samples, 2.67 ms) lost or repeated above 1 kHz is found by the sweep\'s own timing alone, with the click check switched off',
+        hidden.every(g => g.ok), hidden.map(g => `${g.k}: ${g.ok ? 'found' : 'NOT found'}, step ${g.step} ms`).join(' · '));
+      // A large loss late in the sweep moves the start of the response so far that no band shows a direct sound any more:
+      // the timing check must not switch itself off then.
+      const large = [[480, 4.0], [480, 4.3], [480, 4.7]].map(([n, t]) => { const a = analyse({ splice: t, n, refl: DESK }); return { k: `${n} samples at ${t} s`, ok: a.timing && a.timing.checked && a.damage.length > 0 && a.bands.some(b => b.damage), checked: a.timing && a.timing.checked, kinds: a.damage.map(d => d.kind).join('+') }; });
+      check('A2 10 ms of audio lost late in the sweep is found, and the timing check stays on though no band shows its direct sound in place any more',
+        large.every(g => g.ok), large.map(g => `${g.k}: ${g.ok ? '' : 'FAIL '}checked ${g.checked}, ${g.kinds || 'nothing found'}`).join(' · '));
     }
 
     /* ---------- A3 processing decisions ---------- */
@@ -259,9 +299,12 @@
       const dryTake = PROC.evaluate(take({ refl: DESK }, allOff, { integrity: { inputLostFrames: 0, outputUnderruns: 1, outputUnderrunMs: 3 } }), {});
       const cleanTake = PROC.evaluate(take({ refl: DESK }, allOff, { integrity: { inputLostFrames: 0, outputUnderruns: 0, outputUnderrunMs: 0 } }), {});
       const noCount = PROC.evaluate(take({ refl: DESK }, allOff, { integrity: { inputLostFrames: null, outputUnderruns: null, outputUnderrunMs: null } }), {});
-      check('A3 The browser\'s own counts: 12 frames lost from 1000 → 481 000 captured with 480 988 delivered, and no new underrun; a take with lost frames or an output that ran dry is not valid with the reason; none counted, or a browser that keeps no count: valid',
-        MI.inputLostFrames === 12 && MI.outputUnderruns === 0 && !lostTake.valid && /12 audio frames from the microphone were lost/.test(lostTake.reason) && !dryTake.valid && /ran dry 1 time/.test(dryTake.reason) && cleanTake.valid && noCount.valid,
-        `${JSON.stringify(MI)} · ${(lostTake.reason || '').slice(0, 90)} · ${(dryTake.reason || '').slice(0, 60)}`);
+      // Where the browser counted the loss decides which bands it costs (analysis.js; here none is placed): the take then
+      // carries a warning naming the loss, so no band is High confidence.
+      check('A3 The browser\'s own counts: 12 frames lost from 1000 → 481 000 captured with 480 988 delivered, and no new underrun; a take with lost frames or an output that ran dry carries a warning naming the loss (no band High); none counted, or a browser that keeps no count: valid, no such warning',
+        MI.inputLostFrames === 12 && MI.outputUnderruns === 0 && lostTake.warnings.some(w => /12 audio frames from the microphone were lost/.test(w)) && lostTake.bands.every(b => b.confidence !== 'High') && dryTake.warnings.some(w => /ran dry 1 time/.test(w))
+          && cleanTake.valid && noCount.valid && !cleanTake.warnings.some(w => /browser reports that during the take/.test(w)),
+        `${JSON.stringify(MI)} · ${lostTake.warnings.join(' ').slice(0, 90)} · ${dryTake.warnings.join(' ').slice(0, 60)}`);
       const steady = PROC.evaluate(take({ refl: DESK }, allOff), {});
       check('A3 A steady background: no level change found (within ±1 dB, after the sweep and above it while it plays), valid, and with every setting reported off 1000 Hz can be High confidence',
         steady.valid && Math.abs(steady.meta.levelChangeDb || 0) < 1 && Math.abs(steady.meta.sweepGainDb) < 1 && steady.bands.find(b => b.f === 1000).confidence === 'High', `change ${steady.meta.levelChangeDb} dB after, ${steady.meta.sweepGainDb} dB during; 1 kHz ${steady.bands.find(b => b.f === 1000).confidence}`);
@@ -286,12 +329,12 @@
       check('A3 The output\'s counts read refresh by refresh: a loss shown before the test signal starts is not counted, one during it is, one whose refresh stretch reaches into it is, one after it is not; without totalDuration a loss still counts; no counts: none',
         early.underruns === 0 && during.underruns === 1 && straddle.underruns === 1 && late.underruns === 0 && noTotal.underruns === 2 && OL([{ at: 0, output: null }], 1, 6) === null,
         `before ${early.underruns} · during ${during.underruns} · across the start ${straddle.underruns} · after ${late.underruns} · no totalDuration ${noTotal.underruns}`);
-      // A phone take's record of where the browser counted audio lost (measurement.js lossSpans): each rise in the
+      // Where the browser counted audio lost during a take (measurement.js lossSpans): each rise in the
       // microphone's lost frames between two readings, and each refresh of the output's counts that shows new underruns.
       const I = (at, total, delivered) => ({ at, input: { total, delivered } });
       const spans = MEAS.lossSpans([I(0, 100, 100), I(1.2, 900, 900), I(1.3, 1380, 900), I(5, 6000, 5520), I(5.1, 6480, 5520)], [O(0, 0, 0), O(0.4, 0, 0.4), O(1.4, 2, 1.4), O(2.4, 2, 2.4)]);
       const none = MEAS.lossSpans([], [{ at: 0, output: null }]);
-      check('A3 A phone take records where the browser counted audio lost: 480 microphone samples between 1.2 and 1.3 s and 480 more between 5.0 and 5.1 s; 2 underruns shown at the 1.4 s refresh (from 0.15 s); no counts: none',
+      check('A3 A take records where the browser counted audio lost: 480 microphone samples between 1.2 and 1.3 s and 480 more between 5.0 and 5.1 s; 2 underruns shown at the 1.4 s refresh (from 0.15 s); no counts: none',
         JSON.stringify(spans.input) === JSON.stringify([{ from: 1.2, to: 1.3, frames: 480 }, { from: 5, to: 5.1, frames: 480 }]) && spans.output.length === 1 && spans.output[0].underruns === 2 && Math.abs(spans.output[0].from - 0.15) < 1e-9 && spans.output[0].to === 1.4
           && none.input === null && none.output === null, JSON.stringify(spans));
 
@@ -350,7 +393,7 @@
       // (0.62 + 0.55 + 0.50 + 0.48 + 0.45 + 0.40) = 3.00; ÷ 6 = 0.5000 s (the earlier 500–2000 Hz mean was 0.4767 s).
       check('A4 The headline is the mean of all six bands: (0.62 + 0.55 + 0.50 + 0.48 + 0.45 + 0.40) ÷ 6 = 0.5000 s',
         all.available && near(all.value, 3.00 / 6, 1e-12) && all.n === 6 && JSON.stringify(RA.REQUIRED) === '[125,250,500,1000,2000,4000]' && !all.excluded.length, `${all.value}`);
-      // A phone-like take that loses 125, 250 and 4000 Hz: the mean of the three that are left (3 of 6, the least an
+      // A take that loses 125, 250 and 4000 Hz: the mean of the three that are left (3 of 6, the least an
       // average may have), (0.50 + 0.48 + 0.45) ÷ 3 = 0.4767 s, with the three named as left out.
       const lowGone = RA.of(R([band(125, null), band(250, null), band(500, 0.50), band(1000, 0.48), band(2000, 0.45), band(4000, null)]));
       check('A4 A take that loses 125, 250 and 4000 Hz: the average of the other three, 1.43 ÷ 3 = 0.4767 s, with the three named as left out', lowGone.available && lowGone.partial && near(lowGone.value, 1.43 / 3, 1e-12) && RA.describe(lowGone) === '3 of 6 bands (125 Hz, 250 Hz and 4000 Hz not measured)', RA.describe(lowGone));
@@ -368,39 +411,55 @@
       check('A4 Unrounded: (0.304 × 5 + 0.314) ÷ 6 = 1.834 ÷ 6 = 0.30567 s is kept, and shown 0.31 s', near(ur.value, 1.834 / 6, 1e-12) && AM.util.fmt.s(ur.value) === '0.31 s', `${ur.value}`);
     }
 
-    /* ---------- A5 profiles, configuration, report ---------- */
-    status('A5 profiles and configuration…');
+    /* ---------- A5 the measuring device, configuration, report ---------- */
+    status('A5 device and configuration…');
     S.startProject('new');
     S.autofillTo('setup');
-    const p = S.state.project, act = W.get('setup').actions, ctx = () => ({ project: S.state.project, state: S.state });
-    const detected = MEAS.deviceKind(), other = detected === 'computer' ? 'mobile' : 'computer';
-    Object.keys(p.setup.prep).length || ['doors', 'hvac', 'quiet', 'placed', 'uncovered', 'output'].forEach(k => { p.setup.prep[k] = true; });
+    const p = S.state.project, ctx = () => ({ project: S.state.project, state: S.state });
     ['doors', 'hvac', 'quiet', 'placed', 'uncovered', 'output'].forEach(k => { p.setup.prep[k] = true; });
     S.emit();
     const setupText = () => textOf(W.get('setup').view(ctx()).body);
     {
-      const before = setupText();
-      act.setKind(ctx(), other);
-      const after = setupText(), K = AM.demo.DEVICE_KINDS[other];
-      check(`A5 Switching the profile to "${K.name}": stored as chosen, the placement items of the checklist (placed, uncovered, output) asked again and the others kept, its own checks shown, and a note that the measurement still uses this device`,
-        p.setup.deviceKind === other && !p.setup.prep.placed && !p.setup.prep.uncovered && !p.setup.prep.output && p.setup.prep.doors && p.setup.prep.hvac && p.setup.prep.quiet
-          && after.includes(K.checks[0]) && /changes the instructions only/.test(after) && !before.includes(K.checks[0]),
-        `prep ${JSON.stringify(p.setup.prep)}`);
-      act.setKind(ctx(), detected);
-      const back = setupText(), Kd = AM.demo.DEVICE_KINDS[detected];
-      check(`A5 Back to the detected "${Kd.name}": no longer a chosen profile, none of the other profile's checks or notes remain`,
-        p.setup.deviceKind === null && back.includes(Kd.checks[0]) && !back.includes(K.checks[0]) && !/changes the instructions only/.test(back), `deviceKind ${p.setup.deviceKind}`);
+      const t = setupText(), K = AM.demo.DEVICE;
+      check(`A5 Measuring is laptop only: Setup names "${K.name}" and its checks, with no device to choose and no phone option`,
+        t.includes(K.name) && t.includes(K.checks[0]) && !/Device profile|Phone or tablet|\(detected\)/.test(t) && !W.get('setup').actions.setKind && !('deviceKind' in p.setup) && !AM.demo.DEVICE_KINDS && !AM.live.kindOf, t.slice(0, 160));
+      // On a phone or tablet no microphone session opens, whatever asks for one (the browser is never asked).
+      const IO = AM.audioIO, asked = window.VR.stats.getUserMedia, nav = navigator;
+      const refused = async ua => {
+        Object.defineProperty(nav, 'userAgent', { configurable: true, get: () => ua });
+        try {
+          const kind = IO.isPhoneOrTablet(), st = await IO.permissionState();
+          const code = await MEAS.requestAccess('default', 'default').then(() => 'opened', e => e.code);
+          return { kind, st, code };
+        } finally { delete nav.userAgent; }
+      };
+      const iphone = await refused('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1');
+      const android = await refused('Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36');
+      const tablet = await refused('Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Safari/604.1');
+      check('A5 On a phone or tablet no microphone session opens: access is refused as "laptop-only", the browser is never asked, and Setup says why; here on a computer it is not refused',
+        [iphone, android, tablet].every(r => r.kind && r.st === 'laptop-only' && r.code === 'laptop-only') && window.VR.stats.getUserMedia === asked && !IO.isPhoneOrTablet() && /laptop or desktop computer/.test(IO.MESSAGES['laptop-only']),
+        JSON.stringify({ iphone, android, tablet, asked: window.VR.stats.getUserMedia - asked }));
+      // A project saved with a phone chosen as its device opens as any other, through the app's own loading of saved work.
+      const KEY = 'acoustic-measurement-prototype', savedId = 'psavedphone', saved = AM.demo.newProject('new');
+      saved.id = savedId; saved.setup.deviceKind = 'mobile';
+      localStorage.setItem(`${KEY}:p:${savedId}`, JSON.stringify(saved));
+      const index = JSON.parse(localStorage.getItem(KEY));
+      localStorage.setItem(KEY, JSON.stringify(Object.assign(index, { ids: index.ids.concat(savedId) })));
+      window.dispatchEvent(new StorageEvent('storage', { key: KEY }));
+      const opened = S.state.projects.find(x => x.id === savedId);
+      check('A5 A project saved with a phone chosen as its device still opens, without that choice', !!opened && !('deviceKind' in opened.setup), opened ? JSON.stringify(Object.keys(opened.setup)) : 'not loaded');
+      S.deleteProject(savedId);
     }
     {
       // The selected configuration must be the one in force before measuring.
       const fakeSession = o => Object.assign({ deviceId: 'default', label: 'Mic', sampleRate: 48000, settings: allOff, capabilities: null, supported: null, tap: { kind: 'audio-worklet' } }, o);
-      const okOut = MEAS.configOf(fakeSession({ output: { requested: 'spk', selectable: true, applied: 'spk', error: null } }), { profile: 'computer' }, 'Speakers');
-      const notSel = MEAS.configOf(fakeSession({ output: { requested: 'default', selectable: false, applied: null, error: null } }), { profile: 'mobile', profileChosen: true }, null);
-      const failed = MEAS.configOf(fakeSession({ output: { requested: 'spk', selectable: true, applied: 'default', error: 'device not found' } }), {}, null);
-      const dflt = MEAS.configOf(fakeSession({ output: { requested: 'default', selectable: true, applied: 'default', error: null } }), {}, 'Speakers');
+      const okOut = MEAS.configOf(fakeSession({ output: { requested: 'spk', selectable: true, applied: 'spk', error: null } }), 'Speakers');
+      const notSel = MEAS.configOf(fakeSession({ output: { requested: 'default', selectable: false, applied: null, error: null } }), null);
+      const failed = MEAS.configOf(fakeSession({ output: { requested: 'spk', selectable: true, applied: 'default', error: 'device not found' } }), null);
+      const dflt = MEAS.configOf(fakeSession({ output: { requested: 'default', selectable: true, applied: 'default', error: null } }), 'Speakers');
       check('A5 Output: confirmed only when a specific output was selected and the browser applied it; the system default (which device is unknown), a browser that cannot choose, and a failed selection are never "confirmed"',
         okOut.output.verified && !dflt.output.verified && !notSel.output.verified && notSel.output.selectable === false && !failed.output.verified && failed.output.error === 'device not found'
-          && okOut.requested.echoCancellation === false && notSel.profile === 'mobile' && notSel.profileChosen === true,
+          && okOut.requested.echoCancellation === false,
         `${JSON.stringify(okOut.output)} | ${JSON.stringify(notSel.output)}`);
       p.setup.permission = 'granted';
       p.setup.input = { label: 'Mic', sampleRate: 48000, settings: allOff, config: failed };
@@ -414,21 +473,21 @@
       p.setup.outputId = 'default'; p.setup.permission = 'not-requested'; p.setup.input = null;
     }
     {
-      // The report describes the configuration the take was made with, not what is selected afterwards.
-      const t = take({ refl: DESK }, { echoCancellation: false }, { deviceKind: other, config: MEAS.configOf({ deviceId: 'default', label: 'Mic', sampleRate: 48000, settings: { echoCancellation: false }, output: { requested: 'default', selectable: false }, tap: { kind: 'audio-worklet' } }, { profile: other, profileChosen: true }, null) });
+      // The report describes the configuration the take was made with, not what is selected afterwards. Here a take saved
+      // when the app could also measure on a phone: a saved record keeps naming the device it was made with.
+      const t = take({ refl: DESK }, { echoCancellation: false }, { deviceKind: 'mobile', config: Object.assign(MEAS.configOf({ deviceId: 'default', label: 'Mic', sampleRate: 48000, settings: { echoCancellation: false }, output: { requested: 'default', selectable: false }, tap: { kind: 'audio-worklet' } }, null), { profile: 'mobile', profileChosen: true }) });
       const res = PROC.evaluate(t, {});
       p.measurement.recording = t; p.processing.result = res;
       p.target = { preferred: 0.6, min: 0.48, max: 0.72, source: 'custom', basis: 'Test' };
-      p.setup.deviceKind = null; // the dropdown now says the detected profile
       p.completed = W.STAGES.map(s => s.id); p.review = [];
       S.emit();
       const M = AM.report.model(p), pdf = await AM.report.build(p);
       const raw = Array.from(pdf.bytes, c => String.fromCharCode(c)).join('');
       const txt = [...raw.matchAll(/<([0-9A-F]+)> Tj/g)].map(m => m[1].replace(/../g, h => String.fromCharCode(parseInt(h, 16)))).join(' ');
       const results = textOf(W.get('results').view(ctx()).body);
-      const K = AM.demo.DEVICE_KINDS[other];
-      check(`A5 Report and Results use the take's own configuration: profile "${K.name}" (chosen at the time, not the profile selected now) and browser processing "Echo cancellation off; others unknown" (never "all off")`,
-        M.measurement.deviceKind === K.name && txt.includes(K.name) && txt.includes('Echo cancellation off; others unknown') && /noise suppression not reported/.test(results) && !/Switched off/.test(results) && ![...(pdf.doc.unsupported || [])].length,
+      const saved = 'Phone or tablet';
+      check(`A5 Report and Results use the take's own configuration: a saved take still names its device "${saved}" and browser processing "Echo cancellation off; others unknown" (never "all off"); a new take is "${AM.demo.DEVICE.name}"`,
+        M.measurement.deviceKind === saved && txt.includes(saved) && results.includes(saved) && AM.demo.deviceName('computer') === AM.demo.DEVICE.name && AM.demo.deviceName(null) === null && txt.includes('Echo cancellation off; others unknown') && /noise suppression not reported/.test(results) && !/Switched off/.test(results) && ![...(pdf.doc.unsupported || [])].length,
         `report: ${M.measurement.deviceKind}; results: ${(results.match(/Browser processing[^·]{0,120}/) || [''])[0]}`);
       const avgTxt = textOf(W.get('results').view(ctx()).body);
       const avg = D.averageRT60(p);
@@ -499,9 +558,9 @@
       return { rec, failed: rec ? null : (p.measurement.failed && p.measurement.failed.takenAt !== failedBefore ? p.measurement.failed : null) };
     }
     const good = await takeWith('complete take');
-    check('B A complete take keeps the configuration it was made with (profile, input, output, processing as reported or unknown)',
-      good.rec && good.rec.config && good.rec.config.profile === AM.live.kindOf(p) && good.rec.config.processing.length === 3 && good.rec.analysis.timing,
-      good.rec ? `profile ${good.rec.config.profile}; ${AM.services.measurement.processingText(good.rec.config.processing)}; continuity ${good.rec.analysis.timing.checked ? `${good.rec.analysis.timing.maxStepMs} ms` : good.rec.analysis.timing.reason}` : (good.failed && good.failed.reason));
+    check('B A complete take is made on a computer and keeps the configuration it was made with (input, output, processing as reported or unknown)',
+      good.rec && good.rec.deviceKind === 'computer' && good.rec.config && good.rec.config.processing.length === 3 && good.rec.analysis.timing,
+      good.rec ? `${good.rec.deviceKind}; ${AM.services.measurement.processingText(good.rec.config.processing)}; continuity ${good.rec.analysis.timing.checked ? `${good.rec.analysis.timing.maxStepMs} ms` : good.rec.analysis.timing.reason}` : (good.failed && good.failed.reason));
     check('B The take carries the browser\'s own counts (none lost) and the click and level checks above the sweep',
       good.rec && good.rec.integrity && good.rec.analysis.clicks && good.rec.analysis.clicks.checked && good.rec.analysis.sweepGain,
       good.rec ? `counts ${JSON.stringify(good.rec.integrity)}; clicks: worst ${good.rec.analysis.clicks.worstDb} dB; level above the sweep ${good.rec.analysis.sweepGain.changeDb} dB` : 'no take');
@@ -509,9 +568,12 @@
     const lost = await takeWith('lost frames', { after: 2500, act: () => { const t = VR.lastTrack, real = Object.getOwnPropertyDescriptor(MediaStreamTrack.prototype, 'stats'); Object.defineProperty(t, 'stats', { configurable: true, get: () => { const s = real.get.call(t); return { totalFrames: s.totalFrames + 96, deliveredFrames: s.deliveredFrames }; } }); } });
     if (VR.lastTrack) delete VR.lastTrack.stats;
     const lostRes = lost.rec ? AM.services.processing.evaluate(lost.rec, {}) : null;
-    check('B The browser counts 96 microphone frames lost during a take: the take is recorded but not valid, with the reason',
-      lost.rec && lost.rec.integrity && lost.rec.integrity.inputLostFrames === 96 && lostRes && !lostRes.valid && /96 audio frames from the microphone were lost/.test(lostRes.reason),
-      lost.rec ? `${JSON.stringify(lost.rec.integrity)} · ${lostRes && lostRes.reason.slice(0, 100)}` : (lost.failed && lost.failed.reason));
+    // Where it counted them decides the bands they could reach (analysis.js); those get no value and say so.
+    const lostHit = lostRes ? lostRes.bands.filter(b => /counted lost/.test(b.reason || '')) : [], lostN = lostRes ? lostRes.bands.filter(b => b.rt60 != null).length : 0;
+    check('B The browser counts 96 microphone frames lost during a take: the take is recorded with the count; the bands the loss could reach get no value and say so, with a warning; the take counts when at least 3 bands are left',
+      lost.rec && lost.rec.integrity && lost.rec.integrity.inputLostFrames === 96 && lostRes && lost.rec.analysis.damage.some(d => d.kind === 'lost') && lostHit.length > 0 && lostHit.every(b => b.rt60 == null)
+        && lostRes.warnings.some(w => /96 audio frames from the microphone were lost/.test(w)) && lostRes.valid === (lostN >= 3),
+      lost.rec ? `${JSON.stringify(lost.rec.integrity)} · no value at ${lostHit.map(b => b.f).join(', ')} · ${lostRes.valid ? 'valid' : (lostRes.reason || '').slice(0, 80)}` : (lost.failed && lost.failed.reason));
     // The context's own playback stats (every AudioContext), refreshed the way Chrome refreshes them: about once a second
     // (here 0.4, 1.4, 2.4 … s after the take is started), each refresh moving totalDuration on and showing the underruns
     // that happened before it. lossAt: when the output runs dry once (ms after the start).
@@ -532,30 +594,10 @@
     check('B The sound output ran dry in the silence before the sweep (the browser shows it at its next refresh, still before the sweep): not counted, since it cannot harm the take; the take is valid',
       dryBefore.rec && dryBefore.rec.integrity.outputUnderruns === 0 && dbRes && dbRes.valid,
       dryBefore.rec ? `${JSON.stringify(dryBefore.rec.integrity)} · ${dbRes.valid ? 'valid' : (dbRes.reason || '').slice(0, 80)}` : (dryBefore.failed && dryBefore.failed.reason));
-    check('B The sound output ran dry while the sweep played: counted, and the take is recorded but not valid, with the reason (measured again only when the user presses it)',
-      dryDuring.rec && dryDuring.rec.integrity.outputUnderruns === 1 && ddRes && !ddRes.valid && /ran dry 1 time/.test(ddRes.reason || ''),
-      dryDuring.rec ? `${JSON.stringify(dryDuring.rec.integrity)} · ${(ddRes.reason || 'valid').slice(0, 80)}` : (dryDuring.failed && dryDuring.failed.reason));
-    // A phone (profile 'mobile'): three short tones from 150 Hz in one take, each checked, the clean ones averaged.
-    const kindWas = p.setup.deviceKind;
-    AM.store.update(pp => { pp.setup.deviceKind = 'mobile'; });
-    const ph = await takeWith('a phone take', null, 60000);
-    // A phone whose browser counts microphone frames lost (raised by 480 from 4.5 s into the take, between tones 1 and 2)
-    // while the recording itself is whole: the count is kept with the take, and no tone is set aside for it.
-    const phLost = await takeWith('a phone take, frames counted lost', { after: 4500, act: () => { const t = VR.lastTrack, real = Object.getOwnPropertyDescriptor(MediaStreamTrack.prototype, 'stats'); Object.defineProperty(t, 'stats', { configurable: true, get: () => { const s = real.get.call(t); return { totalFrames: s.totalFrames + 480, deliveredFrames: s.deliveredFrames }; } }); } }, 60000);
-    if (VR.lastTrack) delete VR.lastTrack.stats;
-    AM.store.update(pp => { pp.setup.deviceKind = kindWas; });
-    const phRes = ph.rec ? AM.services.processing.evaluate(ph.rec, {}) : null, phPlan = ph.rec ? ph.rec.plan : {};
-    // A tone the browser reports lost audio in (this test browser does, now and then, on its first sound) is set aside
-    // with its reason; the take stands on the others.
-    const tones = (ph.rec && ph.rec.analysis.tones) || [];
-    check('B A phone take: three 2 s tones from 150 Hz in one 16 s take, each checked, at least two used (a tone set aside says why), the result valid, and 125 Hz (below the tones) not measured',
-      ph.rec && phPlan.count === 3 && phPlan.f1 === 150 && phPlan.seconds === 2 && Math.abs(phPlan.total - 16) < 0.01 && tones.length === 3 && tones.filter(t => t.used).length >= 2 && tones.every(t => t.used || !!t.reason)
-        && phRes && phRes.valid && phRes.bands.find(b => b.f === 125).quality === 'Not measured',
-      ph.rec ? `${phPlan.count} × ${phPlan.seconds} s from ${phPlan.f1} Hz, ${phPlan.total} s · tones ${ph.rec.analysis.tones ? ph.rec.analysis.tones.map(t => (t.used ? 'used' : 'set aside')).join(', ') : '—'} · ${phRes.valid ? `valid, 1000 Hz ${phRes.bands.find(b => b.f === 1000).rt60} s` : (phRes.reason || '').slice(0, 80)}` : (ph.failed && ph.failed.reason));
-    const plRes = phLost.rec ? AM.services.processing.evaluate(phLost.rec, {}) : null, plTones = (phLost.rec && phLost.rec.analysis.tones) || [];
-    check('B A phone whose browser counts 480 microphone frames lost between tones while the recording is whole: the count is kept with the take, the tones are still used, the result is valid',
-      phLost.rec && phLost.rec.browser && phLost.rec.browser.input && phLost.rec.browser.input.reduce((s, x) => s + x.frames, 0) === 480 && plTones.filter(t => t.used).length >= 2 && plRes && plRes.valid,
-      phLost.rec ? `counted ${JSON.stringify(phLost.rec.browser.input)} · tones ${plTones.map(t => (t.used ? 'used' : `set aside (${(t.reason || '').slice(0, 50)})`)).join(', ')} · ${plRes.valid ? 'valid' : (plRes.reason || '').slice(0, 80)}` : (phLost.failed && phLost.failed.reason));
+    const dryHit = ddRes ? ddRes.bands.filter(b => /ran dry/.test(b.reason || '')) : [];
+    check('B The sound output ran dry while the sweep played: counted; the bands it could reach get no value and say so, with a warning (measured again only when the user presses it)',
+      dryDuring.rec && dryDuring.rec.integrity.outputUnderruns === 1 && ddRes && dryHit.length > 0 && dryHit.every(b => b.rt60 == null) && ddRes.warnings.some(w => /ran dry 1 time/.test(w)),
+      dryDuring.rec ? `${JSON.stringify(dryDuring.rec.integrity)} · no value at ${dryHit.map(b => b.f).join(', ')} · ${ddRes.valid ? 'valid' : (ddRes.reason || '').slice(0, 80)}` : (dryDuring.failed && dryDuring.failed.reason));
     const keep = p.measurement.recording && p.measurement.recording.id;
     const hidden = await takeWith('hidden page', { after: 2500, act: () => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); } });
     delete document.hidden;

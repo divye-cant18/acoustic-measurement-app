@@ -29,7 +29,7 @@ export interface NoiseResult {
 }
 export interface NoiseAttempt { status: 'invalid' | 'failed'; takenAt: string; reasons: string[] }
 export interface Setup {
-  deviceKind: string | null; deviceId: string; deviceLabel: string; outputId: string; permission: string; position: string;
+  deviceId: string; deviceLabel: string; outputId: string; permission: string; position: string;
   sweepLevelDb: number; noise: NoiseResult | null; noiseAttempt: NoiseAttempt | null; prep: Record<string, boolean>; [k: string]: unknown;
 }
 export interface Take {
@@ -180,12 +180,12 @@ export interface UiHelpers {
 export interface AMRoot {
   util: Util; workflow: Workflow; store: Store; derive: Derive; ui: UiHelpers;
   brand: { name: string; tagline: string; descriptor: string; icon: string; wordmark: string; links: { catalogue: string; configurator: string } };
-  demo: { BANDS: Band[]; REFERENCE_BAND: Band; POSITIONS: { id: string; name: string; detail: string; x: number; y: number }[]; DEVICE_KINDS: Record<string, { name: string; noun: string; [k: string]: unknown }>; [k: string]: unknown };
+  demo: { BANDS: Band[]; REFERENCE_BAND: Band; POSITIONS: { id: string; name: string; detail: string; x: number; y: number }[]; DEVICE: { name: string; noun: string; place: string; support: string; checks: string[] }; deviceName(kind: string | null | undefined): string | null; [k: string]: unknown };
   services: { rt60Average: { SHORT: string; LABEL: string; METHOD: string; describe(a: Average): string; of(r: unknown): Average; ofBands(r: unknown, set: number[]): Average; eligible(b: unknown): boolean }; explain: { forStage(id: string, p: Project | null): { title: string; paragraphs: string[] } }; [k: string]: unknown };
   charts: { hydrate(root: ParentNode): void; BUILDERS: Record<string, (spec: unknown, width: number) => string> };
   guide: { html(id: string): string; sync(root: HTMLElement, sheet: UiState['sheet']): void; poster(id: string): string };
   guides: Record<string, { title: string; lengthLabel: string; closeLabel?: string; [k: string]: unknown }>;
-  live: { state: { mic: { status: string; [k: string]: unknown }; take: unknown; noise: unknown }; kindOf(p: Project): string; [k: string]: unknown };
+  live: { state: { mic: { status: string; [k: string]: unknown }; take: unknown; noise: unknown }; [k: string]: unknown };
   analysis: { CRITERIA: { decay: { directAllowanceDb: number; [k: string]: unknown }; [k: string]: unknown }; [k: string]: unknown };
   reportGate?: { card(p: Project, opts: { about: string; reportBusy: boolean }): string; [k: string]: unknown };
   app?: { render(): void };

@@ -107,7 +107,6 @@ window.AM = window.AM || { services: {} };
     speaker: '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.5a3.5 3.5 0 010 5M18 7a7 7 0 010 10"/>',
     laptop: '<rect x="5" y="5" width="14" height="10" rx="1.5"/><path d="M2.5 18.5h19"/>',
     wall: '<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 16.5h18"/><rect x="6" y="7" width="4.5" height="6.5" rx=".6"/><rect x="13.5" y="7" width="4.5" height="6.5" rx=".6"/>',
-    phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
     folder: '<path d="M3.5 7a2 2 0 012-2h4l2 2h7a2 2 0 012 2v8a2 2 0 01-2 2h-13a2 2 0 01-2-2z"/>',
     wave: '<path d="M3 12h1.5M7 8.5v7M11 5v14M15 8v8M19 10.5v3"/>',
     users: '<circle cx="9" cy="8.5" r="3"/><circle cx="17" cy="9.5" r="2.3"/><path d="M3.5 19a5.5 5.5 0 0111 0M15.5 14.6A4.5 4.5 0 0121 19"/>',

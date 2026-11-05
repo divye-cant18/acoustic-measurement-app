@@ -153,7 +153,7 @@ drawn wider underneath, so where they are the same both still show. The other ba
 - `npm run build` (`tsc --noEmit` strict + Vite): no errors; bundle 412 kB (121 kB gzipped).
 - Test pages, against the built interface: calculations 32/32, validation 72/72, dsp 64/64, room-surfaces 52/52,
   rt60-average 60/60, multi-position 44/44 (parts A and B), audio-config 52/52 (A and B), rt60-responsiveness 27/27
-  (A and B), sweep-level 14/14, mobile study done; server `tests/report_submission_test.py` 42 OK. One responsiveness
+  (A and B), sweep-level 14/14; server `tests/report_submission_test.py` 42 OK. One responsiveness
   run lost take 1 to an audio dropout that the app's own integrity check rejected (as designed); the rerun passed.
 - Screenshots of every step at 1440, 820 and 390 px and in dark mode, from a real two-position session through the
   test harness's virtual room: no horizontal overflow at any width.

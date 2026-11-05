@@ -31,7 +31,7 @@ the client side (nothing was submitted); the PDF. There were no console errors a
 | 12 | Setup / Measure | Leaving the page during a background check or a take records microphone access as failed | wrong behaviour || Fixed: an interrupted recording leaves the permission as it was |
 | 13 | Measurement | The same background check shows 71.3 dB below max on Setup and 65.0 dB on Measurement (in-band vs unfiltered) | wrong text || Fixed: both show the level in the RT60 bands |
 | 14 | Measurement | At a new position, or after a failed take, the panel describes the previous take ("Take processed", "Measure again") | wrong text || Fixed: the panel speaks of the selected position ("Not measured at P3 yet", "Start measurement") |
-| 15 | Measurement | After a device-profile change the checklist can be skipped by opening Measurement from the rail | wrong behaviour || Fixed: a take cannot start until the checklist is done |
+| 15 | Measurement | The checklist can be skipped by opening Measurement from the rail | wrong behaviour || Fixed: a take cannot start until the checklist is done |
 | 16 | Measurement | A recorded but unprocessed take is replaced without a word when another take is started | wrong behaviour (data loss) || Fixed: a take cannot start while a take from another position waits to be processed |
 | 17 | Measurement | The main button reads "Process recording" when there is nothing to process | wrong text || Fixed: "Continue to Processing" |
 | 18 | Measurement | A take that failed with an error is listed at sweep level 0 dB whatever level was used | wrong text || Fixed: the level the take started at is stored |
@@ -99,7 +99,7 @@ Decided: T20 as the reported value (done; README, Live measurement, Decision).
 
 Run headless in Chrome against the local server: calculations 48/48 (6 new checks for this walkthrough), target-criteria
 47/47, room-form 78/78, room-surfaces 52/52, rt60-average 60/60, audio-config 52/52, dsp 65/65 (1 new check),
-validation 72/72, multi-position 45/45, sweep-level 14/14, rt60-responsiveness 27/27. The studies (noise, sweep, mobile)
+validation 72/72, multi-position 45/45, sweep-level 14/14, rt60-responsiveness 27/27. The studies (noise, sweep)
 ran to the end. The sweep study's verdicts are the same as its documented baseline (docs/RT60-SWEEP-NOISE-AUDIT.md §3a:
 5 s fails only P1 and P4, as all durations do): mean error at 1 kHz 1.33 / 1.20 / 1.27 % for 2 / 3 / 5 s (documented
 1.32 / 1.20 / 1.27 %).

@@ -78,7 +78,7 @@ Each finding opens with one of these classes:
 | Decay straightness | ξ = 1000·(1 − r²): a note above 10 ‰, no value above 50 ‰. Curvature C = 100·(T30/T20 − 1): a note above ±10 % (`analysis.js` 170–171) | None of the references check this | ISO 3382-2 introduction (read): Annex B's two measures "may be used to give warnings when the decay curve is not linear", and the result is then marked less reliable. The 10 ‰ and 10 % values are the Annex B values as commonly quoted; the annex itself is not in the preview | **Verified strength.** **Design difference:** rejecting above 50 ‰ is our choice; ISO only says above 10 ‰ the decay is not straight | None |
 | One device as source and receiver | The direct sound of the device is told apart from the room's decay. The evaluation range moves down by (headDb − 1 dB); headDb is capped by what the curve loses in the first 5 ms (`reverberantStart` 407; `analyseBand` 455) | RT README: clap beyond the critical distance. The others do nothing | ISO 3382-2 4.3.1 (read): the minimum distance is 2·√(V/cT). At that distance the direct sound adds about 1.06 dB (critical distance ≈ d_min ÷ 1.9), which is the 1 dB allowance | **Design difference** (justified). One device cannot meet d_min; the shift starts the evaluation where it would start at d_min. Checked on synthetic rooms only (RT60-DEEP-AUDIT E1) | Confirm in real rooms against REW (section 6) |
 | Each band is its own band | Each band's value comes from its own filter (`analyseBand(seg, o, f, plan)`) | RT: the "2000 Hz" entry takes its −5 dB point from the 2 kHz curve and its −15 dB point from the 4 kHz curve. The "4000 Hz" entry reads the 8 kHz curve (`ReverbTimeCalculator.kt` 92–114, introduced in commit 0ae0abe) | dsp test "Sweep, RT60 per band" (each band within 5 % of its own decay) | **Verified strength.** RT has a **confirmed defect** of exactly this kind | None |
-| Room average | Mean of the reliable bands from 125 to 4000 Hz, at least 3 of 6, with any band left out named. The 500–2000 Hz average is shown beside it, needing 2 of 3 (`rt60-average.js` `over` 69). The six-band average sets the assessment | RT: (measures[4] + measures[5]) ÷ 2, its 2000 and 4000 Hz entries (`MeasureViewModel.kt` 177–178). SonicSpace: the broadband value, else the mean of 500 Hz and 1 kHz, else every valid band. Eleutherio: one broadband value. pyroomacoustics theory: a bandwidth-weighted harmonic mean | ISO 3382-1 T_mid = 500 and 1000 Hz. ANSI S12.60: 500, 1000 and 2000 Hz. DIN 18041: tolerance per band, 0.8–1.2·T between 250 Hz and 2 kHz, wider at 125 and 4000 Hz (`target.js`) | **Design difference** (the user's decision of 15 October). A six-band mean includes 125 and 4000 Hz, where DIN 18041 allows more. It also moves with a device's band coverage: a phone that loses 125 Hz reads lower (docs/AVERAGE-RT60.md, trade-off) | **Decided in 2026.10.16** (section 8): the verdict is the criterion's own band rule (meeting rooms, DIN 18041 A: every band 250 Hz–2 kHz), not either average |
+| Room average | Mean of the reliable bands from 125 to 4000 Hz, at least 3 of 6, with any band left out named. The 500–2000 Hz average is shown beside it, needing 2 of 3 (`rt60-average.js` `over` 69). The six-band average sets the assessment | RT: (measures[4] + measures[5]) ÷ 2, its 2000 and 4000 Hz entries (`MeasureViewModel.kt` 177–178). SonicSpace: the broadband value, else the mean of 500 Hz and 1 kHz, else every valid band. Eleutherio: one broadband value. pyroomacoustics theory: a bandwidth-weighted harmonic mean | ISO 3382-1 T_mid = 500 and 1000 Hz. ANSI S12.60: 500, 1000 and 2000 Hz. DIN 18041: tolerance per band, 0.8–1.2·T between 250 Hz and 2 kHz, wider at 125 and 4000 Hz (`target.js`) | **Design difference** (the user's decision of 15 October). A six-band mean includes 125 and 4000 Hz, where DIN 18041 allows more. It also moves with a device's band coverage: one that loses 125 Hz reads lower (docs/AVERAGE-RT60.md, trade-off) | **Decided in 2026.10.16** (section 8): the verdict is the criterion's own band rule (meeting rooms, DIN 18041 A: every band 250 Hz–2 kHz), not either average |
 | Comparison with "RT", your two rooms | Room 1: 125 and 250 Hz not measured; average 0.33 s over 4 bands. Room 2: 125 Hz not measured; average 0.39 s over 5 bands | Room 1: 0.16 / 0.32 / 0.71 / 0.60 / 0.49 / 0.30, "Average" 0.39. Room 2: 3.38 (red) / 0.81 / 0.70 / 0.55 / 0.28 / 0.39, "Average" 0.34 | Its "Average" is the mean of its last two entries: 0.395 → 0.39 and 0.335 → 0.34. Mid bands are 1.35–1.9× ours | **Confirmed:** the two "averages" are different quantities. **Unverified limitation:** for your rooms, the mid-band gap fits its method (no noise compensation, two points, forward filter, single clap), but is not proven | Same-room REW comparison (section 6). Do not compare our average with RT's "Average" |
 | Recording checks | Clipping, silence, weak sweep, unclear arrival, gaps, clicks, continuity of the sweep's timing, gain lowered during the sweep, background change across the take, lost frames, page hidden (`analysis.js` CRITERIA.take; `audio-io.js`) | RT: none. SonicSpace: clipping by the peak only (≥ 0.99), with a confidence penalty. Eleutherio: none; the README says set the gain by hand | Validation page: 62 cases, including gaps, clipping, a cut-off decay and browser processing | **Verified strength** | None |
 | Browser processing | Echo cancellation, noise suppression and AGC are requested off and read back. "Not reported" counts as unknown, not off. Any of them on means no value (`audio-io.js` 77; `measurement.js` `processingState` 70) | SonicSpace: on OverconstrainedError it silently retries with `{audio: true}`, which can switch processing back on | Ours maps OverconstrainedError to an error (`audio-io.js` 55) and never asks again with looser settings | **Verified strength** | None |
@@ -122,7 +122,6 @@ Nothing in `js/` changed in this audit.
 | calculations | 32/32 |
 | dsp | 64/64 (run on its own; when six pages ran at once it stopped with "error" before its first check, and on its own it passes) |
 | room-surfaces | 52/52 |
-| mobile-study | done |
 | audio-config (parts A and B) | 52/52 |
 | sweep-level | 14/14 |
 | rt60-responsiveness (parts A and B) | 27/27 |
@@ -176,12 +175,12 @@ The same room read in other ways (validation page; synthetic room, 1000 Hz 0.32 
    - a separate speaker at least d_min = 2·√(V/cT) from the mic, about 1–2 m in a small room;
    - sweep, then T20 and T30 per octave;
    - export the impulse response as WAV.
-3. This app on the phone, at the same spot, 3 takes.
-4. RT on the same phone at the same spot, 3 claps. Note every band and its "Average".
+3. This app on the laptop, at the same spot, 3 takes.
+4. RT (the Android app) on a phone at the same spot, 3 claps. Note every band and its "Average".
 5. Load the REW WAV into `tests/validation.html` → "Analyse an impulse response or a clap recording". That separates the
    method from the device: same data, this app's analysis against REW's T20/T30.
 6. Compare per band:
-   - this app on the phone against REW;
+   - this app on the laptop against REW;
    - this app's analysis of the REW WAV against REW;
    - RT against REW.
 
@@ -254,7 +253,6 @@ Full description: docs/MULTI-POSITION.md.
 | validation (assessment check updated) | 72/72 |
 | dsp | 64/64 |
 | room-surfaces | 52/52 |
-| mobile-study | done |
 | audio-config (two text checks updated; diagnostics keys renamed so its privacy check still bans "position") | 52/52 |
 | sweep-level | 14/14 |
 | rt60-responsiveness (its display check reads both headline figures) | 27/27 |

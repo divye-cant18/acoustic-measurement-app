@@ -313,7 +313,7 @@ applied, and none should be.
   diffuseness and positions are not modelled beyond a desk and reflections.
 - **Processing below the browser.** OS or driver processing cannot be detected. Cuts close to the background are not
   caught; the −9 % case is flagged only as "not perfectly straight".
-- **Low frequencies.** With a laptop or phone speaker, 125 Hz (sometimes 250 Hz) is often not reliable. That is
+- **Low frequencies.** With a laptop speaker, 125 Hz (sometimes 250 Hz) is often not reliable. That is
   reported, not estimated.
 - **Competitors.** BuzziSpace's method is unknown. The RT app's average and default filter order are not verified.
   NTi was read from search summaries only.
@@ -336,12 +336,12 @@ Criteria are fixed here, before any testing.
 **This app.**
 - At each reference microphone position, the device lies where the microphone was, as the app instructs.
 - Three takes per position, in the same session as the reference.
-- At least two devices (a laptop and a phone), with operating-system microphone effects switched off.
+- At least two laptops, with operating-system microphone effects switched off.
 - Record the per-band table of every take.
 
 **Same data (isolates the algorithm from the device).**
 - Export the reference IR from REW as WAV and load it into `tests/validation.html` (WAV tool).
-- Record one clap as WAV with a phone, and analyse it with the competitor app (if it accepts files) and with the WAV
+- Record one clap as WAV, and analyse it with the competitor app (if it accepts files) and with the WAV
   tool.
 
 **Competitors.** Same positions and session. Write down exactly what each displays: band or average, and which method,

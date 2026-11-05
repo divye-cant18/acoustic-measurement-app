@@ -21,7 +21,7 @@
    position's own values in the report. The room is judged as the app judges it (AM.derive.assessment): every band its
    criterion sets has to lie within the target range (the verdict); the average over those bands is its summary figure,
    and bands with their own wider limits are band warnings, listed apart from the verdict. 1000 Hz stays marked as the
-   reference band that decides whether a take is valid. */
+   reference band. */
 (function (AM) {
   'use strict';
   const { fmt, isNum } = AM.util;
@@ -96,7 +96,6 @@
     }
 
     const at = m && m.meta && D_POS(m.meta.position || p.setup.position);
-    const kindKey = m && m.meta && m.meta.deviceKind;
     const original = p.followUpOf ? (AM.store.state.projects || []).find(x => x.id === p.followUpOf) : null;
     const review = p.review.filter(id => id !== 'final').map(id => W.get(id).title);
 
@@ -117,7 +116,7 @@
         summary: D.summaryRT60(p), average: D.averageRT60(p), policy: pol,
         bands: room.bands, ref: m.bands.find(b => b.f === m.referenceBand), meta: m.meta || {}, position: at,
         positions: pos, room,
-        deviceKind: kindKey && AM.demo.DEVICE_KINDS[kindKey] ? AM.demo.DEVICE_KINDS[kindKey].name : null,
+        deviceKind: AM.demo.deviceName(m.meta && m.meta.deviceKind),
         superseded: (p.processing.history || []).length, notes,
       } : null,
       missing,

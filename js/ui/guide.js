@@ -30,11 +30,9 @@
   const T = (x, y, s, o = {}) => `<text x="${n(x)}" y="${n(y)}" fill="${o.fill || P.ink}" font-size="${o.size || 13}" font-weight="${o.weight || 400}" text-anchor="${o.anchor || 'start'}" opacity="${op(o.op == null ? 1 : o.op)}">${s}</text>`;
   const L = (x1, y1, x2, y2, stroke, w = 2, extra = '') => `<line x1="${n(x1)}" y1="${n(y1)}" x2="${n(x2)}" y2="${n(y2)}" stroke="${stroke}" stroke-width="${w}" stroke-linecap="round" ${extra}/>`;
 
-  const tripod = (x, top, floor) => `<g stroke="${P.dim}" stroke-width="2" stroke-linecap="round">${L(x, top, x, floor - 14, P.dim)}${L(x, floor - 14, x - 14, floor, P.dim)}${L(x, floor - 14, x + 14, floor, P.dim)}${L(x, floor - 14, x, floor, P.dim)}</g>`;
-  // The measuring device, side view: a laptop standing on a surface at y (microphone dot at the top of the screen),
-  // or a phone standing upright, centred on y. One device both plays the test signal and records.
+  // The measuring device, side view: a laptop standing on a surface at y (microphone dot at the top of the screen). It
+  // both plays the test signal and records.
   const laptop = (x, y) => `<rect x="${n(x - 34)}" y="${n(y - 6)}" width="64" height="6" rx="2" fill="${P.ink}"/>${L(x + 28, y - 5, x + 38, y - 50, P.ink, 5)}<circle cx="${n(x + 38)}" cy="${n(y - 50)}" r="3.4" fill="${P.accent}"/>`;
-  const phone = (x, y) => `<rect x="${n(x - 8)}" y="${n(y - 16)}" width="16" height="32" rx="3.5" fill="${P.panel}" stroke="${P.ink}" stroke-width="2"/><circle cx="${n(x)}" cy="${n(y + 11)}" r="2" fill="${P.accent}"/>`;
   const table = (x, top, floor, w = 120) => `<rect x="${n(x - w / 2)}" y="${n(top)}" width="${w}" height="6" rx="2" fill="${P.panel}" stroke="${P.line}"/>${L(x - w / 2 + 10, top + 6, x - w / 2 + 10, floor, P.line, 3)}${L(x + w / 2 - 10, top + 6, x + w / 2 - 10, floor, P.line, 3)}`;
   const dimV = (x, y1, y2, label, o = 1, side = 1) => o <= 0 ? '' : `<g opacity="${op(o)}">${L(x, y1, x, y2, P.accent, 1.6)}${L(x - 6, y1, x + 6, y1, P.accent, 1.6)}${L(x - 6, y2, x + 6, y2, P.accent, 1.6)}</g>${T(x + 10 * side, (y1 + y2) / 2 + 5, label, { fill: P.accent, size: 14, weight: 650, anchor: side > 0 ? 'start' : 'end', op: o })}`;
   const dimH = (x1, x2, y, label, o = 1) => o <= 0 ? '' : `<g opacity="${op(o)}">${L(x1, y, x2, y, P.accent, 1.6)}${L(x1, y - 6, x1, y + 6, P.accent, 1.6)}${L(x2, y - 6, x2, y + 6, P.accent, 1.6)}</g>${T((x1 + x2) / 2, y - 9, label, { fill: P.accent, size: 14, weight: 650, anchor: 'middle', op: o })}`;
@@ -109,7 +107,7 @@
       return s;
     },
 
-    // Side view: the device at the measuring position. A laptop on a firm table, or a phone on a stand.
+    // Side view: the laptop on a firm table at the measuring position.
     place(u, t) {
       const tx = 290, top = FL - 0.75 * M, micY = top - 50;
       let s = section() + table(tx, top, FL) + laptop(tx, top);
@@ -117,8 +115,6 @@
       s += dimH(60, tx - 60, 104, '≥ 1 m from walls', ease(seg(u, 0.22, 0.34)));
       s += T(tx, FL + 26, 'Laptop on a firm table', { size: 12, fill: P.dim, anchor: 'middle', op: ease(seg(u, 0.28, 0.38)) });
       s += rings(tx + 38, micY, t, ease(seg(u, 0.36, 0.44)) * (1 - ease(seg(u, 0.58, 0.64))), 170, [61, 61, 599, FL - 1]);
-      const px = 500, py = FL - 1.2 * M, po = ease(seg(u, 0.6, 0.72));
-      s += `<g opacity="${op(po)}">${tripod(px, py + 16, FL)}${phone(px, py)}</g>` + T(px, FL + 26, 'or a phone on a stand', { size: 12, fill: P.dim, anchor: 'middle', op: po });
       s += T(330, 140, 'Not held · not against anything', { size: 15, weight: 650, fill: P.good, anchor: 'middle', op: ease(seg(u, 0.8, 0.9)) });
       return s;
     },

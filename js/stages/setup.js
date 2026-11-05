@@ -2,12 +2,12 @@
    signal and a real background-noise measurement. The microphone is only opened while it is needed and released
    afterwards. Microphone and noise work goes through AM.live (js/measurement/live.js); this file only shows its state.
 
-   One device measures: the laptop or phone running the app plays the test signal through its own speaker and records
+   One device measures: the laptop running the app plays the test signal through its own speaker and records
    the room with its own microphone. The instructions place that device; nothing else is set up.
    The screen is drawn by the interface (src/screens/Setup.tsx); this file keeps the checklist, checks and actions. */
 (function (AM) {
   'use strict';
-  const W = AM.workflow, S = AM.store, D = AM.demo, ui = AM.ui;
+  const W = AM.workflow, S = AM.store, ui = AM.ui;
   const LIVE = AM.live;
 
   const PREP = [
@@ -18,8 +18,6 @@
     ['uncovered', 'Microphone and speaker openings uncovered', 'No case flap, cover, paper or hand over them.'],
     ['output', 'Sound plays into the room from this device', 'Headphones and earbuds (wired or Bluetooth) disconnected; volume high but not distorting.'],
   ];
-  // The checklist items that depend on how the device is placed: asked again when the device profile changes.
-  const PLACEMENT_PREP = ['placed', 'uncovered', 'output'];
 
   function canContinue(p) {
     const s = p.setup, L = LIVE.state;
@@ -40,18 +38,6 @@
     continueLabel: 'Continue to measurement',
     actions: {
       allowMic: ctx => LIVE.requestAccess(ctx.project),
-      /* The device profile decides how the device is placed and what to check (DEVICE_KINDS); the audio request is the
-         same for every profile, since a decay must reach the analysis unprocessed either way. A new profile therefore
-         asks for the placement items of the checklist again and reads the input's configuration again; the background
-         measurement (same microphone, same room) stays. Takes already made keep the profile they were made with.
-         Picking the detected kind returns to following the browser. */
-      setKind: (ctx, v) => {
-        const p = ctx.project;
-        if (!D.DEVICE_KINDS[v] || v === LIVE.kindOf(p)) return;
-        S.update(pp => { pp.setup.deviceKind = v === AM.services.measurement.deviceKind() ? null : v; PLACEMENT_PREP.forEach(k => { pp.setup.prep[k] = false; }); });
-        if (p.setup.permission === 'granted') LIVE.requestAccess(p);
-        S.toast(`Profile: ${D.DEVICE_KINDS[v].name}. Check its placement and tick those room preparation items again.`);
-      },
       // Levels are relative to each microphone's own full scale, so another microphone needs its own noise measurement.
       setDevice: (ctx, id) => {
         const d = LIVE.state.devices.find(x => x.id === id);
@@ -83,9 +69,9 @@
       // What the browser says now, without asking: a permission withdrawn since the last visit is shown as blocked.
       AM.services.measurement.permissionState().then(st => {
         if (S.state.project !== p) return;
-        if ((st === 'denied' || st === 'embedded') && p.setup.permission !== st) S.update(pp => { pp.setup.permission = st; });
-        // Blocked by an embedding page last time, opened on its own now: access has not been asked for here yet.
-        else if (st !== 'embedded' && p.setup.permission === 'embedded') S.update(pp => { pp.setup.permission = 'not-requested'; });
+        if (['denied', 'embedded', 'laptop-only'].includes(st) && p.setup.permission !== st) S.update(pp => { pp.setup.permission = st; });
+        // Blocked by an embedding page or a phone last time, opened on a laptop now: access has not been asked for here yet.
+        else if (st !== p.setup.permission && ['embedded', 'laptop-only'].includes(p.setup.permission)) S.update(pp => { pp.setup.permission = 'not-requested'; });
         if (st === 'granted' && !LIVE.state.devices.length) LIVE.refreshDevices(p);
       });
     },

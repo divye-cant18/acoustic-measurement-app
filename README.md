@@ -24,9 +24,10 @@ npm run build
 `npm run build` type-checks (`tsc --noEmit`) and writes `js/app/univicoustic-ui.js`; `npm run watch` rebuilds on every
 save. Nothing else changes: the measurement, calculations, report and server are the scripts in `js/` and `server/`.
 
-One device does the measurement: the laptop, computer or phone running the app plays the test signal through its own
+One device does the measurement: the laptop or desktop computer running the app plays the test signal through its own
 speaker and records the room with its own microphone. Nothing else is connected. The browser has to allow microphone
-access on the page (Chrome, Edge, Firefox or Safari; https, or a file or server on this computer).
+access on the page (Chrome, Edge, Firefox or Safari; https, or a file or server on this computer). On a phone or tablet
+the app opens no microphone and says so; saved projects and results can still be read there.
 
 ## Structure
 
@@ -58,8 +59,8 @@ js/core/util.js               AM namespace, formatting, icons
 js/core/workflow.js           the 11 stages, phases, order, status rules, dependencies between stages
 js/core/store.js              project state, navigation, completion, review/reset, persistence, legacy migration
 js/core/derive.js             shared derived values (measured, assessment, prediction, noise change)
-js/data/demo.js               reference lists: octave bands, industries, room options, measuring positions, device kinds
-                              and placement advice, test signal; the blank project; a sample room for Developer tools.
+js/data/demo.js               reference lists: octave bands, industries, room options, measuring positions, the measuring
+                              device and placement advice, test signal; the blank project; a sample room for Developer tools.
                               No measurement data.
 js/data/brand.js              application name, tagline, descriptor and logo files (assets/brand)
 js/data/report-form.js        the report form's fields and the database columns (the server reads the same file)
@@ -179,7 +180,7 @@ and the report form's database row:
   3 bands) is shown beside it on Results and Assessment, with its own status against the target, as a check
   (`AM.derive.midAverageRT60`). It does not decide anything: the assessment, the amount and the prediction use the
   average over all the bands measured.
-- Leaving a band out means the same room can read a little differently on a device that loses a band (a phone that
+- Leaving a band out means the same room can read a little differently on a device that loses a band (one that
   loses 125 Hz leaves out the band that usually rings longest); the band count and the 500–2000 Hz value beside it make
   that visible.
 - A band counts when the processing engine gave it a value (finite, above 0, T30 or T20, not Insufficient). Its own RT60
@@ -192,36 +193,35 @@ and the report form's database row:
   that do are narrower than the search step, every whole count is tried; when no whole number does, it says so.
 
 Every band keeps its own value: the band tables and charts, the per-band comparison with the target range, and the
-prediction per band. 1000 Hz stays the reference band where a take's validity is decided (a take is valid when 1000 Hz
-has a value) and the band its quality and confidence are given at; the Sabine calculation is written out at 1000 Hz as
+prediction per band. A take is valid when at least 3 of the 6 bands have a value, the same rule as the average (30
+October 2026; before, a take was valid only when 1000 Hz had one). 1000 Hz stays the reference band, the band quality and
+confidence are given at, and, when it has no value, it says so and is left empty (never another band's value); the Sabine calculation is written out at 1000 Hz as
 an example. It is a summary across the bands, not a standardised single-number rating. The report form's database row
 holds `measured_rt60_avg_s` (this average; app versions before 2026.10.15 stored the 500–2000 Hz mean there, and the
 app_version column tells them apart), `measured_rt60_s` (1000 Hz), `predicted_rt60_avg_s` (the predicted average) and
 `predicted_rt60_s` (the prediction at 1000 Hz). See docs/AVERAGE-RT60.md.
 
-## Measuring device, profiles and browser processing
+## Measuring device and browser processing
 
-**One source of truth.** The project's setup holds the selection: the device profile (`setup.deviceKind`: null =
-detected, or Laptop/Phone chosen), the microphone (`setup.deviceId`) and, where the browser can route audio, the sound
-output (`setup.outputId`). Every session, background check and take is opened with that selection
-(`AM.live.contextOf`, `outputOf`), and each one stores the configuration it actually had (`config`,
-`services/measurement.js` `configOf`): profile, microphone, output (requested, applied, confirmed or not), the
+**One source of truth.** The project's setup holds the selection: the microphone (`setup.deviceId`) and, where the
+browser can route audio, the sound output (`setup.outputId`). Every session, background check and take is opened with
+that selection (`AM.live.outputOf`), and each one stores the configuration it actually had (`config`,
+`services/measurement.js` `configOf`): microphone, output (requested, applied, confirmed or not), the
 processing requested, reported and possible, sample rate, channels, and browser family. Results and the PDF report show
 the take's own configuration, never the current selection.
 
-**Profiles.** The audio request is the same for every profile (echo cancellation, noise suppression and automatic gain
-all requested off), because a decay must reach the analysis unprocessed either way. A profile changes the instructions
-and checks (`demo.DEVICE_KINDS[kind].checks`): a laptop is told to switch off system audio enhancements and choose the
-built-in speakers; a phone is told that the browser cannot choose or confirm the loudspeaker (some phones use the
-earpiece while the microphone is on), that 125 and 250 Hz may be unreliable, and that locking or switching apps stops a
-take. Changing the profile asks for the placement items of the checklist again and reads the input configuration again;
-a profile different from the detected device says the measurement still uses this device. Takes keep the profile they
-were made with.
+**A laptop or desktop computer measures.** Its placement advice and checks are `demo.DEVICE`: on a firm table, system
+audio enhancements off, the built-in speakers. The audio request is fixed (echo cancellation, noise suppression and
+automatic gain all requested off), because a decay must reach the analysis unprocessed. On a phone or tablet
+(`audioIO.isPhoneOrTablet`, from what the browser reports) no microphone session opens and the browser is never asked:
+Measurement Setup says "Needs a laptop or computer", so no take can start. Everything else, saved projects and results
+included, still works there. Takes saved when the app could also measure on a phone are kept as they were: they count
+as before and still name their device (`demo.deviceName`, on Results and in the PDF report).
 
-**Sound output.** Where the browser can route an AudioContext (`AudioContext.setSinkId`: Chrome and Edge on computers)
+**Sound output.** Where the browser can route an AudioContext (`AudioContext.setSinkId`: Chrome and Edge)
 and lists more than the default, Measurement Setup offers the outputs; the session applies the choice and reads back
 which one is in use. "Confirmed" means a specific output was selected and applied; the system default never counts as
-confirmed, since it does not say which device plays. Elsewhere (Safari, Firefox, phone browsers) the screen says the
+confirmed, since it does not say which device plays. Elsewhere (Safari, Firefox) the screen says the
 output cannot be chosen or confirmed. A selected output the browser could not apply blocks Measurement Setup and the take.
 
 **Browser processing.** Each feature is recorded as requested off, reported off, reported ON, or not reported (unknown,
@@ -411,9 +411,8 @@ check and every band; no audio, no project or room name, no position, no microph
 
 **One device.** The device running the app is the whole measuring system: its own speaker (the system's sound output)
 plays the test signal and its own microphone records the room. There is no second device, no separate recorder and no
-required external speaker or microphone. Measurement Setup detects whether it is a laptop/computer or a phone/tablet
-(`audioIO.deviceKind`, from what the browser reports; it can be corrected there) and words the placement advice for it
-(`demo.DEVICE_KINDS`, `demo.PLACEMENT`): at the measuring position, on a firm support and not held, openings uncovered,
+required external speaker or microphone. Measurement Setup gives the placement advice
+(`demo.DEVICE`, `demo.PLACEMENT`): at the measuring position, on a firm support and not held, openings uncovered,
 at least 1 m from walls where practical, at about seated ear height where possible, the same place and orientation for
 every take there, headphones disconnected. The measuring positions P1–P3 are positions of that one device; measuring
 another position means moving it there and taking a new recording. Each take records the device kind, the position and
@@ -489,32 +488,55 @@ before it, both read in the RT60 bands (a DC offset or rumble below them no long
 inverse sweep (time-reversed sweep with a +6 dB/octave envelope) gives the impulse response. Its arrival — the delay
 between playing and recording through the browser, the system and the device's buffers — is read from the response,
 never assumed: it must be under 1 s and stand at least 20 dB above what the recording held before the sound arrived,
-otherwise the take fails ("the arrival … could not be identified clearly … its timing is not reliable"). A gap in the
-recording while the sweep was arriving — a run of identical samples of 1 ms or more, which is how the browser fills audio
-it failed to deliver (one 128-sample render block is 1.3–2.9 ms) — also fails the take, with its position and length
-(`analysis.gap`): it spreads through the whole impulse response and gave wrong band values that passed every other
-check. Samples dropped or repeated without a visible gap are found from the sweep's own timing (`analysis.sweepTiming`,
-`CRITERIA.take.timing`): each half-octave of the sweep from 200 Hz is matched against the recording, and a step of more
-than 3.5 ms between neighbours fails the take as not continuous. Intact synthetic takes stay at or below 2.2 ms; losing
-256 or 480 samples gives 4.2–15 ms. It needs the device's own direct sound to time by (largest headDb at least 6 dB).
+otherwise the take fails ("the arrival … could not be identified clearly … its timing is not reliable").
+**Damage at one moment costs only the bands it reaches (30 October 2026).** Deconvolved, damage τ s into the sweep lands
+at τ − t(f) after the arrival for each frequency f, t(f) being when the sweep played f: in the decay of every band swept
+before it, and before the arrival of every band swept after it. A band hears half an octave either side of its octave
+through its filter, so a band gets no value, with the reason, when its half-octave below was swept before the damage
+(`analysis.bandReach`); the others are analysed as usual, and the take counts when at least 3 bands are left
+(processing.js). Before, any of these rejected the whole take. Reading a reached band only up to where the damage lands in
+it was tried and dropped: even with its decay fully recorded before that point, the shorter response moved 125–250 Hz by
+5–8 % and a two-slope room's bands by up to 12 %. A gap in the recording while the sweep was arriving — a run of
+identical samples of 1 ms or more, which is how the browser fills audio it failed to deliver (one 128-sample render block
+is 1.3–2.9 ms) — is such damage, with its position and length (`analysis.gap`): uncaught, it gave wrong band values that
+passed every other check. Samples dropped or repeated without a visible gap are found from the sweep's own timing
+(`analysis.sweepTiming`, `CRITERIA.take.timing`): each half-octave of the sweep from 200 Hz is matched against the
+recording, and a step between neighbours of more than 3.5 ms, or 2 ms above 1 kHz where a speaker adds little delay of its
+own, shows the sound arriving late from there on. Intact synthetic takes stay at or below 2.2 ms and real laptop takes at
+1.6 ms (0.9 ms above 1 kHz, the same to 0.1 ms from take to take); one 128-sample block is 2.3–3.3 ms and 480 samples
+10 ms. The bands it arrived late in, more than 3.5 ms after the onset, and the band the step falls in (between the centres
+of the two half-octaves around it) get no value (`analysis.lateBands`): their direct sound lies inside their decay. It
+needs the device's own direct sound to time by (largest headDb at least 6 dB), except that one clean step with every other
+above 1 kHz at most 1.8 ms is read anyway: a large loss late in the sweep moves the start of the response so far that no band shows its
+direct sound in place, and it must not switch off its own check (on real recordings it left T20 up to 28 % wrong, unseen).
 Smaller losses are found by the click they leave (`analysis.aboveSweep`, `CRITERIA.take.clicks`): where samples are
 dropped or repeated the waveform jumps, and the jump's energy reaches every frequency, while the sweep, its reverberation
-and its harmonics stay at and below a few multiples of the frequency playing at that moment. Above it, between its
-harmonics (folded back where a digital limiter put them above half the sample rate), the recording holds only the
-background: 5 ms frames there are compared with the frames before and after them, and a frame 8 dB above both, back down
+and its harmonics stay at and below a few multiples of the frequency playing at that moment. Well above it, from twice its
+frequency (at most from 15 kHz), between its harmonics (folded back where a digital limiter put them above half the sample
+rate), the recording holds only the background: 5 ms frames there are compared with the frames before and after them, and a frame 8 dB above both, back down
 within a few frames, broadband (the median bin raised too, not one tone) and not one of a run (a buzzing speaker) is a
-click and fails the take. One 128-sample block lost or repeated anywhere from 0.9 to 4.5 s into the sweep is caught in
+click, and costs the bands swept before it. One 128-sample block lost or repeated anywhere from 0.9 to 4.5 s into the sweep is caught in
 the synthetic tests (15–63 dB); uncaught, one such loss read the 500–2000 Hz average 76 % long. Intact takes (seven kinds,
 distortion folding back, a loud sound stopping abruptly) show none. A loss before about 0.5 s reaches no band's decay;
-one in the reverberant tail leaves almost no click and changes no result. Where the browser keeps counts
+one in the reverberant tail leaves almost no click and changes no result.
+**Why from twice the sweep's frequency (5 November 2026).** On a real laptop (Intel Smart Sound microphone array, Realtek
+speakers) nearly every take was rejected for "a click" of 10–23 dB, with no audio lost: read just above the sweep, as
+before, the device's own audio processing looked like one. Raw recordings (`tests/real-take.html`) showed no jump in the
+waveform, the same moments of the sweep from take to take, whatever the sweep level, and T20 within about 5 % between takes
+with and without such a "click" (500 Hz–4 kHz). Moving the sweep's level by 3–6 dB for about a millisecond reproduces it in
+the synthetic tests. Real losses injected into those recordings read 18–32 dB from twice the frequency, as before, and
+the same rule read just above the sweep had often been blind to them where the frames around scatter. That device's recorded
+level also hardly follows the sweep level (−12 dB changes the upper part of the sweep by less than 1 dB, peak about −0.1 dBFS
+either way): some processing below the browser sets it, reported or not. Where the browser keeps counts
 (`MediaStreamTrack.stats`, `AudioContext.playbackStats`: Chrome and Edge), the frames the microphone captured but did not
 deliver and the times the output ran dry are read (`take.integrity`). The input's from when the test signal starts to the
 end of the recording (the room's decay is recorded after the sweep). The output's are refreshed by the browser only about
 once a second, so they are read at every refresh while the take records (`services/measurement.js` `outputLoss`): a loss
 counts when the stretch since the refresh before the one that shows it reaches into the test signal. A dropout in the
 silence before the sweep that the browser shows before the sweep starts, or one after it, cannot harm the take and is not
-counted; one shown only at the first refresh after the sweep starts still counts, to be safe. Any loss
-counted makes the take not valid (29 October 2026; before, the whole take was counted).
+counted; one shown only at the first refresh after the sweep starts still counts, to be safe. Where a loss was counted
+(`measurement.js lossSpans`: between which two readings) is damage at that moment: the bands it could reach get no value,
+and the take carries a warning, so no band is High (30 October 2026; before, any loss counted made the take not valid).
 The same frames above the sweep, above its 7.5th harmonic, give the input level while the sweep played against before it
 (`CRITERIA.take.sweepGain`): nothing in a room makes the background quieter while the test signal plays, a device turning
 its input down does, so from 6 dB quieter the take is not valid and from 3 dB it costs confidence. This catches automatic
@@ -533,48 +555,14 @@ A band whose decay had not reached the background when the recording ended (a ro
 after the sweep allow: `lundeby` `reachedEnd`) says so ("This band rings longer than the recording lasts …") instead of
 blaming the background noise.
 
-**Phones: three short tones (29 October 2026).** With the Phone profile (`setup.deviceKind` 'mobile', chosen or
-detected) a take plays three 2 s tones from 150 Hz to 10 kHz, 3 s apart, from one buffer, instead of one 5 s sweep from
-50 Hz (`CRITERIA.take.phone`, `analysis.sweepPlan(fs, 'mobile')`; 16 s in all). On two phones and a laptop every 5 s take
-broke 3.5–4.5 s into the sweep (a "click" at the same moment each time: the speaker's protection or sound effects turning
-a long loud tone down), and a phone speaker rattles on the deep start. Each tone's stretch of the recording is checked as
-a take of its own (`analyseTake`, unchanged); the tones that pass (at least 2) are lined up where each actually arrived,
-averaged sample by sample and analysed as one take (`analysis.analyseTones`), so the calculation is the same, with √3 less
-noise. One press is still one take: with fewer than 2 clean tones the take is not used, with how many tones could be used
-and the first tone's reason, and the user measures again. 125 Hz, below the tones, is not measured on a phone (its speaker cannot
-play it). In the synthetic tests (tests/validation.html, "Phone test sound") rooms of 0.3–1.2 s read within the usual
-tolerance; a click in one tone sets that tone aside and keeps the value; and a modelled speaker protection (6 dB down
-after 3.4 s of tone) that the 5 s sweep does not catch, reading 1000 Hz about 13 % long, leaves the 2 s tones untouched.
-
-**Phones: dropped audio (30 October 2026).** Chrome on Android drops a few milliseconds of microphone audio now and then
-(frames "discarded because they cannot be delivered on time", Media Capture Extensions) and its output runs dry now and
-then; the browser counts both (`MediaStreamTrack.stats`, `AudioContext.playbackStats`). Rejecting every tone such a count
-fell in made every phone take fail on a phone in the field ("audio was lost while this test tone played", P1 and P2). The
-recording is now what is judged: a drop while a tone plays breaks that tone's own checks (timing, click or gap) and sets
-it aside; a drop between tones moves every later tone earlier, which lining the tones up where they arrived undoes; a tone
-whose next tone arrives more than 1 ms off its planned spacing is kept only when its echo still matches the next tone's
-(same room, sound and phone: two whole echoes differ only by the background) or the browser's count places the loss
-after its echo had died away. The counts are kept with the take (`browser`, measurement.js `lossSpans`) and shown under the
-take's details on Acoustic Measurement. In the synthetic tests drops of 10–100 ms between tones, in an echo or after every
-tone leave every band within 2.5 % (500–2000 Hz within 0.4 %) for rooms of 0.3–1.2 s; drops while two tones play reject
-the take. A phone also gets the larger `latencyHint: 'playback'` audio buffer (audio-io.js), which runs dry less often;
-the delay it adds is read from each recording. The laptop's sweep keeps its rule: any audio the browser counts lost
-during the sweep or the decay makes the take not valid.
-
-**Phones: continuity judged across the tones (30 October 2026).** On a phone in the field every take failed with "from
-about 566 Hz on, the test signal arrived 4.7 ms earlier" in all three tones while the browser counted no lost audio: the
-phone's own playback processing plays the low part of the sound a few milliseconds later than the rest (reproduced in the
-synthetic tests by delaying everything below 560 Hz by 4.7 ms), which the continuity check (`sweepTiming`) of one tone
-alone cannot tell from samples dropped at that moment. Dropped samples move the segments after them in one tone only;
-the phone's own delay is the same in every tone. So a phone's tones are judged against each other (`analyseTones`,
-`analyseTake` with `byTones`): a tone is continuous when its arrival, segment by segment, follows another tone's with no
-step over `maxStepMs`; a tone with no other to compare with is judged alone; the laptop's one sweep is judged alone as
-before. On such a phone 1000–4000 Hz read within 2 % of the room's own decay; 250 and 500 Hz, where the delayed and the
-undelayed sound overlap, are either a value or an honest "not a straight line" (no value), never a wrong value passed. A
-drop while one tone plays still sets that tone aside, and drops in two tones reject the take. From there a phone's bands
-go to the room's RT60 by the laptop's rule (a band with no value left out and named, at least 3 of the 6 needed): that
-phone at two positions gives the room's RT60 over 1000–4000 Hz ("3 of 6 bands"), as the laptop gives it over 5 of 6
-when 125 Hz has no value.
+**The device's own playback processing.** It can play the low part of the sound a few milliseconds late: the take then
+loses the bands the sound arrived late in (no value, with the reason) and keeps the others (within 5 % of the room's own
+decay in tests/validation.html, "Small speaker"), a valid take when at least 3 of the 6 bands are left. An abrupt change
+of level (a speaker's protection or sound effects turning a long loud tone down) is a click if its energy reaches far above
+the sweep: it costs the bands swept before it, 3.5–4.5 s into the sweep nearly all of them, so such a take is not valid. A
+level that moves for about a millisecond spreads only to the frequencies just above the sweep and costs nothing (see below). A
+protection that turns the level down smoothly (over 20 ms or more) leaves no click, and in the synthetic tests then reads
+the band being swept at that moment wrong (a 6 dB step: up to 50 %); nothing in the app detects it yet.
 
 **Bands.** Octave bands 125, 250, 500, 1000, 2000 and 4000 Hz (nominal), centred on the exact base-10 midband frequencies
 of IEC 61260-1:2014 (fm = 1000·10^(0.3k): 125.89 … 3981.1 Hz), edges fm·10^(∓0.15). Each band filter is
@@ -641,7 +629,7 @@ calculation is unchanged; separating those reflections would also change how a r
 
 **What this measurement is.** A browser-based measurement with a device's built-in speaker and microphone. The RT60 comes
 from the room's measured decay, but the microphone and the speaker are not calibrated and no correction is applied for
-either, so it is not equivalent to a calibrated or laboratory-grade measurement system. Laptop and phone speakers produce
+either, so it is not equivalent to a calibrated or laboratory-grade measurement system. Laptop speakers produce
 little low-frequency sound, so the 125 Hz (and sometimes 250 Hz) band may be "Not reliable". Some devices apply their own
 microphone processing (echo cancellation, noise suppression, "voice focus") below the browser; the browser reports only
 its own settings, so processing in the operating system or the microphone driver cannot be detected and should be switched
@@ -901,20 +889,19 @@ Vercel address.
   with a treatment plan two; a new take processed by the Processing step replacing the average without mixing takes; a
   later take that is not valid changing nothing; products that do not fit on their surfaces (Wall 1 counting towards
   the walls) giving no prediction, and the app's own amount leaving room for them. Runs on open, about 15 s. 64 checks.
-- `tests/mobile-study.html`: one synthetic room measured by the production analysis under laptop-like and phone-like
-  conditions, one factor at a time, five takes each (small speaker, closer direct sound, quiet playback, unreported
-  automatic gain, noise gate, dropouts removed or zero-filled, soft limiter, 44.1 kHz; level and background ladders).
-  A study, not pass/fail: it shows what the software does with each condition, not what a real phone does. See
-  docs/MOBILE-MEASUREMENT-AUDIT.md.
+- `tests/real-take.html`: what this device's real speaker and microphone do to a take. Press the button (about 90 s, the
+  test sound plays out loud): three takes at the default sweep level, one with no test sound, two at −12 dB, through the
+  application's own recording and analysis, each saved as a WAV (the application itself never stores audio). With
+  `?send=PORT` they go to a receiver on this computer instead of being offered as files. Development only.
 - `tests/audio-config.html`: Part A on open (40 checks): the noise floor (units, the level in the RT60 bands, DC offset,
   quiet and noisy inputs, silence, clipping, NaN/Infinity, a short buffer, level changes, thresholds unchanged); takes
   (a DC offset no longer fails a quiet room; 256/480 samples dropped or repeated rejected; one 128-sample block lost or
-  repeated at 0.9–4.5 s rejected as a click, in a typical, a quiet and a phone-like take; seven kinds of intact take never
+  repeated at 0.9–4.5 s rejected as a click, in a typical, a quiet and a small-speaker take; seven kinds of intact take never
   rejected and never showing a click; distortion folding back and a sound stopping abruptly not taken for clicks; no
   direct sound: timing check not made; gaps, invalid samples, incomplete and clipped recordings rejected); the processing
   decisions (a gain or background change, the input turned down only while the sweep plays, the browser's counts of lost
-  frames and output underruns, reported/unreported/ON processing, wording, rounding); the fixed-band headline; profile
-  switching and output readiness through the Setup step; the report using the take's configuration; Results naming a
+  frames and output underruns, reported/unreported/ON processing, wording, rounding); the fixed-band headline; the laptop-only
+  check (no device to choose; on a phone or tablet no microphone session opens) and output readiness through the Setup step; the report using the take's configuration; Results naming a
   newer take it does not show; the diagnostics record holding no names or labels. Part B, button (9 checks; keep the tab
   in front, since a hidden page interrupts every take by design): the whole app with a virtual device: permission
   denied, no microphone, the configuration read back, a complete take with its configuration and the browser's counts,

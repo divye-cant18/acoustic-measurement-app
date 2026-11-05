@@ -22,7 +22,7 @@ const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
 function sentence(pred: any, t: any, st: string, area: number, measuredStatus: string): string {
   if (!area) return 'No treatment area yet, so the prediction equals the measured value.';
   const gain = `Shortens the average RT60 by ${fmt.s(pred.measured - pred.predicted)}`, v = pred.verdict;
-  // A judged band not measured (often 125 Hz on a phone): within the target where measured, as Assessment says it.
+  // A judged band not measured (often 125 Hz): within the target where measured, as Assessment says it.
   if (st === 'within' || !v) return `${gain}, ${st === 'within' ? (v && v.complete === false ? 'within the target where measured' : 'within the target in every band it is judged in') : 'with no verdict (the target is not complete)'}.`;
   const parts = [
     v.tmFails ? `the room's Tm, ${fmt.s(v.tm)}, is outside ${t.min.toFixed(2)}–${fmt.s(t.max)}` : '',

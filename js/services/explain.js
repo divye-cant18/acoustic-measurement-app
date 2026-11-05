@@ -41,7 +41,7 @@
       ];
     },
     setup: () => [
-      'One device does the whole measurement: the laptop or phone you are using plays the test signal through its own speaker and records the room with its own microphone. Nothing else needs to be connected.',
+      'One device does the whole measurement: the laptop you are using plays the test signal through its own speaker and records the room with its own microphone. Nothing else needs to be connected.',
       'A measurement is only as good as its conditions. Background noise sets a floor the decay has to fall through, so a noisier room leaves less usable decay to measure.',
       'The background is measured with the microphone for five seconds, in the frequency bands RT60 is measured in. If voices, knocks or a changing level are picked up, you are told to measure with care; only a silent or overloaded input has to be measured again. Each take then checks its own background: sounds during the take that could affect the decay are counted as noise, and the take says so.',
       'Recording levels are shown as dB below max: how far below the loudest level the microphone can record. They are not the room\'s real loudness, because the microphone is not calibrated. RT60 only needs relative levels: it is a time, not a loudness.',
@@ -65,8 +65,8 @@
       return [
         r ? `The room is measured at ${s.count} position${s.count > 1 ? 's' : ''}${s.complete ? '' : ` (at least ${s.required} are needed)`}. In each octave band its RT60 is the average of the positions that measured that band; each position keeps its own values.` : '',
         r ? (sm.available ? `Over the bands its target is checked on, ${pol.short}, the room takes ${fmt.s(sm.value)} on average for sound to fall by 60 dB${avg.available ? `, and ${fmt.s(avg.value)} over all bands, 125 to 4000 Hz` : ''}. A band no position could measure is left out and named, and at least half of the bands are needed. These are summaries: the next step judges every band on its own.` : `There is no average for the ${pol.label.toLowerCase()}: ${sm.reason} Without it the room cannot be compared with its target. The bands that have a value are listed on their own.`) : 'No valid result yet.',
-        r ? `At ${r.headline.f} Hz, the reference band that decides whether a take is valid, it takes ${fmt.s(r.headline.rt60)} averaged over the positions; the latest take was recorded ${fmt.when(m.takenAt)}.` : '',
-        'Low frequencies usually ring longest, because most surfaces absorb bass poorly. A laptop or phone speaker produces little low-frequency sound: those bands may show "Not reliable" rather than a guess.',
+        r ? `At ${r.headline.f} Hz, the reference band, ${r.headline.rt60 != null ? `it takes ${fmt.s(r.headline.rt60)} averaged over the positions` : 'no position could measure it, so the other bands give the result'}; the latest take was recorded ${fmt.when(m.takenAt)}.` : '',
+        'Low frequencies usually ring longest, because most surfaces absorb bass poorly. A laptop speaker produces little low-frequency sound: those bands may show "Not reliable" rather than a guess.',
         'This is a browser-based measurement with the device\'s built-in speaker and microphone. The RT60 comes from the room\'s measured decay, but neither the microphone nor the speaker is calibrated, so it is not a laboratory-grade measurement.',
         'Confidence follows what was measured: a straight decay confirmed by the T30 check gives high confidence; no room for the check, a curved decay or browser processing that may have stayed on gives medium.',
       ].filter(Boolean);

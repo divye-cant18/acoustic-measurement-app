@@ -92,7 +92,7 @@
 
     /* ===== 2. bands without a reliable value ===== */
     {
-      // 125 Hz not reliable (as a phone-like speaker often leaves it): the average of the five that are left,
+      // 125 Hz not reliable (as a small speaker often leaves it): the average of the five that are left,
       // (0.504 + 0.358 + 0.274 + 0.276 + 0.293) = 1.705; ÷ 5 = 0.341 s, with 125 Hz named as left out.
       const r = result([band(125, null), band(250, 0.504, { path: 'T20', t20: 0.504, t30: null, quality: 'Fair' }), band(500, 0.358), band(1000, 0.274), band(2000, 0.276, { quality: 'Fair' }), band(4000, 0.293, { quality: 'Fair' })]);
       const a = RA.of(r), m = RA.mid(r);

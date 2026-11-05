@@ -32,11 +32,8 @@
   const notify = () => { if (updater) { try { updater(state); } catch (e) { /* a screen element went away */ } } };
   const bind = fn => { updater = fn; };
   const isOpen = p => S().state.project === p;
-  // The measuring device's kind: as chosen in Measurement Setup, otherwise as the browser reports it.
-  const kindOf = p => (p && p.setup.deviceKind) || MEAS.deviceKind();
-  // The selection a session is opened with: one source of truth, the project's setup (profile, microphone, output).
+  // The selection a session is opened with: one source of truth, the project's setup (microphone, output).
   const outputOf = p => (p && p.setup.outputId) || 'default';
-  const contextOf = p => ({ profile: kindOf(p), deviceKind: kindOf(p), profileChosen: !!(p && p.setup.deviceKind), position: p ? p.setup.position : null });
 
   function onLevel(level) {
     state.mic.level = level;
@@ -90,7 +87,7 @@
     state.access = { pid: p.id };
     render();
     try {
-      const info = await MEAS.requestAccess(p.setup.deviceId, outputOf(p), contextOf(p));
+      const info = await MEAS.requestAccess(p.setup.deviceId, outputOf(p));
       state.devices = info.devices;
       state.outputs = info.outputs;
       state.output = info.output;
@@ -144,7 +141,7 @@
   function measureNoise(p, after) {
     if (state.noise || state.take) return false;
     const ctl = MEAS.measureNoise({
-      deviceId: p.setup.deviceId, outputId: outputOf(p), context: contextOf(p), onLevel,
+      deviceId: p.setup.deviceId, outputId: outputOf(p), onLevel,
       onProgress: (sec, frac) => { if (state.noise) { state.noise.sec = sec; state.noise.frac = frac; notify(); } },
     });
     state.noise = { pid: p.id, sec: 0, frac: 0, ctl, auto: !!after };
@@ -182,7 +179,7 @@
     if (state.take || state.noise) return false;
     const env = new Float32Array(240);
     const ctl = MEAS.measureRT60({
-      deviceId: p.setup.deviceId, outputId: outputOf(p), onLevel, context: contextOf(p), levelDb: AM.analysis.sweepLevel(p.setup.sweepLevelDb),
+      deviceId: p.setup.deviceId, outputId: outputOf(p), onLevel, position: p.setup.position, levelDb: AM.analysis.sweepLevel(p.setup.sweepLevelDb),
       onPhase: ph => { if (state.take) { state.take.phase = ph; render(); } },
       onProgress: (sec, frac, chunk, offset, total) => {
         const t = state.take;
@@ -203,8 +200,7 @@
   function applyTake(p, take) {
     if (!isOpen(p)) return;
     if (take.status !== 'captured') {
-      // A phone's take keeps its tones and the browser's counts too: what the phone did, for the take's details.
-      S().update(pp => { pp.measurement.failed = { reason: take.reason, takenAt: take.takenAt, levels: take.levels, levelDb: take.plan ? take.plan.levelDb : 0, position: take.position || pp.setup.position || null, tones: (take.analysis && take.analysis.tones) || null, browser: take.browser || null }; });
+      S().update(pp => { pp.measurement.failed = { reason: take.reason, takenAt: take.takenAt, levels: take.levels, levelDb: take.plan ? take.plan.levelDb : 0, position: take.position || pp.setup.position || null }; });
       S().toast(p.measurement.recording || p.processing.result ? 'This take could not be used. The previous measurement is kept.' : 'This take could not be used. See the reason and measure again.');
       return;
     }
@@ -225,5 +221,5 @@
   }
   function cancelTake(silent) { if (state.take) { state.take.ctl.cancel(); if (!silent) later('Measurement cancelled. No recording was stored.'); } }
 
-  AM.live = { state, bind, render, receiving, kindOf, outputOf, contextOf, configProblem, requestAccess, refreshDevices, startMonitor, stopMonitor, resume, measureNoise, cancelNoise, measureRT60, cancelTake };
+  AM.live = { state, bind, render, receiving, outputOf, configProblem, requestAccess, refreshDevices, startMonitor, stopMonitor, resume, measureNoise, cancelNoise, measureRT60, cancelTake };
 })(window.AM);

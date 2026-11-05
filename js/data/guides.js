@@ -9,7 +9,7 @@
    The narration is written to be listened to: short sentences, spoken numbers ("a metre", "sixty decibels"), a warm
    second person, and a clear next step at the end. It says only what the app does.
 
-   One device measures: the laptop or phone running the app plays the test signal through its own speaker and records
+   One device measures: the laptop running the app plays the test signal through its own speaker and records
    the room with its own microphone. Placement follows common RT60 practice (ISO 3382-2) for the microphone: at a
    listening position, at about seated ear height (1.2 m) where practical, at least 1 m from walls. */
 (function (AM) {
@@ -43,7 +43,7 @@
       poster: { scene: 'place', u: 0.95 },
       chapters: [
         { id: 'intro', min: 7, title: 'What you will do', scene: 'intro', captions: [
-          'Let’s measure your room! Your laptop or phone does everything: it plays a short test sound, and listens with its own microphone.',
+          'Let’s measure your room! Your laptop does everything: it plays a short test sound, and listens with its own microphone.',
           'When the sound stops, the room keeps ringing for a moment. That ring-down is exactly what we are measuring.',
         ] },
         { id: 'prepare', min: 10, title: 'Prepare the room', scene: 'prepare', captions: [
@@ -53,7 +53,7 @@
         ] },
         { id: 'place', min: 11, title: 'Place the device', scene: 'place', captions: [
           'Now place the device where people usually sit.',
-          'A laptop goes on a firm table; a phone on a stand, or propped upright. Keep it about a metre from the walls, near seated ear height.',
+          'Put the laptop on a firm table. Keep it about a metre from the walls, near seated ear height.',
           'Don’t hold it, and don’t lean it against anything that can rattle.',
         ] },
         { id: 'device', min: 9, title: 'Set up the device', scene: 'device', captions: [
@@ -180,7 +180,7 @@
           'Then the app listens to the room’s background noise for a few seconds.',
         ] },
         { id: 'measure', min: 14, title: 'Measure', scene: 'tourMeasure', captions: [
-          'Step four, the fun part! Place your laptop or phone, press Start, and stay quiet. It plays a short test sound and listens to how the room rings. About ten seconds.',
+          'Step four, the fun part! Place your laptop, press Start, and stay quiet. It plays a short test sound and listens to how the room rings. About ten seconds.',
           'Then move to a second spot, and do it once more. The app averages the two.',
         ] },
         { id: 'processing', min: 9, title: 'Processing', scene: 'tourProcessing', captions: [

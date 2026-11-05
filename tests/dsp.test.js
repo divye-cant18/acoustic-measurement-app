@@ -102,13 +102,15 @@
       const { a, r } = evaluate(FIX.recordSweep({ plan, sweep, ir, peakDbfs: -30, noiseDbfs: -36 }));
       check('Loud background: take rejected, no RT60', a.status === 'failed' && !r.valid && !r.bands.length, a.reason);
     }
-    // Speaker weak around 1 kHz: not enough usable decay in that band, so no value there and the measurement is not valid
+    // Speaker weak around 1 kHz: not enough usable decay in that band, so no value there. The take counts by its other
+    // bands (at least 3 of 6, processing.js); its 1000 Hz headline then stays empty.
     {
       const ir = FIX.roomIR({ fs, seconds: 3, rt: 0.8, gainsDb: [0, 0, -30, -62, -30, 0], seed: 43 });
       const { a, r } = evaluate(FIX.recordSweep({ plan, sweep, ir, noiseDbfs: -62 }));
-      const ref = r.bands.find(b => b.f === 1000);
-      check('Insufficient decay at 1000 Hz: no RT60 there, measurement not valid', a.status === 'captured' && ref && ref.rt60 == null && !r.valid,
-        ref ? `usable ${ref.decayRangeDb} dB: ${ref.reason}` : a.reason);
+      const ref = r.bands.find(b => b.f === 1000), n = r.bands.filter(b => b.rt60 != null).length;
+      check('Insufficient decay at 1000 Hz: no RT60 there, with the reason; the take counts only by its other bands (valid exactly when at least 3 of 6 have a value), its 1000 Hz headline then empty',
+        a.status === 'captured' && ref && ref.rt60 == null && !!ref.reason && r.valid === (n >= 3) && (!r.valid || (r.headline && r.headline.rt60 == null)),
+        ref ? `usable ${ref.decayRangeDb} dB: ${ref.reason} · ${n} bands with a value, ${r.valid ? 'valid' : 'not valid'}` : a.reason);
       check('Insufficient decay: no band reports a value it cannot support', r.bands.every(b => b.rt60 == null || b.decayRangeDb >= 35),
         r.bands.map(b => `${b.f}: ${b.rt60 == null ? '—' : b.rt60.toFixed(2)} (${b.decayRangeDb} dB)`).join(' · '));
     }
@@ -269,16 +271,20 @@
         a.bands.map((x, k) => `${x.f}: ${x.rt60} ${x.path} (${Math.round(x.decayRangeDb)} dB) / ${b.bands[k].rt60} ${b.bands[k].path} (${Math.round(b.bands[k].decayRangeDb)} dB, 60 dB fit ${b.bands[k].t60})`).join(' · '));
     }
     // A gap in the recording during the sweep (the browser fills audio it failed to deliver with zeros, one 128-sample
-    // block or more): the take is rejected with the gap's position and length. Without this check these gave wrong
-    // values that passed as valid (1000 Hz 1.002 s for a 0.525 s room with 20 ms missing).
+    // block or more): found with its position and length, and every band swept before it (its half-octave below swept
+    // before the gap: analysis.js bandReach) gets no value. Without this check these gave wrong values that passed as
+    // valid (1000 Hz 1.002 s for a 0.525 s room with 20 ms missing).
     {
       const ir = FIX.roomIR({ fs, seconds: 2.5, rt: 0.5, seed: 23, directDb: 25 });
       const base = FIX.recordSweep({ plan, sweep, ir, peakDbfs: -12, noiseDbfs: -65, noiseKind: 'pink', latency: 0.06 });
       const cut = (at, len) => { const rec = Float32Array.from(base), s = Math.round((plan.preRoll + 0.06 + at) * fs); rec.fill(0, s, s + len); return AN.analyseTake(rec, plan, sweep); };
       const g1 = cut(3.0, 128), g2 = cut(1.5, 960), ok = AN.analyseTake(base, plan, sweep);
-      check('Gap of one render block (128 samples) or 20 ms during the sweep: take rejected, position and length given',
-        g1.status === 'failed' && /gap/.test(g1.reason) && g1.gap.ms === 2.7 && Math.abs(g1.gap.atSec - 4.06) < 0.01 && g2.status === 'failed' && g2.gap.ms === 20 && ok.status === 'captured' && ok.gap == null,
-        `${g1.reason} | ${g2.gap && `${g2.gap.ms} ms at ${g2.gap.atSec} s`} | without a gap: ${ok.status}`);
+      const tOf = f => plan.seconds * Math.log(f / plan.f1) / Math.log(plan.f2 / plan.f1);
+      // (up to the gap's end: a band whose half-octave below the sweep reached while the gap lasted is reached too)
+      const costs = (g, t) => g.bands.every(b => (tOf(b.f / 2) <= t + g.gap.ms / 1000) === /gap/.test(b.damage || ''));
+      check('Gap of one render block (128 samples) or 20 ms during the sweep: found with its position and length, and exactly the bands swept before its end get no value',
+        g1.status === 'captured' && g1.gap.ms === 2.7 && Math.abs(g1.gap.atSec - 4.06) < 0.01 && costs(g1, 3.0) && g2.status === 'captured' && g2.gap.ms === 20 && costs(g2, 1.5) && ok.status === 'captured' && ok.gap == null && !ok.damage.length,
+        `${g1.gap && `${g1.gap.ms} ms at ${g1.gap.atSec} s, no value at ${g1.bands.filter(b => b.damage).map(b => b.f).join(', ')}`} | ${g2.gap && `${g2.gap.ms} ms at ${g2.gap.atSec} s, no value at ${g2.bands.filter(b => b.damage).map(b => b.f).join(', ')}`} | without a gap: ${ok.status}`);
       // A quiet take quantised to 16 bits with no noise holds values near the sine's peaks; that is not a gap.
       const quiet = [-50, -70].map(pk => AN.analyseTake(FIX.recordSweep({ plan, sweep, ir, peakDbfs: pk, noiseDbfs: -200 }).map(v => Math.round(v * 32768) / 32768), plan, sweep));
       check('Quiet 16-bit take with no noise (−50 and −70 dBFS peak): no gap reported', quiet.every(a => a.gap == null && !/gap/.test(a.reason || '')), quiet.map(a => `${a.status} ${a.reason || ''}`).join(' | '));
@@ -312,7 +318,12 @@
 
     // A resonant small speaker whose own sound rings (high-pass 900 Hz, +10 dB peak at 1.2 kHz, on the direct sound and
     // the desk reflection of one device), in a 0.35 s room: the ringing is read as a fast decay. The 1000 Hz band gets no
-    // value (curved, or T20 and T30 too far apart), so the take is not valid and nothing from it is used.
+    // value (curved, or T20 and T30 too far apart); a take counts by its other bands (at least 3 of 6).
+    // Known limitation, shown in the detail: a device whose own sound rings can leave other bands off with no check
+    // catching it. Here 2000 Hz reads 17–21 % short and 125 or 500 Hz up to 17 % (this model filters only the first
+    // 30 ms; with the speaker's filter on all its sound, 1000 Hz passes and 250 or 500 Hz read up to 20 % off, which the
+    // rule before 30 October, a take valid when 1000 Hz has a value, let through as well). Before, these takes were
+    // rejected only because the ringing fell at 1000 Hz.
     {
       const pk = (f0, Q, g) => { const A = Math.pow(10, g / 40), w = 2 * Math.PI * f0 / fs, al = Math.sin(w) / (2 * Q), c = Math.cos(w), a0 = 1 + al / A; return { b0: (1 + al * A) / a0, b1: -2 * c / a0, b2: (1 - al * A) / a0, a1: -2 * c / a0, a2: (1 - al / A) / a0 }; };
       const spk = [DSP.rbj('highpass', 900, fs, 5), pk(1200, 6, 10)];
@@ -320,11 +331,12 @@
         const dev = FIX.roomIR({ fs, seconds: 2.2, rt: 0.35, seed, directDb: 25, reflections: DESK }), n30 = Math.round(0.03 * fs);
         const d = new Float64Array(dev.length); for (let i = 0; i < n30; i++) d[i] = dev[i];
         const dc = DSP.filter(d, spk), ir = new Float64Array(dev.length); for (let i = 0; i < dev.length; i++) ir[i] = dc[i] + dev[i] - d[i];
-        return runTake(FIX.recordSweep({ plan, sweep, ir, peakDbfs: -10, noiseDbfs: -80, seed: seed + 3, latency: 0.05 }));
+        // the room's own decay: the same reverberation without the device's direct sound (FIX.roomIR adds it to this)
+        return { r: runTake(FIX.recordSweep({ plan, sweep, ir, peakDbfs: -10, noiseDbfs: -80, seed: seed + 3, latency: 0.05 })), dev: FIX.roomIR({ fs, seconds: 2.2, rt: 0.35, seed }) };
       });
-      check('A ringing small speaker (three takes): 1000 Hz gets no value in each, with the reason, so no take is valid',
-        takes.every(r => !r.valid && r.bands.find(b => b.f === 1000).rt60 == null && !!r.bands.find(b => b.f === 1000).reason),
-        takes.map(r => { const b = r.bands.find(x => x.f === 1000); return `${r.valid ? 'valid' : 'not valid'}: ${b.rt60 == null ? (b.reason || '').slice(0, 60) : b.rt60}`; }).join(' · '));
+      check('Known limitation — a ringing small speaker (three takes): 1000 Hz gets no value in each, with the reason; each take counts by its other bands (at least 3 of 6), which the ringing can leave off (each band against the room\'s own decay in the detail)',
+        takes.every(x => { const b = x.r.bands.find(q => q.f === 1000), n = x.r.bands.filter(q => q.rt60 != null).length; return b.rt60 == null && !!b.reason && x.r.valid === (n >= 3); }),
+        takes.map(x => { const b = x.r.bands.find(q => q.f === 1000); return `${x.r.valid ? 'valid' : 'not valid'}: 1 kHz ${b.rt60 == null ? (b.reason || '').slice(0, 50) : b.rt60} · ${x.r.bands.filter(q => q.rt60 != null).map(q => `${q.f} ${(100 * (q.rt60 / ownDecay(x.dev, q.f, q.path) - 1)).toFixed(1)} %`).join(', ')}`; }).join(' | '));
     }
 
     // Speech-like sounds during the take (300–3000 Hz, 15 dB above the background, every 0.8–2.5 s): read from the take's

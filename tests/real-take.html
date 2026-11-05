@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Real take capture</title>
+<style>
+  :root{--ink:#14191b;--muted:#566065;--line:#d9dee0;--ok:#16884a;--bad:#c42e42;--soft:#f4f6f7}
+  body{font:15px/1.5 system-ui,sans-serif;margin:24px;background:#fff;color:var(--ink);max-width:980px}
+  h1{margin:0 0 6px;font-size:24px} p{margin:6px 0} .muted{color:var(--muted)}
+  button{font:inherit;font-weight:600;padding:12px 22px;border-radius:8px;border:0;background:#c9371f;color:#fff;cursor:pointer}
+  button:disabled{background:#b9bfc2;cursor:default}
+  #status{margin:14px 0;padding:10px 12px;background:var(--soft);border-radius:6px;font-weight:600}
+  table{border-collapse:collapse;font-size:13px;width:100%;margin-top:10px}
+  th,td{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
+  th{background:var(--soft)} .ok{color:var(--ok);font-weight:700} .bad{color:var(--bad);font-weight:700}
+  ul{padding-left:20px;margin:8px 0}
+</style>
+</head>
+<body>
+<h1>Real take capture</h1>
+<p class="muted">Development only; the application never loads this page. It runs the application's own recording and analysis
+on this device's real speaker and microphone, keeps the raw recordings and shows what each take found.</p>
+<ul>
+  <li>It plays the test sound 5 times and records one silent take: about 90 seconds in all.</li>
+  <li>Keep the laptop on a table, the room quiet, and this tab in front. Do not touch the laptop.</li>
+  <li>The recordings hold whatever the microphone hears. They stay on this computer.</li>
+</ul>
+<p><button id="start" type="button">Start the check</button></p>
+<div id="status">Not started.</div>
+<table><thead><tr><th>Take</th><th>Result</th><th>Clicks (s into the sweep, dB)</th><th>Worst dB</th><th>Timing step</th><th>Lost / dry</th><th>Saved</th></tr></thead><tbody id="rows"></tbody></table>
+
+<script>window.AM = { services: {} };</script>
+<script src="../js/core/util.js"></script>
+<script src="../js/data/demo.js"></script>
+<script src="../js/data/targets.js"></script>
+<script src="../js/data/products.generated.js"></script>
+<script src="../js/data/materials.js"></script>
+<script src="../js/data/room-form.js"></script>
+<script src="../js/core/workflow.js"></script>
+<script src="../js/services/acoustics.js"></script>
+<script src="../js/services/target.js"></script>
+<script src="../js/services/catalog.js"></script>
+<script src="../js/services/surfaces.js"></script>
+<script src="../js/services/prediction.js"></script>
+<script src="../js/services/rt60-average.js"></script>
+<script src="../js/services/spatial.js"></script>
+<script src="../js/services/evaluation.js"></script>
+<script src="../js/core/derive.js"></script>
+<script src="../js/measurement/dsp.js"></script>
+<script src="../js/measurement/analysis.js"></script>
+<script src="../js/measurement/audio-io.js"></script>
+<script src="../js/services/measurement.js"></script>
+<script src="../js/services/processing.js"></script>
+<script src="real-take.js"></script>
+</body>
+</html>

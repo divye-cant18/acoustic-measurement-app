@@ -14,16 +14,18 @@
    reports it applied (getSettings) are kept apart; a setting the browser does not report stays unknown.
 
    The sound output: where the browser can route this AudioContext to a chosen output (AudioContext.setSinkId: Chrome
-   and Edge on computers), the session applies the selected one and reads back which one is in use; elsewhere (Safari,
-   Firefox, every phone browser) the test signal plays through the system's current output, and the session says it
-   could not choose or confirm it (output.selectable false). A phone's loudspeaker can never be selected or verified.
+   and Edge), the session applies the selected one and reads back which one is in use; elsewhere (Safari, Firefox) the
+   test signal plays through the system's current output, and the session says it could not choose or confirm it
+   (output.selectable false).
+
+   Measuring runs on a laptop or desktop computer only: on a phone or tablet no session opens (code 'laptop-only').
 
    A recording is aborted (code 'interrupted') when anything could change or cut the audio while it runs: the page is
    hidden (screen locked, another app or tab in front) or left, the microphone track is muted by the system, the
    AudioContext stops running, or the audio devices change. A partial recording is never analysed.
 
-   Errors are AudioError objects with a code: denied, embedded, no-device, busy, unsupported, insecure, stopped,
-   suspended, interrupted, cancelled, error. Nothing here ever substitutes a value for audio that did not arrive. */
+   Errors are AudioError objects with a code: denied, embedded, no-device, busy, unsupported, laptop-only, insecure,
+   stopped, suspended, interrupted, cancelled, error. Nothing here ever substitutes a value for audio that did not arrive. */
 (function (AM) {
   'use strict';
 
@@ -34,6 +36,7 @@
     'no-device': 'No usable microphone was found. Connect a microphone, or choose another input, then try again.',
     busy: 'The microphone could not be started. Another application may be using it. Close it and try again.',
     unsupported: 'This browser cannot capture audio on this page. Use a current version of Chrome, Edge, Firefox or Safari.',
+    'laptop-only': 'Measuring needs a laptop or desktop computer. Open the app on one to measure this room; saved projects and results can still be read here.',
     insecure: 'Microphone access needs a secure page (https, or a file or server on this computer).',
     stopped: 'The microphone stopped delivering audio.',
     suspended: 'The browser has paused audio for this page. Click the button again to start it.',
@@ -72,8 +75,8 @@
     };
   }
 
-  // What is asked of the browser for every measurement, whatever the device profile: a decay must reach the analysis as
-  // the microphone recorded it, so every kind of processing is asked to be off.
+  // What is asked of the browser for every measurement: a decay must reach the analysis as the microphone recorded it,
+  // so every kind of processing is asked to be off.
   const REQUESTED = Object.freeze({ echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 1 } });
   // The constraints this browser recognises at all (getSupportedConstraints), for the three processing features.
   function supportedConstraints() {
@@ -84,6 +87,7 @@
   }
 
   async function permissionState() {
+    if (isPhoneOrTablet()) return 'laptop-only';
     if (frameBlocked()) return 'embedded';
     try { return (await navigator.permissions.query({ name: 'microphone' })).state; } catch (e) { return 'unknown'; }
   }
@@ -119,14 +123,13 @@
     } catch (e) { return []; }
   }
 
-  // The kind of device this page runs on, from what the browser reports: the placement advice, the test signal's default
-  // and the audio buffer (Session) follow it.
-  function deviceKind() {
+  // Whether this page runs on a phone or tablet, from what the browser reports. Nothing else follows it but the refusal
+  // to open a microphone session (Session.open): measuring is for a laptop or desktop computer.
+  function isPhoneOrTablet() {
     const nav = navigator, ua = nav.userAgent || '';
-    if (nav.userAgentData && nav.userAgentData.mobile) return 'mobile';
-    if (/Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua)) return 'mobile';
-    if (/Macintosh/.test(ua) && nav.maxTouchPoints > 1) return 'mobile'; // iPadOS presents itself as a Mac
-    return 'computer';
+    if (nav.userAgentData && nav.userAgentData.mobile) return true;
+    if (/Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua)) return true;
+    return /Macintosh/.test(ua) && nav.maxTouchPoints > 1; // iPadOS presents itself as a Mac
   }
 
   /* ---------- tap: levels from the real samples, and the samples themselves while recording ---------- */
@@ -197,6 +200,7 @@
     }
 
     async open() {
+      if (isPhoneOrTablet()) throw err('laptop-only');
       const s = support();
       if (!s.secure) throw err('insecure');
       if (!s.getUserMedia || !s.audioContext) throw err('unsupported');
@@ -215,9 +219,7 @@
       track.addEventListener('unmute', () => this.setStatus(this.ctx && this.ctx.state === 'running' ? 'live' : 'suspended'));
 
       const C = AC();
-      // A phone gets the larger 'playback' buffer: a small one runs dry (underruns: gaps in the test signal) far more
-      // often there. The delay it adds does not matter: each take reads its own arrival from the recording.
-      this.ctx = new C({ latencyHint: deviceKind() === 'mobile' ? 'playback' : 'interactive' });
+      this.ctx = new C({ latencyHint: 'interactive' });
       this.sampleRate = this.ctx.sampleRate;
       // The output, where the browser can choose it; otherwise the system's current one, not confirmable from here.
       this.output = { requested: this.outputId, selectable: canSelectOutput(), applied: null, error: null };
@@ -375,5 +377,5 @@
   }
   const current = () => shared;
 
-  AM.audioIO = { AudioError, MESSAGES, REQUESTED, support, supportedConstraints, canSelectOutput, permissionState, devices, outputs, outputLabel, deviceKind, acquire, release, current };
+  AM.audioIO = { AudioError, MESSAGES, REQUESTED, support, supportedConstraints, canSelectOutput, permissionState, devices, outputs, outputLabel, isPhoneOrTablet, acquire, release, current };
 })(window.AM);

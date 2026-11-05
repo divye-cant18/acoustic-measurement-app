@@ -11,7 +11,7 @@ const RECENT = 6; // recent projects shown on Home; the history panel lists ever
 // What happens in each phase of the workflow, in a sentence. Step numbers come from the workflow itself.
 const PHASE_TEXT: Record<string, string> = {
   Define: 'Describe the room. Its size and use set the target RT60.',
-  Measure: 'Your device measures the background noise, then plays a test sweep through its speaker and records the room with its microphone.',
+  Measure: 'Your laptop measures the background noise, then plays a test sweep through its speakers and records the room with its microphone.',
   Analyse: 'RT60, the time sound takes to fade by 60 dB, is calculated from the recording and compared with the target.',
   Improve: 'Choose tested acoustic products and see the RT60 they are predicted to give.',
   Summary: 'Review the whole project and download a PDF report.',

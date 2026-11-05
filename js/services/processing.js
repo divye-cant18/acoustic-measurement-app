@@ -28,7 +28,10 @@
      Fair / Medium  no T30 check (35–45 dB usable), or a straightness or curvature warning, or any warning on the take (browser processing not
                     reported, a small gain or background change). A background that changed since the noise check is
                     information only: each band is judged on the take's own background.
-   The measurement is valid when the reference band (1000 Hz) has a value. Every other band is reported for what it is.
+   The measurement is valid when at least half of the bands (3 of the 6, the rule the room's average RT60 uses:
+   services/rt60-average.js) have a value; any band, the reference band (1000 Hz) included, may be missing, and each is
+   reported for what it is. A band that damage at one moment reached (a gap, a click, audio the browser counted lost, or
+   sound that arrived late: analysis.js bandReach, lateBands) has no value (damage).
    When the browser reports that echo cancellation, noise suppression or automatic gain control stayed on during the take,
    no band gets a value: each of them works on the recorded decay itself, so the decay is no longer the room's. One the
    browser does not report is unknown, not off: the take carries a warning (services/measurement.js), so no band is
@@ -37,9 +40,9 @@
    gets a value, from warnDb it costs confidence. A background above the sweep that was quieter while the sweep played
    than before it (analysis.js aboveSweep, CRITERIA.take.sweepGain) means the device turned its input down while the
    sound played, which nothing in a room does: from failDb no band gets a value, from warnDb it costs confidence.
-   The browser's own counts of lost input frames and output underruns while the test signal played and the decay was
-   recorded (take.integrity, where the browser keeps them; services/measurement.js) make the take not valid when they
-   show any. */
+   The browser's own counts of lost input frames and output underruns (take.integrity, where the browser keeps them;
+   services/measurement.js) cost the bands the loss could reach (analysis.js, from where it was counted) and, when they
+   show any, confidence. */
 (function (AM) {
   'use strict';
   const C = AM.analysis.CRITERIA, D = C.decay;
@@ -86,7 +89,10 @@
       quality: 'Insufficient', confidence: 'None', r2: null, xi: null, curvature: null, fit: null, reason: b.reason || null, notes: [],
       curve: b.curve || null, crossSec: b.crossSec, bandwidth: b.bandwidth, disturbanceDb: b.disturbance ? b.disturbance.db : null,
     };
-    if (!b.supported || b.decayRangeDb == null) return Object.assign(out, { quality: b.supported ? 'Insufficient' : 'Not measured' });
+    if (!b.supported) return Object.assign(out, { quality: 'Not measured' });
+    // Damage at one moment that reached this band (analysis.js): no value, whatever its decay looks like.
+    if (b.damage) return Object.assign(out, { reason: b.damage });
+    if (b.decayRangeDb == null) return out;
     // Recurring sounds in the take's own background (analysis.js, disturbance) act as a noise floor that comes and goes:
     // the evaluation range has to end 10 dB above them as well, so the usable decay is counted from their level.
     const dist = b.disturbance, R = b.decayRangeDb - (dist ? dist.db : 0), fits = b.fits || {};
@@ -153,6 +159,7 @@
         latencySec: take.analysis && take.analysis.latencySec, arrivalClarityDb: take.analysis && take.analysis.arrivalClarityDb,
         irSeconds: take.analysis && take.analysis.irSeconds, distortion: (take.analysis && take.analysis.distortion) || null,
         timing: (take.analysis && take.analysis.timing) || null, clicks: (take.analysis && take.analysis.clicks) || null,
+        damage: (take.analysis && take.analysis.damage) || [],
         sweepGainDb: take.analysis && take.analysis.sweepGain && take.analysis.sweepGain.checked ? take.analysis.sweepGain.changeDb : null,
         integrity: take.integrity || null, config: take.config || null,
         noiseCheck: ctx.noise ? { leqDbfs: ctx.noise.leqDbfs, bandLeqDbfs: ctx.noise.inBand ? ctx.noise.inBand.leqDbfs : null, takenAt: ctx.noise.takenAt, status: ctx.noise.status } : null,
@@ -205,21 +212,15 @@
         issues: bands.map(b => `${b.f} Hz: ${b.reason}`),
       });
     }
-    // Lost or late audio that the browser itself counted while the test signal played and the decay was recorded
-    // (measurement.js, integrity): even a few frames lost shift and click the recording, so the take is not used.
+    const ref = bands.find(b => b.f === base.referenceBand);
+    const warnings = (take.warnings || []).slice();
+    // Lost or late audio that the browser itself counted (measurement.js, integrity): the bands it could reach were left
+    // out (analysis.js); the others are kept, with less confidence.
     const ig = take.integrity;
     if (ig && ((ig.inputLostFrames || 0) > 0 || (ig.outputUnderruns || 0) > 0)) {
       const what = [ig.inputLostFrames > 0 ? `${ig.inputLostFrames} audio frames from the microphone were lost` : null, ig.outputUnderruns > 0 ? `the sound output ran dry ${ig.outputUnderruns} time${ig.outputUnderruns > 1 ? 's' : ''} (the test signal had a gap)` : null].filter(Boolean).join(', and ');
-      const why = `The browser reports that, while the test signal and the room's decay were recorded, ${what}. That breaks the recording's continuity and distorts the decay, so no RT60 is given.`;
-      bands.forEach(b => { if (b.rt60 != null) Object.assign(b, { rt60: null, path: null, quality: 'Insufficient', confidence: 'None', notes: [], reason: why }); });
-      return Object.assign(base, {
-        bands, status: 'invalid', warnings: (take.warnings || []).slice(),
-        reason: `${why} Close other apps and tabs, keep the screen on and the app in front, and measure again.`,
-        issues: bands.map(b => `${b.f} Hz: ${b.reason}`),
-      });
+      warnings.push(`The browser reports that during the take ${what}. The bands it could reach were left out.`);
     }
-    const ref = bands.find(b => b.f === base.referenceBand);
-    const warnings = (take.warnings || []).slice();
     // A sweep the playback chain distorted so heavily that its harmonics fill the band the click check reads
     // (analysis.js aboveSweep, fillDb): a small gap in the recording could hide among them.
     const ck = take.analysis.clicks;
@@ -233,13 +234,20 @@
     const nc = ctx.noise, lv = take.levels;
     if (nc && lv && lv.inBand && nc.inBand && nc.inBand.leqDbfs != null) base.meta.backgroundChangeDb = r1(lv.preRollDbfs - nc.inBand.leqDbfs);
     else if (nc && lv && !lv.inBand && nc.leqDbfs != null) base.meta.backgroundChangeDb = r1(lv.preRollDbfs - nc.leqDbfs);
-    const valid = !!ref && ref.rt60 != null;
+    // Valid with at least half of the bands (services/rt60-average.js MIN_SHARE). The headline stays the reference band's,
+    // with no value when that band has none: another band's value is never put in its place.
+    const n = bands.filter(b => b.rt60 != null).length, need = Math.ceil(bands.length * AM.services.rt60Average.MIN_SHARE), valid = n >= need;
+    const missing = bands.filter(b => b.rt60 == null);
+    // Why too few bands are left: the damage that cost them (with what to do about it), else a band's own reason.
+    const cause = (take.analysis.damage || []).find(d => missing.some(b => b.reason && b.reason.startsWith(d.what)));
+    const first = missing.find(b => b.f === base.referenceBand && b.reason) || missing.find(b => b.reason);
+    const why = cause ? `${cause.what}. ${cause.advice}` : first ? `${first.f} Hz: ${first.reason}` : '';
     Object.assign(base, {
       valid, bands, warnings,
-      status: valid ? (warnings.length || ref.notes.length ? 'warning' : 'valid') : 'invalid',
-      reason: valid ? null : `At ${base.referenceBand} Hz: ${ref ? ref.reason : 'not measured'}`,
-      issues: bands.filter(b => b.rt60 == null).map(b => `${b.f} Hz: ${b.reason}`),
-      headline: valid ? { f: ref.f, rt60: ref.rt60, method: ref.path, quality: ref.quality, confidence: ref.confidence } : null,
+      status: valid ? (warnings.length || !ref || ref.rt60 == null || ref.notes.length ? 'warning' : 'valid') : 'invalid',
+      reason: valid ? null : `Only ${n} of the ${bands.length} bands could be measured (at least ${need} are needed). ${why}`,
+      issues: missing.map(b => `${b.f} Hz: ${b.reason}`),
+      headline: valid && ref ? { f: ref.f, rt60: ref.rt60, method: ref.path, quality: ref.quality, confidence: ref.confidence } : null,
     });
     return base;
   }
@@ -266,8 +274,8 @@
         + (ref.disturbanceDb ? `; sounds during the take ${Math.round(ref.disturbanceDb)} dB above the background, counted as recording background noise` : '; no sounds above the background during the take')
         + (res.meta && res.meta.backgroundChangeDb != null && Math.abs(res.meta.backgroundChangeDb) >= 3 ? `; background ${Math.abs(res.meta.backgroundChangeDb).toFixed(0)} dB ${res.meta.backgroundChangeDb > 0 ? 'louder' : 'quieter'} than in the noise check (information)` : ''),
       ref.path ? `${ref.f} Hz uses ${ref.path} (${pathNote[ref.path]})${check}` : `${res.referenceBand} Hz: no valid path`,
-      res.valid ? `RT60 ${ref.rt60.toFixed(2)} s at ${ref.f} Hz${ref.r2 != null ? ` (r² ${ref.r2.toFixed(4)})` : ''}` : 'Unable to obtain a reliable RT60 measurement: not calculated',
-      res.valid ? `${n} of ${res.bands.length} bands reliable, ${res.headline.confidence.toLowerCase()} confidence at ${ref.f} Hz` : 'Measurement insufficient',
+      res.valid && ref.rt60 != null ? `RT60 ${ref.rt60.toFixed(2)} s at ${ref.f} Hz${ref.r2 != null ? ` (r² ${ref.r2.toFixed(4)})` : ''}` : res.valid ? `No RT60 at ${res.referenceBand} Hz; the other bands give the result` : 'Unable to obtain a reliable RT60 measurement: not calculated',
+      res.valid ? `${n} of ${res.bands.length} bands reliable${ref.rt60 != null ? `, ${res.headline.confidence.toLowerCase()} confidence at ${ref.f} Hz` : ''}` : 'Measurement insufficient',
     ];
   }
 

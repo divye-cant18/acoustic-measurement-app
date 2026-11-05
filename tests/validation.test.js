@@ -61,8 +61,7 @@
   }
 
   function measure(rec, s, settings) {
-    // A phone plan (three short tones): each tone checked, the clean ones averaged and analysed as one take.
-    const a = s.plan.count ? AN.analyseTones(rec, s.plan, s.sweep) : AN.analyseTake(rec, s.plan, s.sweep);
+    const a = AN.analyseTake(rec, s.plan, s.sweep);
     const r = PROC.evaluate({ id: 'v', takenAt: '', status: a.status, reason: a.reason, levels: a.levels, plan: s.plan, sampleRate: s.plan.fs, analysis: a, warnings: [], settings }, {});
     return { a, r };
   }
@@ -202,114 +201,107 @@
           () => runCase('Known limitation — decay cut off close to the background (one device, RT 0.30 s cut at 0.15 s, about 13 dB above it)', { rec: deviceTake(s48, FIX.roomIR({ fs: 48000, seconds: 0.15, rt: 0.3, seed: 9, directDb: 28, reflections: DESK })), s: s48, room: roomIR(48000, 0.3, 9), nominal: 0.3, expect: 'flagged', before: true }),
           () => runCase('Speaker distortion, 3rd harmonic −18 dB (about 12 %)', { rec: deviceTake(distorted(1.5), d.ir), s: s48, room: d.room, nominal: 0.6, expect: 'value' }),
           () => runCase('Speaker distortion, 3rd harmonic −14 dB (about 20 %)', { rec: deviceTake(distorted(2.5), d.ir), s: s48, room: d.room, nominal: 0.6, expect: 'either' }),
-          () => runCase('Gap: one 128-sample block missing during the sweep', { rec: gapped(3.0, 128), s: s48, room: d.room, nominal: 0.6, expect: 'rejected', before: true }),
-          () => runCase('Gap: 20 ms missing during the sweep', { rec: gapped(2.2, 960), s: s48, room: d.room, nominal: 0.6, expect: 'rejected', before: true }),
+          () => runCase('Gap: one 128-sample block missing 3.0 s into the sweep (it reaches 1000 Hz)', { rec: gapped(3.0, 128), s: s48, room: d.room, nominal: 0.6, expect: 'none', before: true }),
+          () => runCase('Gap: 20 ms missing 2.2 s into the sweep (it reaches 1000 Hz)', { rec: gapped(2.2, 960), s: s48, room: d.room, nominal: 0.6, expect: 'none', before: true }),
           () => runCase('Voices during the take (speech-like sounds 15 dB above the background)', { rec: voices(clean), s: s48, room: d.room, nominal: 0.6, expect: 'either', before: true }),
           () => runCase('Browser kept noise suppression on', { rec: clean, s: s48, room: d.room, expect: 'none', settings: { echoCancellation: false, noiseSuppression: true, autoGainControl: false } }),
           () => runCase('No test signal (background only)', { rec: Float32Array.from(FIX.background(Math.round(s48.plan.total * 48000), -50, 61)), s: s48, expect: 'rejected' }),
         ]);
     }
 
-    /* A phone (analysis.js CRITERIA.take.phone): three 2 s tones from 150 Hz, 3 s apart, played from one buffer; each
-       checked on its own, the clean ones averaged and analysed as one take. The phone: one device (direct sound 28 dB,
-       desk reflections) whose small speaker plays nothing below about 300 Hz. */
+    /* One device (direct sound 28 dB, desk reflections) whose small speaker plays nothing below about 300 Hz, through the
+       same 5 s sweep and analysis as any other. Damage at one moment costs only the
+       bands it reaches (analysis.js bandReach: the bands swept before it; lateBands: those the sound arrived late in), and
+       a take counts with at least 3 of the 6 bands, 1000 Hz no longer required (processing.js). */
     {
-      const pp = AN.sweepPlan(48000, 'mobile'), sp = { plan: pp, sweep: AN.makeSweep(pp) };
-      sp.train = new Float32Array(Math.round(pp.span * 48000));
-      for (let k = 0; k < pp.count; k++) sp.train.set(sp.sweep.signal, Math.round(k * pp.period * 48000));
+      const s48 = setup(48000), T = s48.plan.seconds, R = Math.log(s48.plan.f2 / s48.plan.f1), tOf = f => T * Math.log(f / s48.plan.f1) / R;
       const speaker = ir => DSP.filter(ir, DSP.butterworthQ(4).map(Q => DSP.rbj('highpass', 300, 48000, Q)));
-      const phone = (rt, seed) => { const d = oneDevice(48000, rt, seed); return { room: d.room, ir: speaker(d.ir) }; };
-      const phoneTake = (ir, extra, signal) => FIX.recordSweep(Object.assign({ plan: pp, sweep: { signal: signal || sp.train }, ir, peakDbfs: -12, noiseDbfs: -65, noiseKind: 'pink', latency: 0.07 }, extra || {}));
-      // A click (a sharp broadband jump, as a dropped block or a speaker's protection leaves) 1 s into tone k.
-      const clickIn = (rec, ks) => { const y = Float32Array.from(rec); for (const k of ks) { const at = Math.round((pp.preRoll + 0.07 + k * pp.period + 1.0) * 48000); for (let i = 0; i < 24; i++) y[at + i] += (i % 2 ? -1 : 1) * 0.3; } return y; };
-      // A speaker's protection, as the hypothesis from the field: after 3.4 s of loud tone without a break, the level
-      // drops 6 dB within 1 ms.
-      const protect = sig => { const y = Float32Array.from(sig), on = Math.round(3.4 * 48000), ramp = 48, k = Math.pow(10, -6 / 20); let run = 0, quiet = 0;
-        for (let i = 0; i < y.length; i++) { if (Math.abs(sig[i]) > 1e-4) { run++; quiet = 0; } else if (++quiet > 4800) run = 0; if (run > on) y[i] *= 1 + (k - 1) * Math.min(1, (run - on) / ramp); }
-        return y; };
-      // Audio a phone drops (Chrome on Android discards microphone frames it cannot deliver on time): ms removed at
-      // `sec` s of the recording, everything after it arriving that much earlier (the recording runs on to its length).
-      const dropAt = (rec, sec, ms) => { const at = Math.round(sec * 48000), n = Math.round(ms * 48), y = new Float32Array(rec.length); y.set(rec.subarray(0, at)); y.set(rec.subarray(at + n), at); y.set(rec.subarray(rec.length - n), rec.length - n); return y; };
-      const repeatAt = (rec, sec, ms) => { const at = Math.round(sec * 48000), n = Math.round(ms * 48), y = new Float32Array(rec.length); y.set(rec.subarray(0, at)); y.set(rec.subarray(at - n, at), at); y.set(rec.subarray(at, rec.length - n), at + n); return y; };
-      const toneEnd = k => pp.preRoll + 0.07 + k * pp.period + pp.seconds;
-      const d5 = phone(0.5, 251), s48 = setup(48000);
-      await section('Phone test sound (three 2 s tones from 150 Hz)', 'One phone (speaker playing nothing below 300 Hz, direct sound 28 dB, desk reflections), pink background −65 dBFS. Each tone checked on its own; the clean ones averaged. 125 Hz is not measured (below the tones). Never a wrong value.',
+      const smallSpeaker = (rt, seed) => { const d = oneDevice(48000, rt, seed); return { room: d.room, ir: speaker(d.ir) }; };
+      const deviceRec = (ir, extra) => deviceTake(s48, ir, extra);
+      const at = t => Math.round((s48.plan.preRoll + 0.07 + t) * 48000); // t s into the sweep, in the recording
+      // A click (a sharp broadband jump, as a dropped block or a speaker's protection leaves) t s into the sweep.
+      const tapAt = (rec, t) => { const y = Float32Array.from(rec), a = at(t); for (let i = 0; i < 24; i++) y[a + i] += (i % 2 ? -1 : 1) * 0.3; return y; };
+      // Audio a device drops: ms removed t s into the sweep, everything after it arriving that much earlier.
+      const dropAt = (rec, t, ms) => { const a = at(t), n = Math.round(ms * 48), y = new Float32Array(rec.length); y.set(rec.subarray(0, a)); y.set(rec.subarray(a + n), a); y.set(rec.subarray(rec.length - n), rec.length - n); return y; };
+      const d5 = smallSpeaker(0.5, 251);
+      await section('Small speaker', 'One device (speaker playing nothing below 300 Hz, direct sound 28 dB, desk reflections), pink background −65 dBFS, the usual sweep and analysis. Damage costs only the bands it reaches; never a wrong value.',
         () => [
-          ...[0.3, 0.5, 0.8, 1.2].map(rt => () => { const d = phone(rt, seedOf(rt, 261)); return runCase(`RT ${rt.toFixed(2)} s`, { rec: phoneTake(d.ir, { seed: seedOf(rt, 270) }), s: sp, room: d.room, nominal: rt }); }),
-          ...[-58, -52].map(nz => () => runCase(`Background ${nz} dBFS (pink), RT 0.50 s`, { rec: phoneTake(d5.ir, { noiseDbfs: nz, seed: 290 - nz }), s: sp, room: d5.room, nominal: 0.5, expect: 'either' })),
-          () => runCase('A click in tone 2: that tone is set aside, the other two give the value', { rec: clickIn(phoneTake(d5.ir, { seed: 281 }), [1]), s: sp, room: d5.room, nominal: 0.5 }),
-          () => runCase('Clicks in tones 1 and 2: only one clean tone, the take is rejected with the reason', { rec: clickIn(phoneTake(d5.ir, { seed: 282 }), [0, 1]), s: sp, room: d5.room, expect: 'rejected' }),
-          () => runCase('Speaker protection (6 dB down after 3.4 s of tone), the phone\'s three 2 s tones: never 3.4 s of tone without a break, so the right value', { rec: phoneTake(d5.ir, { seed: 283 }, protect(sp.train)), s: sp, room: d5.room, nominal: 0.5 }),
-          // Dropped audio (29 October 2026): the tones are placed where they arrived, so a drop between them or in an
-          // echo leaves the right value; a drop while a tone plays sets that tone aside.
-          () => runCase('The phone drops 10 ms of audio between tones 1 and 2: the tones are lined up where they arrived, the right value', { rec: dropAt(phoneTake(d5.ir, { seed: 284 }), toneEnd(0) + 2.5, 10), s: sp, room: d5.room, nominal: 0.5 }),
-          () => runCase('The phone drops 20 ms of audio in tone 1\'s echo (0.3 s after it): the right value', { rec: dropAt(phoneTake(d5.ir, { seed: 285 }), toneEnd(0) + 0.3, 20), s: sp, room: d5.room, nominal: 0.5 }),
-          () => runCase('The phone drops 10 ms of audio while tone 2 plays: that tone is set aside, the others give the value', { rec: dropAt(phoneTake(d5.ir, { seed: 286 }), toneEnd(1) - 1.0, 10), s: sp, room: d5.room, nominal: 0.5 }),
-          () => runCase('The phone drops 10 ms after each tone: the right value', { rec: dropAt(dropAt(dropAt(phoneTake(d5.ir, { seed: 287 }), toneEnd(0) + 0.2, 10), toneEnd(1) + 0.19, 10), toneEnd(2) + 0.18, 10), s: sp, room: d5.room, nominal: 0.5 }),
-          () => runCase('The phone repeats 10 ms of audio between tones 2 and 3: the right value', { rec: repeatAt(phoneTake(d5.ir, { seed: 288 }), toneEnd(1) + 2.5, 10), s: sp, room: d5.room, nominal: 0.5 }),
-          () => runCase('The phone drops audio while tones 1 and 3 play: only one tone is whole, the take is rejected with the reason', { rec: dropAt(dropAt(phoneTake(d5.ir, { seed: 289 }), toneEnd(0) - 1.0, 10), toneEnd(2) - 1.01, 10), s: sp, room: d5.room, expect: 'rejected' }),
+          ...[0.3, 0.5, 0.8, 1.2].map(rt => () => { const d = smallSpeaker(rt, seedOf(rt, 261)); return runCase(`RT ${rt.toFixed(2)} s`, { rec: deviceRec(d.ir, { seed: seedOf(rt, 270) }), s: s48, room: d.room, nominal: rt }); }),
+          ...[-58, -52].map(nz => () => runCase(`Background ${nz} dBFS (pink), RT 0.50 s`, { rec: deviceRec(d5.ir, { noiseDbfs: nz, seed: 290 - nz }), s: s48, room: d5.room, nominal: 0.5, expect: 'either' })),
+          () => runCase('10 ms of audio dropped 0.9 s into the sweep: the bands swept before it (125, 250 Hz) get no value, 1000 Hz and the rest keep the right value', { rec: dropAt(deviceRec(d5.ir, { seed: 284 }), 0.9, 10), s: s48, room: d5.room, nominal: 0.5 }),
+          () => runCase('A click 4.2 s into the sweep (where a device\'s speaker protection broke takes in the field): every band swept before it, 1000 Hz with them, gets no value; too few are left, so the take is not valid, never a wrong value', { rec: tapAt(deviceRec(d5.ir, { seed: 282 }), 4.2), s: s48, room: d5.room, expect: 'none' }),
         ]);
-      // The same protection on the one 5 s sweep: a smooth step is no click, so nothing catches it, and it spreads into
-      // the decay of every band swept before it. Why phones get the short tones.
-      const ref = ownDecay(d5.room, 48000, 1000, 'T20');
-      const oldB = measure(FIX.recordSweep({ plan: s48.plan, sweep: { signal: protect(s48.sweep.signal) }, ir: d5.ir, peakDbfs: -12, noiseDbfs: -65, noiseKind: 'pink', latency: 0.07, seed: 283 }), s48).r.bands.find(b => b.f === 1000);
-      const newB = measure(phoneTake(d5.ir, { seed: 283 }, protect(sp.train)), sp).r.bands.find(b => b.f === 1000);
-      const off = b => (b.rt60 == null ? 'no value' : `${b.rt60.toFixed(3)} s (${b.rt60 >= ref ? '+' : ''}${(100 * (b.rt60 / ref - 1)).toFixed(1)} %)`);
-      V.display.push({ name: 'Speaker protection (6 dB down after 3.4 s of tone): the 5 s sweep gives no value or a wrong one (more than 8 % off), the phone\'s 2 s tones the room\'s value within 8 %',
-        ok: (oldB.rt60 == null || Math.abs(oldB.rt60 / ref - 1) > 0.08) && newB.rt60 != null && Math.abs(newB.rt60 / ref - 1) <= 0.08,
-        detail: `room ${ref.toFixed(3)} s at 1000 Hz · 5 s sweep ${off(oldB)} · phone tones ${off(newB)}` });
-      // The browser's count only places a drop; the recording is judged. A count with nothing lost in the recording leaves
-      // every tone used; a drop between tones shows as the later tones' shift; a rejected take says how many tones were whole.
+      // Damage at one moment, on a laptop and on a device with a small speaker, at several moments. Each band the damage
+      // found reaches (its half-octave below swept before it, or the sound late there) has no value and names it; every
+      // other band keeps the value of the same take undamaged (within 3 %); the take is valid exactly when at least 3 bands
+      // are left. On the laptop every case is found; with the small speaker, a drop at 0.9 s (130 Hz, which it hardly
+      // plays) leaves no trace and does no harm.
       {
-        const base = phoneTake(d5.ir, { seed: 284 }), counted = AN.analyseTones(base, pp, sp.sweep, { input: [{ from: toneEnd(0) + 0.5, to: toneEnd(0) + 0.52, frames: 480 }], output: [{ from: 0.2, to: 1.4, underruns: 1, ms: 3 }] });
-        const moved = AN.analyseTones(dropAt(base, toneEnd(0) + 2.5, 10), pp, sp.sweep), two = AN.analyseTones(dropAt(dropAt(phoneTake(d5.ir, { seed: 289 }), toneEnd(0) - 1.0, 10), toneEnd(2) - 1.01, 10), pp, sp.sweep);
-        V.display.push({ name: 'Phone: the browser counting lost audio with the recording whole sets no tone aside; 10 ms dropped between tones 1 and 2 shows as tones 2 and 3 arriving 10 ms early; a rejected take says how many of its tones could be used',
-          ok: counted.status === 'captured' && counted.tones.every(t => t.used) && moved.status === 'captured' && Math.abs(moved.tones[1].shiftMs + 10) < 0.5 && Math.abs(moved.tones[2].shiftMs + 10) < 0.5 && two.status === 'failed' && /^Only 1 of the 3 test tones could be used \(2 are needed\)/.test(two.reason),
-          detail: `counted: ${counted.tones.map(t => (t.used ? 'used' : 'set aside')).join(', ')} · shifts ${moved.tones.map(t => t.shiftMs).join(', ')} ms · ${(two.reason || '').slice(0, 70)}…` });
+        const lap = oneDevice(48000, 0.6, 331), ss = smallSpeaker(0.6, 332), rows = [];
+        for (const [dn, ir, seed] of [['laptop', lap.ir, 333], ['small speaker', ss.ir, 334]]) {
+          const clean = measure(deviceRec(ir, { seed }), s48);
+          for (const t of [0.9, 2.4, 3.6]) for (const [k, fn] of [['click', rec => tapAt(rec, t)], ['10 ms dropped', rec => dropAt(rec, t, 10)]]) {
+            const { a, r } = measure(fn(deviceRec(ir, { seed })), s48), n = r.bands.filter(b => b.rt60 != null).length;
+            const hit = f => a.damage.some(d => d.toSec != null && tOf(f / 2) <= d.toSec) || !!(a.timing && a.timing.late && a.timing.late[f] != null);
+            const ok = r.bands.every(b => { const c = clean.r.bands.find(x => x.f === b.f); return hit(b.f) ? b.rt60 == null && /reaches this band's decay|arrived/.test(b.reason || '') : (b.rt60 == null) === (c.rt60 == null) && (b.rt60 == null || Math.abs(b.rt60 / c.rt60 - 1) <= 0.03); })
+              && r.valid === (n >= 3) && (dn === 'small speaker' || a.damage.length > 0);
+            rows.push({ c: `${dn}, ${k} at ${t} s`, ok, kept: r.bands.filter(b => b.rt60 != null).map(b => b.f), valid: r.valid, found: a.damage.length > 0 });
+          }
+        }
+        V.display.push({ name: 'Damage at one moment (a click, 10 ms of audio dropped) at 0.9, 2.4 and 3.6 s into the sweep, laptop and small speaker: the bands swept before the damage found get no value and say why, every band kept has the undamaged take\'s value within 3 %, and the take is valid exactly when at least 3 bands are left',
+          ok: rows.every(x => x.ok), detail: rows.map(x => `${x.c}: ${x.ok ? '' : 'FAIL '}${x.found ? '' : 'nothing found, '}kept ${x.kept.join(',') || 'none'} (${x.valid ? 'valid' : 'not valid'})`).join(' · ') });
       }
-      // The field failure (30 October 2026): a phone whose playback processing plays everything below about 560 Hz 4.7 ms
-      // later than the rest, in every tone, with no audio lost ("from about 566 Hz on, the test signal arrived 4.7 ms
-      // earlier", all three tones set aside). Continuity is judged across the tones: the same delay in every tone is the
-      // phone's own; a drop in one tone still sets that tone aside, and drops in two reject the take. The laptop's one
-      // sweep, with no tones to compare, keeps judging alone (the same delay there is still rejected).
+      // Audio the browser counted lost (where it counted it: measurement.js lossSpans), with the recording itself whole:
+      // the bands that loss could reach get no value, the others are kept.
+      {
+        const rec = deviceRec(d5.ir, { seed: 285 }), arr = s48.plan.preRoll + 0.07, loss = t => ({ input: [{ from: arr + t - 0.05, to: arr + t + 0.05, frames: 480 }], output: [] });
+        const runL = l => { const a = AN.analyseTake(rec, s48.plan, s48.sweep, l); return PROC.evaluate({ id: 'v', takenAt: '', status: a.status, reason: a.reason, levels: a.levels, plan: s48.plan, sampleRate: 48000, analysis: a, warnings: [], settings: {} }, {}); };
+        const pre = runL(loss(-0.5)), early = runL(loss(0.3)), late = runL(loss(3.0)), kept = r => r.bands.filter(b => b.rt60 != null).map(b => b.f).join(',');
+        V.display.push({ name: 'Audio the browser counted lost, the recording whole: before the sweep, nothing is lost; 0.3 s into it, only 125 Hz; 3.0 s into it, every band up to 2000 Hz, so the take is not valid',
+          ok: pre.valid && kept(pre) === kept(runL(null)) && early.valid && early.bands.find(b => b.f === 125).rt60 == null && /counted lost/.test(early.bands.find(b => b.f === 125).reason) && early.bands.filter(b => b.f > 125).every(b => b.rt60 != null || b.f === 125)
+            && !late.valid && late.bands.filter(b => b.f <= 2000).every(b => b.rt60 == null) && /counted lost/.test(late.reason),
+          detail: `before: ${kept(pre)} · 0.3 s: ${kept(early)} · 3.0 s: ${kept(late) || 'none'} (${(late.reason || '').slice(0, 70)}…)` });
+      }
+      // A device whose own playback processing plays everything below about 560 Hz 4.7 ms later than the rest, with no
+      // audio lost ("from about 566 Hz on, the test signal arrived 4.7 ms earlier").
+      // The bands it arrived late in (and the one the step falls in) get no value; 1000–4000 Hz keep the room's value.
       {
         const lr = (type, f) => [...DSP.butterworthQ(2), ...DSP.butterworthQ(2)].map(Q => DSP.rbj(type, f, 48000, Q));
         const lateLow = (ir, fc, ms) => { const lo = DSP.filter(ir, lr('lowpass', fc)), hi = DSP.filter(ir, lr('highpass', fc)), d = Math.round(ms * 48), y = new Float64Array(ir.length + d); for (let i = 0; i < ir.length; i++) { y[i + d] += lo[i]; y[i] += hi[i]; } return y; };
-        const fieldPhone = rt => { const d = oneDevice(48000, rt, 41); return { room: d.room, ir: lateLow(speaker(d.ir), 560, 4.7) }; };
-        const toneOnly = rec => { const n = Math.round((pp.preRoll + pp.seconds + pp.tail) * 48000); return AN.analyseTake(rec.subarray(0, n), Object.assign({}, pp, { count: 1, span: pp.seconds, total: pp.preRoll + pp.seconds + pp.tail }), sp.sweep); };
-        const res = [0.3, 0.6, 1.0].map(rt => { const fp = fieldPhone(rt), rec = phoneTake(fp.ir, { seed: 300 + Math.round(rt * 10) }), m = measure(rec, sp); return { rt, fp, rec, m, alone: toneOnly(rec) }; });
+        const lateBass = rt => { const d = oneDevice(48000, rt, 41); return { room: d.room, ir: lateLow(speaker(d.ir), 560, 4.7) }; };
+        const res = [0.3, 0.6, 1.0].map(rt => { const fp = lateBass(rt); return { rt, fp, m: measure(deviceRec(fp.ir, { seed: 300 + Math.round(rt * 10) }), s48) }; });
         const near = x => [1000, 2000, 4000].every(f => { const b = x.m.r.bands.find(q => q.f === f), ref = ownDecay(x.fp.room, 48000, f, 'T20'); return b && b.rt60 != null && Math.abs(b.rt60 / ref - 1) <= 0.05; });
-        const honest = x => [250, 500].every(f => { const b = x.m.r.bands.find(q => q.f === f); return b.rt60 != null || /not a straight line/.test(b.reason || ''); });
-        V.display.push({ name: 'The field failure: a phone playing everything below 560 Hz 4.7 ms later. One tone alone reads it as dropped samples ("from about 566 Hz on … earlier", as on the phone); judged across the tones, every tone is used, 1000–4000 Hz within 5 % of the room\'s own decay, and 250 and 500 Hz either a value or an honest "not a straight line", never a wrong value passed',
-          ok: res.every(x => x.alone.status === 'failed' && /not continuous: from about 566 Hz on/.test(x.alone.reason) && x.m.a.status === 'captured' && x.m.a.tones.every(t => t.used) && x.m.r.valid && near(x) && honest(x)),
-          detail: res.map(x => `RT ${x.rt}: one tone alone "${(x.alone.reason || 'passes').slice(0, 52)}…" · tones ${x.m.a.tones.map(t => (t.used ? 'U' : '-')).join('')} · ${[250, 500, 1000, 2000, 4000].map(f => { const b = x.m.r.bands.find(q => q.f === f), ref = ownDecay(x.fp.room, 48000, f, 'T20'); return `${f} ${b && b.rt60 != null ? `${(100 * (b.rt60 / ref - 1)).toFixed(1)} %` : 'no value'}`; }).join(', ')}`).join(' | ') });
-        const x6 = res[1], mid = k => pp.preRoll + 0.07 + k * pp.period + 1.0;
-        const dropped2 = measure(dropAt(x6.rec, mid(1), 10), sp), dropped13 = measure(dropAt(dropAt(x6.rec, mid(0), 10), mid(2) - 0.01, 10), sp);
-        const laptop = AN.analyseTake(FIX.recordSweep({ plan: s48.plan, sweep: s48.sweep, ir: x6.fp.ir, peakDbfs: -12, noiseDbfs: -65, noiseKind: 'pink', latency: 0.07, seed: 306 }), s48.plan, s48.sweep);
-        V.display.push({ name: 'The same phone: 10 ms dropped while tone 2 plays sets tone 2 aside (the others give the value); drops while tones 1 and 3 play reject the take; the laptop\'s one 5 s sweep with the same delay is still rejected as not continuous (its check is unchanged)',
-          ok: dropped2.a.status === 'captured' && dropped2.a.tones.map(t => t.used).join() === 'true,false,true' && dropped2.r.valid && dropped13.a.status === 'failed' && !dropped13.r.valid && laptop.status === 'failed' && /not continuous/.test(laptop.reason),
-          detail: `tone 2 dropped: ${dropped2.a.tones.map(t => (t.used ? 'U' : '-')).join('')} ${dropped2.r.valid ? 'valid' : 'not valid'} · tones 1 and 3: ${(dropped13.a.reason || '').slice(0, 60)}… · laptop: ${(laptop.reason || 'passes').slice(0, 60)}…` });
-        // From the bands to the room's RT60, as on the laptop: after its tones are analysed, a phone's take goes through the
-        // same steps (services/processing.js, the positions' average, services/rt60-average.js). A band with no value is
-        // left out and named, the bands with one are kept, and the room's RT60 is their mean when at least 3 of the 6 have
-        // one. The laptop reference: the same room on the laptop's one sweep through a small speaker, no value at 125 Hz.
+        const lows = x => [125, 250, 500].every(f => { const b = x.m.r.bands.find(q => q.f === f); return b.rt60 == null && /arrived/.test(b.reason || ''); });
+        V.display.push({ name: 'A device playing everything below 560 Hz 4.7 ms late: valid; 125–500 Hz, where the sound arrived late, no value and say why; 1000–4000 Hz within 5 % of the room\'s own decay',
+          ok: res.every(x => x.m.a.status === 'captured' && x.m.r.valid && lows(x) && near(x)),
+          detail: res.map(x => `RT ${x.rt}: ${x.m.r.valid ? 'valid' : 'not valid'} · ${[125, 250, 500, 1000, 2000, 4000].map(f => { const b = x.m.r.bands.find(q => q.f === f), ref = ownDecay(x.fp.room, 48000, f, 'T20'); return `${f} ${b && b.rt60 != null ? `${(100 * (b.rt60 / ref - 1)).toFixed(1)} %` : 'no value'}`; }).join(', ')}`).join(' | ') });
+        // From the bands to the room's RT60, through the usual steps (processing.js, the positions' average,
+        // rt60-average.js). A band with no value is left out and named, the bands with one are kept, and the room's RT60 is
+        // their mean when at least 3 of the 6 have one. The reference: the same room with the small speaker alone, leaving
+        // no value at 125 Hz.
         const roomOf = rs => AM.services.spatial.aggregate(rs.map((r, k) => ({ id: `P${k + 1}`, name: `P${k + 1}`, result: r })));
-        const lapRec = seed => FIX.recordSweep({ plan: s48.plan, sweep: s48.sweep, ir: speaker(oneDevice(48000, 0.6, 41).ir), peakDbfs: -12, noiseDbfs: -65, noiseKind: 'pink', latency: 0.07, seed });
-        const devs = [['phone', [x6.m.r, measure(phoneTake(x6.fp.ir, { seed: 316 }), sp).r]], ['laptop', [measure(lapRec(321), s48).r, measure(lapRec(322), s48).r]]].map(([name, rs]) => { const room = roomOf(rs); return { name, rs, room, avg: RA.of(room) }; });
+        const x6 = res[1], lapRec = seed => deviceRec(speaker(oneDevice(48000, 0.6, 41).ir), { seed });
+        const devs = [['late bass', [x6.m.r, measure(deviceRec(x6.fp.ir, { seed: 316 }), s48).r]], ['small speaker', [measure(lapRec(321), s48).r, measure(lapRec(322), s48).r]]].map(([name, rs]) => { const room = roomOf(rs); return { name, rs, room, avg: RA.of(room) }; });
         const fs = l => l.map(b => b.f).join();
         const sameRule = d => { const have = d.room.bands.filter(RA.eligible);
           return d.rs.every(r => r.valid) && d.room.bands.every(b => (b.rt60 != null) === d.rs.some(r => RA.eligible(r.bands.find(q => q.f === b.f))))
             && d.avg.available === have.length >= 3 && fs(d.avg.included) === fs(have) && fs(d.avg.missing) === fs(d.room.bands.filter(b => !RA.eligible(b)))
             && Math.abs(d.avg.value - have.reduce((s, b) => s + b.rt60, 0) / have.length) < 1e-12; };
-        const [ph, lp] = devs;
-        V.display.push({ name: 'The same phone at two positions, to the room\'s RT60 by the laptop\'s rule: every band with a value kept, each band without one (125 Hz below the tones; 250 or 500 Hz not a straight line) left out and named, the room\'s RT60 the mean of the rest; the laptop with no value at 125 Hz gives its room RT60 the same way',
-          ok: devs.every(sameRule) && ph.avg.available && /^125/.test(fs(ph.avg.missing)) && [1000, 2000, 4000].every(f => ph.avg.included.some(b => b.f === f)) && lp.avg.available && fs(lp.avg.missing) === '125',
+        const [lbR, ssR] = devs;
+        V.display.push({ name: 'That device at two positions, to the room\'s RT60: every band with a value kept, each band without one left out and named, the room\'s RT60 the mean of the rest; a small speaker with no value at 125 Hz gives its room RT60 the same way',
+          ok: devs.every(sameRule) && lbR.avg.available && [1000, 2000, 4000].every(f => lbR.avg.included.some(b => b.f === f)) && ssR.avg.available && /^125/.test(fs(ssR.avg.missing)),
           detail: devs.map(d => `${d.name}: ${d.room.bands.map(b => `${b.f} ${b.rt60 != null ? b.rt60.toFixed(2) : '—'}`).join(', ')} → ${d.avg.available ? `${d.avg.value.toFixed(3)} s, ${RA.describe(d.avg)}` : d.avg.reason}`).join(' | ') });
       }
-      const one = AN.analyseTones(clickIn(phoneTake(d5.ir, { seed: 281 }), [1]), pp, sp.sweep), clean = AN.analyseTones(phoneTake(d5.ir, { seed: 281 }), pp, sp.sweep);
-      V.display.push({ name: 'Phone: the tone with the click is the one set aside (with its reason), the others used; a clean take uses all three; 125 Hz is not measured (below the tones)',
-        ok: one.status === 'captured' && one.tones.map(t => t.used).join() === 'true,false,true' && /click/.test(one.tones[1].reason || '') && clean.tones.every(t => t.used) && clean.bands.find(b => b.f === 125).supported === false,
-        detail: `with the click: ${one.tones.map(t => (t.used ? 'used' : `set aside (${(t.reason || '').slice(0, 40)}…)`)).join(' · ')} · clean: ${clean.tones.map(t => (t.used ? 'used' : 'set aside')).join(' · ')}` });
+      // 1000 Hz with no value while the other bands have one: valid (at least 3 of 6), the headline keeps 1000 Hz with no
+      // value (never another band's), the room's average is taken over the bands that have one.
+      {
+        const a = AN.analyseTake(deviceRec(d5.ir, { seed: 286 }), s48.plan, s48.sweep, null);
+        a.bands.find(b => b.f === 1000).damage = 'Test: no value at 1000 Hz';
+        const r = PROC.evaluate({ id: 'v', takenAt: '', status: a.status, reason: a.reason, levels: a.levels, plan: s48.plan, sampleRate: 48000, analysis: a, warnings: [], settings: {} }, {}), avg = RA.of(r);
+        V.display.push({ name: 'No value at 1000 Hz, the other bands measured: the take is valid (at least 3 of the 6 bands), its 1000 Hz headline stays empty (never another band\'s value), and the average is taken over the bands that have one',
+          ok: r.valid && r.status === 'warning' && r.headline && r.headline.f === 1000 && r.headline.rt60 == null && avg.available && !avg.included.some(b => b.f === 1000) && avg.missing.some(m => m.f === 1000),
+          detail: `${r.valid ? 'valid' : 'not valid'} (${r.status}) · headline ${r.headline ? `${r.headline.f} Hz ${r.headline.rt60}` : 'none'} · average ${avg.available ? `${avg.value.toFixed(3)} s, ${RA.describe(avg)}` : avg.reason}` });
+      }
     }
 
     displayChecks();
@@ -413,10 +405,10 @@
   }
   // This app's two averages for a list of decided bands, by the app's own rules (AM.services.rt60Average): the bands from
   // 125 to 4000 Hz that have a value (at least 3 of 6), and 500–2000 Hz (at least 2 of 3). A take counts as valid when
-  // its 1000 Hz band has a value, as in services/processing.js.
+  // at least half of its bands have a value, as in services/processing.js.
   const RA = AM.services.rt60Average;
   function appAverages(bands) {
-    const r = { valid: bands.some(b => b.f === REF && typeof b.rt60 === 'number'), bands };
+    const r = { valid: bands.filter(b => typeof b.rt60 === 'number').length >= Math.ceil(bands.length * RA.MIN_SHARE), bands };
     return { all: RA.of(r), mid: RA.mid(r) };
   }
   // Schroeder integration from the arrival to the end of the file, time-reversed band filter, no truncation: here only
@@ -465,7 +457,7 @@
     const app = (what, bands, extra) => { const a = appAverages(bands); return Object.assign({ what, f1k: pick(bands, [REF], 'rt60')[0], tmid: mean(pick(bands, TMID, 'rt60')), mid3: a.mid.value, all: a.all.value, allN: a.all.available ? a.all.n : null, rtAvg: null, edt: null }, extra || {}); };
     rows.push({ what: 'Room\'s own decay (T30, noise-free)', f1k: own[3], tmid: mean([own[2], own[3]]), mid3: mean([own[2], own[3], own[4]]), all: mean(own), allN: 6, rtAvg: null, edt: ownEdt });
     rows.push(app('This app: sweep, one device (ISO 3382-2 evaluation)', sweep.bands));
-    // A clap 1.5 m from the phone: direct sound about as strong as the reverberation. Its loudest 10 ms carry 40–60 dB
+    // A clap 1.5 m from the microphone: direct sound about as strong as the reverberation. Its loudest 10 ms carry 40–60 dB
     // more energy than 10 ms of the (pink) background. The recording starts 1 s before the clap and runs 3 s after it.
     const clapRoom = roomIR(fs, rts, 271, { directDb: 0, directGap: 0.004 }), w = Math.round(0.01 * fs);
     let top = 0; for (let a = 0; a + w <= clapRoom.length; a += w) top = Math.max(top, DSP.meanSquare(clapRoom, a, a + w));

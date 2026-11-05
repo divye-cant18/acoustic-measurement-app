@@ -66,7 +66,7 @@
     return { rows, count, required: AM.services.spatial.MIN_POSITIONS, need, complete: need === 0, next: next ? next.id : null };
   }
 
-  // The reference band's own RT60 (1000 Hz, where a take's validity is decided), over the positions: band data, not the
+  // The reference band's own RT60 (1000 Hz; null when no position has a value there), over the positions: band data, not the
   // room's overall RT60.
   const headlineMeasured = p => { const r = room(p); return r ? r.headline.rt60 : null; };
   /* Averages over the room's bands (AM.services.rt60Average: a band no position could measure is left out and named; at
@@ -237,7 +237,7 @@
        explanation  the verdict in plain words
        average    the all-band average (125–4000 Hz), shown as the room's overall figure; mid, midStatus: 500–2000 Hz
        positions  how many valid positions the room rests on; provisional while fewer than the session needs
-       ref        the reference band's own result over the positions (1000 Hz, where a take's validity is decided)
+       ref        the reference band's own result over the positions (1000 Hz; rt null when no position has a value there)
      Without the summary (too few of the policy's bands measured): available false, no status, and the reason; the bands
      are still compared one by one. null without a valid measurement or a target. */
   function assessment(p) {
@@ -566,10 +566,10 @@
     const meta = m.meta || {}, cfg = meta.config || {}, plan = meta.plan || {}, out = cfg.output || {}, nc = p.setup && p.setup.noise;
     const pick = (o, keys) => (o ? Object.fromEntries(keys.filter(k => o[k] !== undefined).map(k => [k, o[k]])) : null);
     return {
-      kind: 'acoustic-measurement-diagnostics', version: 2, app: (AM.reportForm && AM.reportForm.appVersion) || null,
+      kind: 'acoustic-measurement-diagnostics', version: 3, app: (AM.reportForm && AM.reportForm.appVersion) || null,
       takenAt: m.takenAt, processedAt: m.processedAt, status: m.status, valid: m.valid,
       device: {
-        profile: cfg.profile || meta.deviceKind || null, profileChosen: cfg.profileChosen != null ? cfg.profileChosen : null, detected: cfg.detected || null,
+        kind: meta.deviceKind || null,
         browser: cfg.browser || null, sampleRate: meta.sampleRate || cfg.sampleRate || null, channelCount: cfg.channelCount != null ? cfg.channelCount : null, tap: cfg.tap || meta.tap || null,
         processing: (cfg.processing || []).map(s => ({ feature: s.key, requested: s.requested, reported: s.reported, state: s.state, capable: s.capable })),
         settingsReported: pick(meta.settings, ['echoCancellation', 'noiseSuppression', 'autoGainControl', 'channelCount', 'sampleRate', 'latency']),

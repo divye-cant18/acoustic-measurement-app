@@ -11,24 +11,23 @@
      STATES, PHASES                     measurement states and the steps of one take
      plan(fs)                           test-signal plan (sweep range and durations) for a sample rate
      support()                          what this browser can do
-     requestAccess(deviceId, outputId, context) -> Promise<Access> opens the microphone and output once, reads the whole
+     requestAccess(deviceId, outputId)  -> Promise<Access> opens the microphone and output once, reads the whole
                                         configuration (config), lists inputs and choosable outputs, releases them
      monitor(deviceId, onLevel, onState, outputId) -> Promise<Monitor>  keeps the microphone open for live levels
-     measureNoise({ deviceId, outputId, context, onProgress })   -> { done: Promise<NoiseResult>, cancel() }
-     measureRT60({ deviceId, outputId, context, levelDb, onPhase, onProgress }) -> { done: Promise<Take>, cancel() }
-       context: { position, deviceKind, profileChosen } recorded with the take (where the device stood, its profile)
+     measureNoise({ deviceId, outputId, onProgress })   -> { done: Promise<NoiseResult>, cancel() }
+     measureRT60({ deviceId, outputId, position, levelDb, onPhase, onProgress }) -> { done: Promise<Take>, cancel() }
+       position: recorded with the take (where the device stood)
      processingState(settings, capabilities) / processingText(state)  requested · reported · possible, per feature
-     configOf(session, context, outputName)  the configuration in use, stored with each take and noise check
+     configOf(session, outputName)      the configuration in use, stored with each take and noise check
        levelDb: the sweep level relative to the default (AM.analysis.sweepLevel); only the played copy is scaled
-     deviceKind()                       'computer' | 'mobile', as the browser reports it
-     outputLabel()                      the system sound output's name, or null when the browser does not say
+     outputLabel()                     the system sound output's name, or null when the browser does not say
      calibration(deviceId)              -> null: no calibration exists, so levels are relative input levels (dBFS)
      levelText(dbfs, deviceId)          how a level is shown: "N dB below max" (dBFS) today, dB SPL once a calibration exists
 
    NoiseResult: AM.analysis.analyseNoise(...) + { id, takenAt, deviceLabel, settings, calibrated }
    Take: { id, takenAt, status: 'captured' | 'failed', reason, deviceLabel, outputLabel, deviceKind, position, sampleRate,
            settings, plan, levels, waveform, analysis: { latencySec, arrivalClarityDb, onsetSec, irSeconds, distortion, timing,
-           clicks, sweepGain, bands }, config, integrity: { inputLostFrames, outputUnderruns, outputUnderrunMs } (the
+           clicks, sweepGain, damage, bands }, config, integrity: { inputLostFrames, outputUnderruns, outputUnderrunMs } (the
            browser's own counts of lost audio during the take, null where it keeps none), warnings }
          (no raw audio is stored) */
 (function (AM) {
@@ -45,10 +44,10 @@
 
   // The steps of one take, with the time each one starts and ends (seconds into the take).
   function phases(p) {
-    const s = p.preRoll, e = p.preRoll + (p.span || p.seconds), end = p.total;
+    const s = p.preRoll, e = p.preRoll + p.seconds, end = p.total;
     return [
       { id: 'prepare', label: 'Background', hint: 'Recording the room before the signal', from: 0, to: s },
-      { id: 'play', label: 'Play test signal', hint: p.count ? `${p.count} short tones from this device's speaker` : 'Sweep from this device\'s speaker', from: s, to: e },
+      { id: 'play', label: 'Play test signal', hint: 'Sweep from this device\'s speaker', from: s, to: e },
       { id: 'record', label: 'Record', hint: 'Capturing the response', from: 0, to: end },
       { id: 'monitor', label: 'Decay', hint: 'Listening to the room ring down', from: e, to: end },
       { id: 'quality', label: 'Analyse', hint: 'Impulse response and decay', from: end, to: end },
@@ -107,21 +106,20 @@
   // Browser and system family, for the configuration record (no version detail beyond the major number).
   function browserFamily() {
     const ua = navigator.userAgent || '';
-    const b = /Edg\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /CriOS/.test(ua) ? 'Chrome (iOS)' : /FxiOS/.test(ua) ? 'Firefox (iOS)' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
-    const os = /iPhone|iPad|iPod/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android' : /Mac OS X/.test(ua) ? (navigator.maxTouchPoints > 1 ? 'iPadOS' : 'macOS') : /Windows/.test(ua) ? 'Windows' : /CrOS/.test(ua) ? 'ChromeOS' : /Linux/.test(ua) ? 'Linux' : 'other';
+    const b = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+    const os = /Mac OS X/.test(ua) ? 'macOS' : /Windows/.test(ua) ? 'Windows' : /CrOS/.test(ua) ? 'ChromeOS' : /Linux/.test(ua) ? 'Linux' : 'other';
     return `${b} on ${os}`;
   }
 
   /* The configuration a session actually has, as one record: what was requested, what the browser reports, what it
-     could not confirm. context: { profile, profileChosen } from the project. Stored with every take and noise check,
-     so a report shows the configuration that was used, not what is selected now. */
-  function configOf(s, context = {}, outputName = null) {
+     could not confirm. Stored with every take and noise check, so a report shows the configuration that was used, not
+     what is selected now. */
+  function configOf(s, outputName = null) {
     const out = s.output || { requested: 'default', selectable: false, applied: null, error: null };
     return {
-      profile: context.profile || IO.deviceKind(), profileChosen: !!context.profileChosen, detected: IO.deviceKind(),
       input: { deviceId: s.deviceId, label: s.label },
       // Confirmed only when a specific output was selected and the browser applied it: "the system default" does not
-      // say which device plays (on a phone it may be the earpiece; on a computer, Bluetooth headphones).
+      // say which device plays (it may be Bluetooth headphones).
       output: { requested: out.requested, selectable: out.selectable, applied: out.applied, error: out.error, label: outputName,
         verified: !!(out.selectable && !out.error && out.requested !== 'default' && out.applied === out.requested) },
       requested: { echoCancellation: IO.REQUESTED.echoCancellation, noiseSuppression: IO.REQUESTED.noiseSuppression, autoGainControl: IO.REQUESTED.autoGainControl, channelCount: 1 },
@@ -134,7 +132,7 @@
   /* Lost audio the browser itself counted during a take, from a reading when its test signal starts (c0) and readings
      after it (cIn for the input, when the recording ends; cOut for the output; audio-io.js counters; a take reads the
      output's counts through outputLoss instead, below): { inputLostFrames, outputUnderruns, outputUnderrunMs } with null for a
-     count this browser does not keep. processing.js makes a take with any loss not valid. */
+     count this browser does not keep. Where the loss happened (lossSpans) decides which bands it costs (analysis.js). */
   function integrityOf(c0, cIn, cOut) {
     const lost = (a, b) => Math.max(0, (b.total - b.delivered) - (a.total - a.delivered));
     return {
@@ -153,11 +151,11 @@
   }
 
   // Opens the microphone (and the selected output) once, reads back the whole configuration, releases them.
-  async function requestAccess(deviceId, outputId, context = {}) {
+  async function requestAccess(deviceId, outputId) {
     const s = await IO.acquire('access', deviceId, outputId);
     const output = await IO.outputLabel(s.output && s.output.applied);
     const info = { permission: 'granted', deviceId: s.deviceId, label: s.label, sampleRate: s.sampleRate, settings: pickSettings(s.settings), tap: s.tap.kind, checkedAt: new Date().toISOString(),
-      config: configOf(s, context, output) };
+      config: configOf(s, output) };
     IO.release('access');
     info.devices = await IO.devices();
     info.outputs = await IO.outputs();
@@ -174,7 +172,7 @@
     return { session: s, stop: () => { offL(); offS(); IO.release('monitor'); } };
   }
 
-  function measureNoise({ deviceId, outputId, context = {}, onProgress, onLevel }) {
+  function measureNoise({ deviceId, outputId, onProgress, onLevel }) {
     let cancelled = false, rec = null;
     const done = (async () => {
       const s = await IO.acquire('noise', deviceId, outputId);
@@ -189,7 +187,7 @@
         return Object.assign(r, {
           id: newId('n'), takenAt: new Date().toISOString(), deviceId: s.deviceId, deviceLabel: s.label,
           settings: pickSettings(s.settings), calibrated: !!calibration(s.deviceId),
-          config: configOf(s, context, await IO.outputLabel(s.output && s.output.applied)),
+          config: configOf(s, await IO.outputLabel(s.output && s.output.applied)),
           warnings: r.warnings.concat(processingWarnings(s.settings)),
         });
       } finally { off(); IO.release('noise'); }
@@ -218,10 +216,10 @@
     }
     return { underruns, underrunSec };
   }
-  /* Where in the recording the browser counted audio lost (a phone take's record, and what analysis.analyseTones places
-     drops by): input [{ from, to, frames }] between two readings of the microphone's counts, output [{ from, to,
-     underruns, ms }] between two refreshes of the output's (OUT_SLACK before the earlier one, as outputLoss). null for
-     counts this browser does not keep. */
+  /* Where in the recording the browser counted audio lost (what analysis.analyseTake places the damage by): input
+     [{ from, to, frames }] between two readings of the microphone's counts, output [{ from, to, underruns, ms }] between
+     two refreshes of the output's (OUT_SLACK before the earlier one, as outputLoss). null for counts this browser does
+     not keep. */
   function lossSpans(ins, outs) {
     const input = ins.length ? [] : null, output = outs.some(r => r.output) ? [] : null;
     for (let i = 1; i < ins.length; i++) {
@@ -235,18 +233,11 @@
     }
     return { input, output };
   }
-  // A phone's tones (analysis.sweepPlan kind 'mobile') in one buffer, plan.period s apart, so they keep their spacing to
-  // the sample.
-  function toneTrain(tone, plan) {
-    const out = new Float32Array(Math.round(plan.span * plan.fs));
-    for (let k = 0; k < plan.count; k++) out.set(tone, Math.round(k * plan.period * plan.fs));
-    return out;
-  }
 
-  /* context: { position, deviceKind, profileChosen } from the project. The take keeps the configuration it was made
-     with (config), so the result and the report describe what was used, not what is selected later. One take per
-     call: a take that cannot be used is returned with its reason, and the user measures again. */
-  function measureRT60({ deviceId, outputId, context = {}, levelDb = 0, onPhase, onProgress, onLevel }) {
+  /* The take keeps the configuration it was made with (config), so the result and the report describe what was used,
+     not what is selected later. One take per call: a take that cannot be used is returned with its reason, and the user
+     measures again. */
+  function measureRT60({ deviceId, outputId, position = null, levelDb = 0, onPhase, onProgress, onLevel }) {
     let cancelled = false, rec = null, play = null;
     const done = (async () => {
       const s = await IO.acquire('take', deviceId, outputId);
@@ -257,13 +248,10 @@
         const output = await IO.outputLabel(s.output && s.output.applied);
         // The reference sweep (and the inverse filter made from it) stays at the default level; only the copy that is
         // played carries the chosen level's gain, so it is applied once and never to the recording.
-        // A phone (profile 'mobile') plays three short tones from 150 Hz instead of one long sweep (analysis.js, phone).
-        const kind = context.deviceKind || IO.deviceKind();
-        const level = AN.sweepLevel(levelDb), plan = Object.assign(AN.sweepPlan(s.sampleRate, kind), { levelDb: level });
+        const level = AN.sweepLevel(levelDb), plan = Object.assign(AN.sweepPlan(s.sampleRate), { levelDb: level });
         const sweep = AN.makeSweep(plan), played = AN.playbackSignal(sweep.signal, level), total = Math.round(plan.total * plan.fs);
-        const signal = plan.count ? toneTrain(played.signal, plan) : played.signal, playEnd = plan.preRoll + (plan.span || plan.seconds);
         let phase = '';
-        const at = sec => (sec < plan.preRoll ? 'prepare' : sec < playEnd ? 'play' : 'monitor');
+        const at = sec => (sec < plan.preRoll ? 'prepare' : sec < plan.preRoll + plan.seconds ? 'play' : 'monitor');
         const step = id => { if (id !== phase) { phase = id; if (onPhase) onPhase(id); } };
         step('prepare');
         // The browser's own counts (where it keeps them). The input's from when the test signal starts to the end of the
@@ -284,37 +272,27 @@
           if (c0) watch(sec);
           if (onProgress) onProgress(sec, frac, chunk, offset, total, plan);
         });
-        play = s.play(signal, plan.preRoll);
+        play = s.play(played.signal, plan.preRoll);
         const x = await rec.done;
         if (cancelled) throw new IO.AudioError('cancelled', IO.MESSAGES.cancelled);
         step('quality');
         const cIn = s.counters ? s.counters() : null;
-        let integrity, a, browser = null;
-        if (plan.count) {
-          // A phone: the recording is what is judged. Phones drop a few milliseconds of audio now and then; each tone is
-          // checked for damage on its own, the tones are lined up by where they actually arrived, and the browser's own
-          // counts (where it keeps them) only say where a drop happened (analysis.analyseTones). They are kept with the
-          // take (browser) to show what the phone did; the tones used were checked whole, so the take's own counts are 0.
-          if (cIn && cIn.input && ins.length) ins.push({ at: plan.total, input: cIn.input });
-          browser = lossSpans(ins, outs);
-          a = AN.analyseTones(x, plan, sweep, browser);
-          integrity = { inputLostFrames: ins.length ? 0 : null, outputUnderruns: outs.some(r => r.output) ? 0 : null, outputUnderrunMs: outs.some(r => r.output) ? 0 : null };
-        } else {
-          const lostOut = outputLoss(outs, plan.preRoll, plan.preRoll + plan.seconds);
-          integrity = Object.assign(integrityOf(cStart || c0, cIn, null), lostOut ? { outputUnderruns: lostOut.underruns, outputUnderrunMs: Math.round(lostOut.underrunSec * 1000) } : {});
-          a = AN.analyseTake(x, plan, sweep);
-        }
+        const lostOut = outputLoss(outs, plan.preRoll, plan.preRoll + plan.seconds);
+        const integrity = Object.assign(integrityOf(cStart || c0, cIn, null), lostOut ? { outputUnderruns: lostOut.underruns, outputUnderrunMs: Math.round(lostOut.underrunSec * 1000) } : {});
+        // Where the browser counted audio lost: the bands that loss could reach lose their value (analysis.js).
+        if (cIn && cIn.input && ins.length) ins.push({ at: plan.total, input: cIn.input });
+        const a = AN.analyseTake(x, plan, sweep, lossSpans(ins, outs));
         return {
           id: newId('r'), takenAt: new Date().toISOString(), status: a.status, reason: a.reason,
-          deviceId: s.deviceId, deviceLabel: s.label, outputLabel: output, deviceKind: context.deviceKind || IO.deviceKind(), position: context.position || null,
+          deviceId: s.deviceId, deviceLabel: s.label, outputLabel: output, deviceKind: 'computer', position,
           sampleRate: plan.fs, settings: pickSettings(s.settings), tap: s.tap.kind,
-          plan: { f1: plan.f1, f2: plan.f2, seconds: plan.seconds, preRoll: plan.preRoll, tail: plan.tail, total: plan.total, amplitude: plan.amplitude, fadeIn: plan.fadeIn != null ? plan.fadeIn : AN.CRITERIA.take.fadeIn,
-            count: plan.count || 1, period: plan.period || null, levelDb: played.levelDb, playedPeakDbfs: Math.round(200 * Math.log10(played.peak)) / 10 },
+          plan: { f1: plan.f1, f2: plan.f2, seconds: plan.seconds, preRoll: plan.preRoll, tail: plan.tail, total: plan.total, amplitude: plan.amplitude, fadeIn: AN.CRITERIA.take.fadeIn,
+            levelDb: played.levelDb, playedPeakDbfs: Math.round(200 * Math.log10(played.peak)) / 10 },
           levels: a.levels, waveform: a.waveform,
-          // tones: on a phone, each test tone and whether it was used (and if not, why).
-          analysis: { latencySec: a.latencySec, arrivalClarityDb: a.arrivalClarityDb, onsetSec: a.onsetSec, irSeconds: a.irSeconds, distortion: a.distortion, timing: a.timing, clicks: a.clicks, sweepGain: a.sweepGain, bands: a.bands, tones: a.tones || null },
-          config: configOf(s, { profile: context.deviceKind, profileChosen: context.profileChosen }, output),
-          integrity, browser,
+          // damage: what cost bands (a gap, a click, audio counted lost, sound that arrived late), as analysis.js found it.
+          analysis: { latencySec: a.latencySec, arrivalClarityDb: a.arrivalClarityDb, onsetSec: a.onsetSec, irSeconds: a.irSeconds, distortion: a.distortion, timing: a.timing, clicks: a.clicks, sweepGain: a.sweepGain, damage: a.damage || [], bands: a.bands },
+          config: configOf(s, output),
+          integrity,
           warnings: processingWarnings(s.settings),
         };
       } finally { off(); if (play) play.stop(); IO.release('take'); }
@@ -324,7 +302,7 @@
 
   AM.services.measurement = {
     kind: 'live', STATES, phases, plan: AN.sweepPlan, support: IO.support, permissionState: IO.permissionState, devices: IO.devices,
-    outputs: IO.outputs, canSelectOutput: IO.canSelectOutput, deviceKind: IO.deviceKind, outputLabel: IO.outputLabel, REQUESTED: IO.REQUESTED,
+    outputs: IO.outputs, canSelectOutput: IO.canSelectOutput, outputLabel: IO.outputLabel, REQUESTED: IO.REQUESTED,
     requestAccess, monitor, measureNoise, measureRT60, calibration, levelText, processingWarnings, processingState, processingText, processingShort, configOf, browserFamily, integrityOf, outputLoss, lossSpans,
   };
 })(window.AM);

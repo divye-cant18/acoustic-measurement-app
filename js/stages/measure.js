@@ -13,8 +13,7 @@
   const W = AM.workflow, S = AM.store, ui = AM.ui;
   const LIVE = AM.live, MEAS = AM.services.measurement, AN = AM.analysis;
 
-  // The test signal for this project's device (a phone: three short tones, analysis.js sweepPlan).
-  const curPlan = p => AN.sweepPlan(LIVE.state.mic.sampleRate || 48000, p ? LIVE.kindOf(p) : undefined);
+  const curPlan = () => AN.sweepPlan(LIVE.state.mic.sampleRate || 48000);
   const takeFor = p => (LIVE.state.take && LIVE.state.take.pid === p.id ? LIVE.state.take : null);
   const noiseRun = p => !!(LIVE.state.noise && LIVE.state.noise.pid === p.id);
   const evaluated = (p, rec) => !!rec && ((p.processing.result && p.processing.result.recordingId === rec.id) || (p.processing.attempt && p.processing.attempt.recordingId === rec.id));
@@ -34,7 +33,7 @@
     if (mic.output && mic.output.error) return `The selected sound output could not be used (${mic.output.error}). Choose another in Measurement Setup.`;
     const problem = LIVE.configProblem(p);
     if (problem) return problem;
-    // The room-preparation checklist of Measurement Setup (asked again after the device profile changes).
+    // The room-preparation checklist of Measurement Setup.
     const prep = ((W.get('setup') || {}).model || {}).PREP || [], left = prep.filter(([k]) => !p.setup.prep[k]).length;
     if (left) return `Finish the room preparation checklist in Measurement Setup (${prep.length - left} of ${prep.length} done).`;
     // A take recorded at another position and not processed yet would be replaced by the new one: process it first.
@@ -116,13 +115,12 @@
     };
     const regions = plan => {
       const X = t => (t / plan.total) * w;
-      const end = plan.preRoll + (plan.span || plan.seconds);
-      g.fillStyle = col('--scope-region'); g.fillRect(X(plan.preRoll), 0, X(end) - X(plan.preRoll), h);
-      g.fillStyle = col('--scope-dim'); g.fillText('Test signal', X(plan.preRoll) + 8, 16); g.fillText('Decay', X(end) + 8, 16);
+      g.fillStyle = col('--scope-region'); g.fillRect(X(plan.preRoll), 0, X(plan.preRoll + plan.seconds) - X(plan.preRoll), h);
+      g.fillStyle = col('--scope-dim'); g.fillText('Test signal', X(plan.preRoll) + 8, 16); g.fillText('Decay', X(plan.preRoll + plan.seconds) + 8, 16);
     };
     g.fillStyle = col('--scope-grid'); g.fillRect(0, Math.round(mid), w, 1);
     if (take) {
-      regions(curPlan(p));
+      regions(curPlan());
       env(take.envelope, take.envelope.length);
       g.fillStyle = col('--brand'); g.fillRect(take.frac * w - 1, 0, 2, h);
     } else if (L.mic.status === 'live' && L.levels.length) {

@@ -197,7 +197,7 @@ export function LevelMeter({ id }: { id: string }) {
 
 const ACCESS: Record<string, [string, string]> = {
   'not-requested': ['neutral', 'Not requested yet'], granted: ['good', 'Allowed'], denied: ['critical', 'Blocked'], embedded: ['critical', 'Not available in this view'],
-  'no-device': ['critical', 'No microphone found'], busy: ['critical', 'Could not start'], unsupported: ['critical', 'Not supported here'], insecure: ['critical', 'Needs a secure page'], error: ['critical', 'Failed'],
+  'no-device': ['critical', 'No microphone found'], busy: ['critical', 'Could not start'], unsupported: ['critical', 'Not supported here'], 'laptop-only': ['critical', 'Needs a laptop or computer'], insecure: ['critical', 'Needs a secure page'], error: ['critical', 'Failed'],
 };
 export function AccessPill({ permission }: { permission: string }) {
   const [tone, text] = ACCESS[permission] || ACCESS.error;

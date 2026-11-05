@@ -88,7 +88,7 @@
      user adjusts it (source 'custom'). basis says where the values came from. */
   const newTarget = () => ({ preferred: null, min: null, max: null, source: 'recommended', basis: '' });
 
-  /* Measuring positions: where the measuring device (one laptop or one phone, with its own speaker and microphone) is
+  /* Measuring positions: where the measuring device (one laptop, with its own speaker and microphone) is
      placed for a take. Measuring several positions means moving the same device and taking a separate recording at each.
      x along the room length from the front wall, y across the width (fractions of the room).
      Worded for any room type: a meeting room, a classroom, a hall or a living room. */
@@ -98,31 +98,23 @@
     { id: 'P3', name: 'Rear corner', detail: 'A seat or standing place near a back corner, at least 1 m from both walls', x: 0.84, y: 0.24 },
   ];
 
-  /* The measuring device. One device does the whole measurement: its own speaker plays the test signal and its own
-     microphone records the room. Nothing else is connected. The kind only changes the placement advice; it is detected
-     from the browser and can be corrected in Measurement Setup. */
-  const DEVICE_KINDS = {
-    computer: {
-      name: 'Laptop or computer', noun: 'laptop',
-      place: 'Put the laptop here on a table, open as you normally use it.',
-      support: 'On a firm table, not on your lap or a cushion.',
-      // What to check with this kind of device (instructions only: the audio request is the same for every profile).
-      checks: [
-        'Turn off noise reduction or voice effects in the computer\'s sound settings, if it has them.',
-      ],
-    },
-    mobile: {
-      name: 'Phone or tablet', noun: 'phone',
-      place: 'Stand the phone up here; do not hold it.',
-      support: 'On a stand or propped upright, with Do Not Disturb on.',
-      checks: [
-        'The test sound must be clearly heard from the loudspeaker. If it is faint, use a laptop.',
-        'Phone speakers are weak in the bass, so the lowest sounds may not be measured.',
-        'Keep the screen on and this page open during the take.',
-      ],
-    },
+  /* The measuring device: the laptop or desktop computer running the app. One device does the whole measurement: its
+     own speaker plays the test signal and its own microphone records the room. Nothing else is connected. */
+  const DEVICE = {
+    name: 'Laptop or computer', noun: 'laptop',
+    place: 'Put the laptop here on a table, open as you normally use it.',
+    support: 'On a firm table, not on your lap or a cushion.',
+    // What to check before measuring (instructions only: the audio request is fixed, audio-io.js REQUESTED).
+    checks: [
+      'Turn off noise reduction or voice effects in the computer\'s sound settings, if it has them.',
+    ],
   };
-  // Placement for either kind (the device-specific line is DEVICE_KINDS[kind].support).
+  /* The name of the device a saved take was made with, from the kind stored with it (null when it stores none). Takes
+     saved when the app could also measure on a phone keep saying so: a saved record stays as it was made. New takes are
+     always 'computer'. */
+  const SAVED_DEVICE_NAMES = { computer: DEVICE.name, mobile: 'Phone or tablet' };
+  const deviceName = kind => SAVED_DEVICE_NAMES[kind] || null;
+  // Placement (the line about what it stands on is DEVICE.support).
   const PLACEMENT = [
     'Leave it at this spot for the whole take.',
     'At least 1 m from the walls, at about seated ear height.',
@@ -191,9 +183,8 @@
   }
 
   /* Measurement data in a project. Nothing is filled in until it has been measured.
-       setup.deviceKind       the measuring device: null (as detected from the browser), 'computer' or 'mobile'
        setup.outputId         the sound output where the browser can choose one ('default': the system's)
-       setup.permission       last microphone access result: not-requested | granted | denied | embedded | no-device | busy | unsupported | error
+       setup.permission       last microphone access result: not-requested | granted | denied | embedded | no-device | busy | unsupported | laptop-only | error
        setup.sweepLevelDb     the sweep level for the next take, dB relative to the default (AM.analysis.sweepLevel)
        setup.noise            the current valid background-noise measurement (status valid or warning), or null
        setup.noiseAttempt     the latest noise attempt that failed or was invalid; the previous valid one stays current
@@ -212,7 +203,7 @@
       room: demo ? demoRoom() : blankRoom(),
       target: newTarget(),
       setup: {
-        deviceKind: null, deviceId: 'default', deviceLabel: '', outputId: 'default', permission: 'not-requested', input: null, position: 'P1', signal: 'sweep',
+        deviceId: 'default', deviceLabel: '', outputId: 'default', permission: 'not-requested', input: null, position: 'P1', signal: 'sweep',
         sweepLevelDb: 0, noise: null, noiseAttempt: null,
         prep: { doors: false, hvac: false, quiet: false, placed: false, uncovered: false, output: false },
       },
@@ -224,5 +215,5 @@
     };
   }
 
-  AM.demo = { BANDS, REFERENCE_BAND, INDUSTRIES, OTHER_TYPE, OTHER_INDUSTRY, roomTypesFor, industryFor, canonicalIndustry, OPTIONS, newTarget, POSITIONS, DEVICE_KINDS, PLACEMENT, SIGNALS, SURFACE_KEYS, blankSurface, blankSurfaces, demoRoom, newTreatment, newTreatmentItem, newProject };
+  AM.demo = { BANDS, REFERENCE_BAND, INDUSTRIES, OTHER_TYPE, OTHER_INDUSTRY, roomTypesFor, industryFor, canonicalIndustry, OPTIONS, newTarget, POSITIONS, DEVICE, deviceName, PLACEMENT, SIGNALS, SURFACE_KEYS, blankSurface, blankSurfaces, demoRoom, newTreatment, newTreatmentItem, newProject };
 })(window.AM);

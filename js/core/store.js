@@ -174,6 +174,8 @@
   function migrateMeasurement(p) {
     const s = p.setup || (p.setup = {});
     if (s.deviceId === undefined) { s.deviceId = 'default'; s.deviceLabel = ''; delete s.device; }
+    // The device profile was a choice for the next take, and measuring is now laptop only. Takes keep their own device.
+    delete s.deviceKind;
     if (s.signal !== 'sweep') s.signal = 'sweep';
     if (s.noiseAttempt === undefined) s.noiseAttempt = null;
     if (s.input === undefined) s.input = null;
@@ -393,7 +395,7 @@
     p.target = copy(src.target);
     // The same measuring setup, sweep level and room preparation included (the same room, prepared the same way), so the
     // treated room is measured as the original was, starting again at the first position.
-    Object.assign(p.setup, { deviceKind: src.setup.deviceKind || null, deviceId: src.setup.deviceId || 'default', deviceLabel: src.setup.deviceLabel || '', outputId: src.setup.outputId || 'default', position: AM.demo.POSITIONS[0].id, sweepLevelDb: AM.analysis.sweepLevel(src.setup.sweepLevelDb), prep: Object.assign({}, p.setup.prep, copy(src.setup.prep || {})) });
+    Object.assign(p.setup, { deviceId: src.setup.deviceId || 'default', deviceLabel: src.setup.deviceLabel || '', outputId: src.setup.outputId || 'default', position: AM.demo.POSITIONS[0].id, sweepLevelDb: AM.analysis.sweepLevel(src.setup.sweepLevelDb), prep: Object.assign({}, p.setup.prep, copy(src.setup.prep || {})) });
     p.followUpOf = src.id;
     p.completed = ['home', 'room', 'target'];
     p.lastStage = 'setup';

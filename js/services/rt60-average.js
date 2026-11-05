@@ -19,7 +19,7 @@
    measured"); nothing is put in its place. At least half of the set must have a value (3 of the 6 bands, 2 of the 3
    middle bands); below that there is no average, the reason says which bands are missing, and nothing that depends on
    it is calculated (no single band, 1000 Hz included, is used instead).
-   The same room can therefore read a little differently on a device that loses a band (a phone that loses 125 Hz
+   The same room can therefore read a little differently on a device that loses a band (one that loses 125 Hz
    leaves out the band that rings longest); the 500–2000 Hz average, which every device measures most reliably, is
    shown beside it so the two can be compared. (Until 2026-10-15 the headline was 500–2000 Hz only; on that day it was
    all six bands with every band required, then, the same day, the bands that have a value, as described here.)

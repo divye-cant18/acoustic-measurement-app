@@ -8,7 +8,7 @@
    fields         the form, in order. key = what the browser sends; type: text, email, select, country, textarea,
                   consent (required checkbox), checkbox (optional, unchecked by default).
    project        the project summary sent with the form (from AM.derive, never typed), and its allowed values.
-                  measuredRt60 is the RT60 at 1000 Hz (the reference band, where a take's validity is decided);
+                  measuredRt60 is the RT60 at 1000 Hz (the reference band; null when it has no value, never another band's);
                   measuredRt60Avg the room's average RT60, the mean of the bands 125–4000 Hz that were measured, the value the app shows
                   and compares with the target, or null when one band has no value (app versions before 2026.10.15
                   stored the mean of 500, 1000 and 2000 Hz there: the app_version column tells them apart).

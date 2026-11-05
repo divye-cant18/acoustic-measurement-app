@@ -103,10 +103,10 @@ side-by-side measurement can separate:
    or an average over 500 Hz–1 kHz or 250 Hz–4 kHz. In most rooms RT60 is longer at low and mid frequencies, so those
    figures are higher than the 1 kHz value. Compare like with like: the same octave band, and T20 with T20.
 2. **Source and position.** This app measures with the device's own speaker and microphone on a desk; a balloon or clap
-   with a phone some metres away excites and samples the room differently, and EDT (early decay) differs from T20 in
+   recorded some metres away excites and samples the room differently, and EDT (early decay) differs from T20 in
    rooms that are not diffuse. An app that does not separate the device's direct sound would read *shorter*, not
    longer, so that is not the cause here.
-3. **Microphone processing below the browser.** Many laptops and phones apply noise suppression, echo suppression or
+3. **Microphone processing below the browser.** Many laptops apply noise suppression, echo suppression or
    "voice focus" in the driver or the operating system. The browser cannot switch it off or report it. In simulation such
    processing made decays curved and unreliable rather than cleanly shorter, so its effect on a real device has to be
    measured: switch off every microphone effect in the system's sound settings (Windows 11: Settings > System > Sound >
@@ -140,5 +140,5 @@ pink background noise and two sample rates; the application end to end in the vi
 0.6 / 0.5 s read as 1.017 / 0.943 / 0.843 / 0.699 / 0.610 / 0.509 s); the report.
 
 Not verified: accuracy in a real room on a real device. Synthetic rooms are diffuse and exponential, without the
-microphone and speaker of a real laptop or phone and their processing. Until the app has been compared with a calibrated
+microphone and speaker of a real laptop and their processing. Until the app has been compared with a calibrated
 reference in real rooms, its RT60 should be treated as an estimate, not a certified measurement.

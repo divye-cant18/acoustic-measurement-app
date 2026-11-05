@@ -24,15 +24,17 @@ function outputOf(meta: any): ReactNode {
   if (o.selectable) return <>{name || 'The system default output'}<KvNote>the system default: which device played was not confirmed</KvNote></>;
   return <>{name || "The system's current output"}<KvNote>this browser could not choose or confirm the output</KvNote></>;
 }
-// What showed the recording to be continuous, as the take recorded it. A check this take could not make says so.
+// What showed the recording to be continuous, as the take recorded it. A check this take could not make says so; damage
+// at one moment (a gap, a click, audio counted lost, sound that arrived late) cost only the bands it reached.
 function continuity(meta: any): { word: string; note: string | null } {
-  const ig = meta.integrity, ck = meta.clicks, t = meta.timing, CK = am.analysis.CRITERIA.take as any, said: string[] = [];
+  const ig = meta.integrity, ck = meta.clicks, t = meta.timing, CK = am.analysis.CRITERIA.take as any, said: string[] = [], dm: any[] = meta.damage || [];
+  if (dm.length) said.push(`${dm.map(d => d.what).join('; ')}: the bands it reached were left out`);
   if (ig) said.push(ig.inputLostFrames == null && ig.outputUnderruns == null ? 'this browser keeps no count of lost audio' : `the browser counted ${ig.inputLostFrames === 0 ? 'no lost microphone audio' : `${ig.inputLostFrames} lost microphone frames`}${ig.outputUnderruns != null ? ` and ${ig.outputUnderruns === 0 ? 'no gap' : `${ig.outputUnderruns} gaps`} in the sound output` : ''}`);
-  if (ck) said.push(ck.checked ? `no click (above ${CK.clicks.db} dB) from ${ck.fromSec.toFixed(1)} s to ${ck.toSec.toFixed(1)} s into the sweep` : 'clicks not checked: nothing to read above the sweep');
-  if (t) said.push(t.checked ? `the sweep arrived on time in ${t.segments} parts (largest step ${t.maxStepMs} ms)` : `timing not checked: ${t.reason || ''}`);
+  if (ck && !(ck.found && ck.found.length)) said.push(ck.checked ? `no click (above ${CK.clicks.db} dB) from ${ck.fromSec.toFixed(1)} s to ${ck.toSec.toFixed(1)} s into the sweep` : 'clicks not checked: nothing to read above the sweep');
+  if (t && !t.late) said.push(t.checked ? `the sweep arrived on time in ${t.segments} parts (largest step ${t.maxStepMs} ms)` : `timing not checked: ${t.reason || ''}`);
   if (!said.length) return { word: 'Not checked with this take', note: null };
   const checked = (ig && (ig.inputLostFrames != null || ig.outputUnderruns != null)) || (ck && ck.checked) || (t && t.checked);
-  return { word: checked ? 'Continuous' : 'Not checked', note: said.join('; ') };
+  return { word: dm.length ? 'Partly damaged' : checked ? 'Continuous' : 'Not checked', note: said.join('; ') };
 }
 function continuityOf(meta: any): ReactNode {
   const c = continuity(meta);
@@ -45,7 +47,7 @@ const signedDb = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${Math.abs(x
 export function TakeChecks({ meta, snrDb }: { meta: any; snrDb: number | null | undefined }) {
   const c = continuity(meta), g = meta.sweepGainDb;
   const items: [boolean, string][] = [
-    [c.word === 'Continuous', c.word === 'Continuous' ? 'Recording continuous' : 'Recording continuity not checked'],
+    [c.word === 'Continuous', c.word === 'Continuous' ? 'Recording continuous' : c.word === 'Partly damaged' ? 'Recording partly damaged: the bands it reached are left out' : 'Recording continuity not checked'],
     [g != null && Math.abs(g) < 1, g == null ? 'Input level not checked with this take' : Math.abs(g) < 1 ? 'Input level steady during the sweep' : `Input level changed by ${signedDb(g)} during the sweep`],
   ];
   return (
@@ -111,11 +113,11 @@ interface Slide { row: TakeRow; result: any }
 function recordRows(p: Project, res: any, current: boolean): KvRow[] {
   const meta = res.meta || {}, lv = meta.levels || {}, plan = meta.plan || {}, ref = res.bands.find((b: any) => b.f === res.referenceBand) || {};
   const pos = DEMO.POSITIONS.find((x: any) => x.id === (meta.position || p.setup.position)) || DEMO.POSITIONS[0];
-  const kind = meta.deviceKind && DEMO.DEVICE_KINDS[meta.deviceKind], direct = am.analysis.CRITERIA.decay.directAllowanceDb;
+  const device = DEMO.deviceName(meta.deviceKind), direct = am.analysis.CRITERIA.decay.directAllowanceDb;
   const s = D.positions(p), room = D.room(p) as any, hist = p.processing.history || [];
   return [
     ['Recorded', fmt.when(res.takenAt)],
-    ['Measuring device', <>{kind ? kind.name : 'This device'}<KvNote>its own speaker and microphone</KvNote></>],
+    ['Measuring device', <>{device || 'This device'}<KvNote>its own speaker and microphone</KvNote></>],
     ['Position', `${pos.id} · ${pos.name}`],
     current ? ['Positions measured', `${s.count} of at least ${s.required}${s.count && room ? `: ${room.positions.map((x: any) => x.id).join(', ')}` : ''}`] : null,
     ['Test signal', plan.f1 ? `Sine sweep ${plan.f1} Hz–${(plan.f2 / 1000).toFixed(plan.f2 % 1000 ? 1 : 0)} kHz, ${plan.seconds} s` : '—'],
@@ -138,14 +140,14 @@ function recordRows(p: Project, res: any, current: boolean): KvRow[] {
 function TakeCard({ p, slide, current }: { p: Project; slide: Slide; current: boolean }) {
   const { row, result } = slide, meta = result ? result.meta || {} : {}, valid = row.status === 'current' || row.status === 'in-use';
   const pos = DEMO.POSITIONS.find((x: any) => x.id === (row.position || meta.position)) || null;
-  const kind = meta.deviceKind && DEMO.DEVICE_KINDS[meta.deviceKind];
+  const device = DEMO.deviceName(meta.deviceKind);
   const s = D.positions(p), hist = p.processing.history || [], [tone, word, ic] = TAKE_PILL[row.status] || TAKE_PILL.superseded;
   const f = fmt.hz(DEMO.REFERENCE_BAND);
   return (
     <Card icon="doc" title={current ? `Latest take · ${pos ? pos.id : ''}` : `Take · ${pos ? pos.id : '—'}`} sub={current ? 'Where, with what and when it was recorded' : undefined} right={<Pill tone={tone} text={word} icon={ic} />} cls="card-record">
       <ul className="take-sum">
         <li><Icon name="pin" size={16} sw={2} /><span><b>{pos ? `${pos.id} · ${pos.name}` : 'Position not recorded'}</b><small>{current ? `${s.count} of at least ${s.required} positions measured` : WHERE_NOTE[row.status] || ''}</small></span></li>
-        {result ? <li><Icon name={meta.deviceKind === 'mobile' ? 'phone' : 'laptop'} size={16} sw={2} /><span><b>{kind ? kind.name : 'This device'}</b><small>its own speaker and microphone</small></span></li> : null}
+        {result ? <li><Icon name={!meta.deviceKind || meta.deviceKind === 'computer' ? 'laptop' : 'mic'} size={16} sw={2} /><span><b>{device || 'This device'}</b><small>its own speaker and microphone</small></span></li> : null}
         <li><Icon name="history" size={16} sw={2} /><span><b>{fmt.when(row.takenAt)}</b><small>{current ? (hist.length ? `${hist.length} earlier take${hist.length > 1 ? 's' : ''} at this position replaced` : 'the latest valid take') : `sweep level ${ui.levelDb(row.levelDb)}`}</small></span></li>
       </ul>
       {row.rt60 != null ? (
@@ -345,7 +347,7 @@ export function ResultsScreen({ ctx }: { ctx: Ctx }) {
           <div className="hero-pills">
             {sm.available ? null : <Pill tone="warn" text="No summary" icon="alert" />}
             {room.status === 'warning' ? <Pill tone="warn" text="With warnings" icon="alert" /> : <Pill tone="good" text="Valid" icon="seal" />}
-            <Pill tone="neutral" text={`${rh.quality} · ${rh.confidence.toLowerCase()} confidence at ${fmt.hz(rh.f)}`} />
+            <Pill tone="neutral" text={rh.rt60 != null ? `${rh.quality} · ${rh.confidence.toLowerCase()} confidence at ${fmt.hz(rh.f)}` : `No value at ${fmt.hz(rh.f)}`} />
           </div>
           <p className="small muted">{sm.available
             ? `The first covers the bands this room's target is set for (${pol.criterion || "the app's default"}), and is compared with it in the next step. The second covers every band. Each is the average of the positions, band by band; each position's own values are below.`

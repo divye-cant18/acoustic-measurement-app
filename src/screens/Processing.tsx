@@ -2,7 +2,7 @@
    AM.services.processing validates the latest take (js/stages/processing.js runs it and stores the outcome). Invalid data
    never becomes an RT60. Until at least two positions are measured the step leads to the next one. */
 import type { ReactNode } from 'react';
-import { am, D, DEMO, fmt, LIVE, PROC, RA, stageModel, ui } from '../lib';
+import { am, D, DEMO, fmt, PROC, RA, stageModel, ui } from '../lib';
 import type { Ctx, PrimaryAction, Project, Result } from '../am';
 import { Btn, Card, Details, Icon, Note, NoteActions, NotReliable, Pill, Spin, TableWrap, TechH } from '../ui/kit';
 import { AverageSummary } from '../ui/blocks';
@@ -63,7 +63,7 @@ export function ProcessingScreen({ ctx }: { ctx: Ctx }) {
 
   // Where this take stands in the session: positions measured, and where to measure next.
   const s = D.positions(p), here = D.positionOf(rec), nx = s.next ? s.rows.find(r => r.id === s.next) : null;
-  const noun = (DEMO.DEVICE_KINDS[LIVE.kindOf(p)] || {}).noun || 'device';
+  const noun = DEMO.DEVICE.noun;
   let session: ReactNode = null;
   if (finished) {
     if (res.valid && s.complete) {
@@ -87,7 +87,7 @@ export function ProcessingScreen({ ctx }: { ctx: Ctx }) {
     const cell = (v: number | null) => (v != null ? fmt.s(v) : <span className="muted">—</span>);
     const notes: string[] = [...res.warnings, ...res.bands.flatMap((b: any) => (b.notes || []).map((n: string) => `${fmt.hz(b.f)}: ${n}`))];
     const curAvg = D.averageRT60(p), own = RA.of(res);
-    const kept = cur && cur.recordingId !== rec.id ? ` The current measurement from ${fmt.when(cur.takenAt)} (average RT60, ${RA.SHORT}: ${curAvg.available ? fmt.s(curAvg.value) : 'not available'}; ${fmt.s(cur.headline.rt60)} at ${fmt.hz(cur.headline.f)}) stays in force.` : '';
+    const kept = cur && cur.recordingId !== rec.id ? ` The current measurement from ${fmt.when(cur.takenAt)} (average RT60, ${RA.SHORT}: ${curAvg.available ? fmt.s(curAvg.value) : 'not available'}; ${cur.headline.rt60 != null ? `${fmt.s(cur.headline.rt60)} at ${fmt.hz(cur.headline.f)}` : `no value at ${fmt.hz(cur.headline.f)}`}) stays in force.` : '';
     const reasons = res.bands.filter((b: any) => b.rt60 == null && b.reason);
     after = <>
       {!res.valid ? (
@@ -97,12 +97,12 @@ export function ProcessingScreen({ ctx }: { ctx: Ctx }) {
       {res.valid && !own.available ? <Note tone="warn" icon="alert"><b>Valid, but with no average RT60.</b>{` ${own.reason || ''} The room is compared with its target by the average of the bands that were measured, and at least half of them are needed, so without it there is no assessment, treatment amount or prediction. Measuring again (a quieter room, or a higher sweep level) can give those bands enough usable decay.`}</Note> : null}
       {notes.length ? <Note tone="warn"><b>Warnings.</b><ul className="bullets">{notes.map((n, i) => <li key={i}>{n}</li>)}</ul></Note> : null}
       <Card icon="sliders" title="Calculation method" right={<span className={ref.path ? 'method-pill' : 'method-pill is-none'}>{ref.path || 'None'}</span>}
-        sub={ref.path ? `Used to work out RT60 for this take (at ${fmt.hz(ref.f)}, the band that decides whether a take is valid).` : `No method could be used: there was not enough sound above the background noise at ${fmt.hz(ref.f)}.`} />
+        sub={ref.path ? `Used to work out RT60 for this take (at ${fmt.hz(ref.f)}, the reference band).` : `No RT60 at ${fmt.hz(ref.f)}: ${ref.reason || 'there was not enough sound above the background noise.'}${res.valid ? ' The other bands give the result.' : ''}`} />
       <Card icon="bars" title="How long each pitch rings" sub="This take, from low sounds to high. A longer bar rings longer.">
         <RingRows res={res} />
         <RingSummary res={res} avg={own} />
         <Details id="proc-bands-tech" summary="Show the technical details">
-        <TechH title={`Calculation path at ${fmt.hz(ref.f)}`} note="The reference band decides whether the measurement is valid." />
+        <TechH title={`Calculation path at ${fmt.hz(ref.f)}`} note="The reference band. The measurement is valid when at least half of the bands have a value." />
         <Cascade band={ref} />
         <TableWrap>
           <table className="tbl">
@@ -175,7 +175,7 @@ function RingSummary({ res, avg }: { res: any; avg: any }) {
       <div className="ring-avg"><span className="ring-big-k">Average RT60, this take</span><span className="ring-big">{avg.available && avg.value != null ? <>{avg.value.toFixed(2)}<small>s</small></> : '—'}</span></div>
       <div className="ring-say">
         <p className="small">{avg.available && avg.value != null ? `RT60 is how long sound takes to fade away in the room. This is its average over the ${avg.n} pitches that could be measured.${left}` : `Not enough pitches could be measured to give an average.${left}`}</p>
-        {low ? <p className="small muted">Deep sounds are often too quiet from a laptop or phone speaker to measure. A quieter room or a louder test sound can help.</p> : null}
+        {low ? <p className="small muted">Deep sounds are often too quiet from a laptop speaker to measure. A quieter room or a louder test sound can help.</p> : null}
       </div>
     </div>
   );

@@ -40,7 +40,7 @@ Clauses 6–9 and the annexes were not available. Where this table relies on the
 | Minimum source-to-microphone distance d_min = 2·√(V/cT), to limit the direct sound (4.3.1) | One device cannot meet it: speaker and microphone are centimetres apart. The analysis separates the device's direct sound and starts the evaluation where it would at d_min (`analysis.js`, `directAllowanceDb`) | **Not met as written. Compensated in the analysis, validated on synthetic rooms only** (docs/RT60-DEEP-AUDIT.md E1) |
 | Sound source: as omnidirectional as possible; no directivity requirement for the survey and engineering methods (4.2.1) | The device's own speaker | **Met for survey and engineering** (no requirement). Its directivity is not known |
 | Omnidirectional microphones shall be used (4.2.2) | The device's own microphone; directivity unknown, varies by device | **Not validated** |
-| Octave bands; survey frequency range at least 250 Hz–2 kHz, engineering 125 Hz–4 kHz (5.1) | Octaves 125–4000 Hz; a band a device cannot measure is left out and named | **Met when the device covers the range.** Phones often lose 125 Hz |
+| Octave bands; survey frequency range at least 250 Hz–2 kHz, engineering 125 Hz–4 kHz (5.1) | Octaves 125–4000 Hz; a band a device cannot measure is left out and named | **Met when the device covers the range.** Laptop speakers often lose 125 Hz |
 | Decay range: 35 dB above background for T20, 45 dB for T30 (5.2.1, written for interrupted noise; ISO 3382-1 4.2.1 asks the same of the impulse response method) | Usable decay ≥ 35 dB (T20) or ≥ 45 dB (T30), counted from the start of the room's decay below the direct sound | **Met** |
 | Evaluation: T20 / T30 by least squares; non-linearity ξ and curvature C (Annex B) | Least squares over −5…−25 and −5…−35 dB. ξ ≤ 10 ‰ is good; a band above 50 ‰ gets no value; C above ±10 % gives a note | **Met.** Annex B's values come from secondary sources |
 | Integrated impulse response: noise handling (truncation, compensation) | Lundeby truncation, tail compensation and noise subtraction | **Met** (as the standard allows; clause text not read) |
@@ -165,7 +165,7 @@ No ± figure is shown, because its inputs are not established:
   - microphone directivity and frequency response;
   - speaker directivity;
   - the compensation for the device's direct sound;
-  - phone signal processing that the browser does not report.
+  - device signal processing that the browser does not report.
 
   Only a comparison with a reference instrument can bound them (section 5).
 - **Synthetic validation** (`tests/validation.html`, `tests/dsp.html`) shows the analysis reproduces known decays within
@@ -190,7 +190,7 @@ The three kinds of evidence are kept apart:
 - A measurement microphone with an individual calibration file: an omnidirectional class 1 or class 2 measurement
   microphone with a USB interface, or a calibrated USB measurement mic.
 - A separate loudspeaker, as omnidirectional as available.
-- The phones and laptops the sales team uses (at least two models).
+- The laptops the sales team uses (at least two models).
 
 ### Rooms
 

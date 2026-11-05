@@ -8,7 +8,7 @@
    is the stream the app receives as "the microphone". The app's own code runs unchanged: it opens the stream, plays the
    sweep, records, and analyses exactly as it would with a real microphone and speaker.
 
-   The virtual device is a single laptop or phone: its speaker and microphone are centimetres apart, so the direct sound
+   The virtual device is a single laptop: its speaker and microphone are centimetres apart, so the direct sound
    reaches the microphone far louder than the room's reverberation (directDb).
 
    VR controls (window.VR):
