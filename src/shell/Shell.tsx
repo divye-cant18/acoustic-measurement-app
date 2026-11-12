@@ -10,6 +10,7 @@ import { HistoryList, summaries } from '../ui/blocks';
 import { screenFor, type ScreenDef } from '../screens/registry';
 import { TargetWorkings } from '../screens/Target';
 import { TourLayer } from './Tour';
+import { VoicePanel } from './VoicePanel';
 
 /* ---------- workflow rail ---------- */
 const STATE_LABEL: Record<string, string> = { current: 'Current', completed: 'Completed', available: 'Upcoming', locked: 'Locked' };
@@ -255,6 +256,12 @@ function Sheet() {
       <div className="hstack"><Btn action="closeGuide" variant="primary" size="sm">{g.closeLabel || 'Close'}</Btn></div>
       <div className="sheet-foot"><Icon name="info" size={15} sw={1.9} /><span>This video only explains. It does not start or record a measurement.</span></div>
     </>;
+  } else if (sh.kind === 'voice') {
+    // Voice Room Setup: a pop-up card in the middle of the page (a sheet from the bottom on a phone).
+    title = 'Describe the room';
+    badge = <span className="tag tag-guide"><Icon name="mic" size={12} sw={2.2} />Voice</span>;
+    cls = 'sheet-pop';
+    body = <VoicePanel />;
   }
   return (
     <>

@@ -37,6 +37,7 @@
     { id: 'mirror', name: 'Mirror', kinds: ['wall'] },
     { id: 'fabric', name: 'Fabric or felt covering', kinds: ['wall'] },
     { id: 'curtain', name: 'Curtains or drapes', kinds: ['wall'] },
+    { id: 'plants', name: 'Plants or moss (green wall)', kinds: ['wall'] },
     { id: 'acoustic', name: 'Acoustic panels or absorbers', kinds: ['wall', 'ceiling'] },
     { id: 'ceiling-tiles', name: 'Acoustic ceiling tiles', kinds: ['ceiling'] },
     { id: 'perforated-metal', name: 'Perforated metal', kinds: ['ceiling'] },
@@ -51,9 +52,9 @@
   /* The finishes each construction can carry, per kind of surface ('other' construction: every finish of that kind). */
   const FITS = {
     wall: {
-      concrete: ['exposed', 'painted', 'plaster', 'wallpaper', 'tiles', 'wood', 'wood-acoustic', 'cork', 'fabric', 'curtain', 'acoustic', 'mirror', 'other'],
-      masonry: ['exposed', 'painted', 'plaster', 'render', 'wallpaper', 'tiles', 'wood', 'wood-acoustic', 'cork', 'fabric', 'curtain', 'acoustic', 'mirror', 'other'],
-      plasterboard: ['painted', 'wallpaper', 'tiles', 'wood', 'wood-acoustic', 'fabric', 'curtain', 'acoustic', 'mirror', 'other'],
+      concrete: ['exposed', 'painted', 'plaster', 'wallpaper', 'tiles', 'wood', 'wood-acoustic', 'cork', 'fabric', 'curtain', 'plants', 'acoustic', 'mirror', 'other'],
+      masonry: ['exposed', 'painted', 'plaster', 'render', 'wallpaper', 'tiles', 'wood', 'wood-acoustic', 'cork', 'fabric', 'curtain', 'plants', 'acoustic', 'mirror', 'other'],
+      plasterboard: ['painted', 'wallpaper', 'tiles', 'wood', 'wood-acoustic', 'fabric', 'curtain', 'plants', 'acoustic', 'mirror', 'other'],
       lath: ['plaster', 'wallpaper', 'other'],
       timber: ['wood', 'painted', 'wood-acoustic', 'fabric', 'curtain', 'acoustic', 'other'],
       metal: ['exposed', 'painted', 'acoustic', 'other'],
@@ -187,8 +188,12 @@
       T('block-bare', 'Concrete blocks, bare', 'Unpainted, unplastered blockwork.', 'masonry', 'exposed', 'hall-concrete-block-unpainted'),
       T('cork', 'Cork or pin board', 'Notice boards and pin boards, or cork wall covering.', 'masonry', 'cork', 'aua-cork-board-25-mm-on-solid-backing'),
       T('curtains', 'Curtains or drapes', 'Fabric curtains hung along the wall.', '', 'curtain', 'aua-curtains-hung-in-folds-against-solid-wall'),
+      // Added 12 November 2026. The library has no sourced data for a planted or moss wall yet, so none is borrowed.
+      T('green-wall', 'Green wall (plants or moss)', 'A living wall of plants, or preserved moss or grass panels.', '', 'plants', null),
       T('mirror', 'Mirror wall', 'Large mirrors, e.g. in a gym or dance studio.', 'glass', 'mirror', null),
       T('metal-sheet', 'Metal sheet or cladding', 'Profiled or flat metal sheets, as in workshops and warehouses.', 'metal', 'exposed', null),
+      // Added 12 November 2026. Aluminium composite panels on a frame: no sourced data in the library for them yet.
+      T('acp-cladding', 'ACP or aluminium composite cladding', 'Coated aluminium composite panels (ACP) fixed on a frame, as in showrooms, malls and lift lobbies.', 'metal', 'painted', null),
       T('other', 'Something else', 'Not in this list: type what it is.', '', 'other', null),
     ],
     floor: [
@@ -218,6 +223,91 @@
       T('metal-roof', 'Metal roof sheet (no ceiling)', 'The underside of a metal roof or deck, as in sports halls, factories and warehouses.', 'metal', 'exposed', 'aua-steel-decking'),
       T('acoustic-ceiling', 'Acoustic panels (already fitted)', 'Sound-absorbing panels already fixed to the ceiling.', 'acoustic-system', 'acoustic', 'mfr-fabric-wrapped-fibreglass-panel-25-mm-type-a'),
       T('other', 'Something else', 'Not in this list: type what it is.', '', 'other', null),
+    ],
+  };
+
+  /* Other names people use for each type, so "Type to search" in Room Setup finds it: trade and brand words used as
+     everyday names, Indian names, and Hindi words in Latin letters (e.g. "POP false ceiling" finds the gypsum or POP
+     false ceiling, "sheesha" the glass wall). Search words only: they are never shown as the type's name and change no value. */
+  const ALIASES = {
+    wall: {
+      'painted-plaster': ['plaster', 'plastered wall', 'cement plaster', 'putty', 'wall putty', 'POP punning', 'paint', 'emulsion', 'distemper', 'texture paint', 'textured paint', 'brick wall', 'block wall'],
+      'gypsum-partition': ['drywall', 'dry wall', 'gypsum board', 'gypsum wall', 'plasterboard', 'board partition', 'stud wall', 'gyproc', 'false wall'],
+      glass: ['glazing', 'glazed partition', 'toughened glass', 'frosted glass', 'window wall', 'curtain wall', 'facade', 'sheesha', 'shisha', 'sheesa', 'kaanch', 'kanch'],
+      'wood-panelling': ['wood', 'wooden panels', 'plywood', 'ply', 'veneer', 'veneer panelling', 'laminate', 'laminate panels', 'HPL', 'high pressure laminate', 'sunmica', 'MDF', 'chipboard', 'particle board', 'wood cladding', 'lakdi', 'lakri'],
+      fabric: ['upholstered', 'upholstery', 'fabric panels', 'stretched fabric', 'padded wall', 'cushioned wall', 'kapda'],
+      'acoustic-panels': ['acoustic panel', 'sound absorbing panels', 'absorber', 'fabric wrapped panels', 'glass wool panels', 'rockwool panels', 'polyester panels', 'soundproofing panels'],
+      'felt-panels': ['felt', 'PET felt', 'polyester felt', 'felt tiles', 'pin up felt'],
+      'bass-absorber': ['bass trap', 'bass traps', 'low frequency absorber', 'corner trap'],
+      'wood-slats': ['slats', 'slatted wood', 'fluted panels', 'fluted wood', 'grooved panels', 'louvers', 'louvres', 'wooden battens', 'slotted wood', 'perforated wood'],
+      wallpaper: ['wall paper', 'vinyl wallpaper', 'wall covering'],
+      'tiles-stone': ['tiles', 'wall tiles', 'ceramic tiles', 'vitrified tiles', 'marble', 'granite', 'stone', 'stone cladding', 'kota stone', 'sandstone', 'slate', 'quartz', 'patthar', 'pathar'],
+      'bare-brick': ['exposed brick', 'brickwork', 'face brick', 'red brick', 'eent'],
+      'bare-concrete': ['exposed concrete', 'raw concrete', 'RCC wall', 'shear wall', 'fair faced concrete', 'cement wall'],
+      'block-painted': ['painted blockwork', 'painted blocks', 'painted CMU'],
+      'block-bare': ['blockwork', 'AAC blocks', 'fly ash bricks', 'hollow blocks', 'cement blocks', 'CMU'],
+      cork: ['pin board', 'pinboard', 'notice board', 'soft board', 'softboard', 'bulletin board'],
+      curtains: ['curtain', 'drapes', 'parda', 'pardah'],
+      'green-wall': ['living wall', 'vertical garden', 'plant wall', 'plants', 'moss wall', 'moss', 'grass wall', 'green'],
+      mirror: ['mirrors', 'aaina', 'aina', 'sheesha'],
+      'metal-sheet': ['metal', 'steel', 'tin sheet', 'GI sheet', 'MS sheet', 'corrugated sheet', 'profile sheet', 'aluminium sheet'],
+      'acp-cladding': ['ACP', 'ACM', 'aluminium composite panel', 'aluminum composite panel', 'alucobond', 'aluminium cladding', 'metal cladding'],
+    },
+    floor: {
+      'vitrified-tiles': ['vitrified', 'ceramic', 'tiles', 'floor tiles', 'porcelain', 'GVT', 'PGVT', 'double charge'],
+      stone: ['marble', 'granite', 'kota', 'kota stone', 'italian marble', 'sandstone', 'slate', 'terrazzo', 'patthar', 'pathar'],
+      carpet: ['broadloom', 'wall to wall carpet', 'kaleen', 'galicha'],
+      'carpet-tiles': ['carpet tile', 'modular carpet', 'office carpet'],
+      vinyl: ['LVT', 'linoleum', 'lino', 'PVC flooring', 'vinyl planks', 'vinyl sheet', 'SPC'],
+      laminate: ['laminated flooring', 'wooden flooring', 'engineered wood', 'parquet', 'herringbone'],
+      'wood-floor': ['wooden floor', 'hardwood', 'sprung floor', 'stage floor', 'maple floor', 'timber floor'],
+      'concrete-floor': ['concrete', 'IPS', 'IPS flooring', 'Indian patent stone', 'cement floor', 'epoxy', 'epoxy floor', 'polished concrete', 'screed', 'trimix', 'VDF'],
+      'sports-vinyl': ['sports flooring', 'cushioned vinyl', 'PU sports floor', 'synthetic sports floor'],
+      rubber: ['gym flooring', 'rubber mats', 'gym mats', 'EPDM'],
+      'raised-floor': ['access floor', 'raised access floor', 'false floor'],
+      'raised-floor-carpet': ['access floor with carpet', 'false floor with carpet'],
+    },
+    ceiling: {
+      'gypsum-ceiling': ['POP', 'plaster of Paris', 'false ceiling', 'gypsum false ceiling', 'gypsum board ceiling', 'drywall ceiling', 'gyproc'],
+      'grid-tiles': ['grid ceiling', 'armstrong', 'mineral fibre', 'mineral fiber', 'ceiling tiles', '2x2 tiles', '600x600', 'T grid', 'lay in tiles'],
+      'hygiene-tiles': ['clean room', 'cleanroom', 'washable tiles', 'hospital ceiling', 'kitchen ceiling'],
+      'metal-tiles': ['metal ceiling', 'metal false ceiling', 'aluminium ceiling', 'aluminium tiles', 'clip in tiles'],
+      'perforated-gypsum': ['perforated board', 'acoustic gypsum', 'gyptone'],
+      'plastered-slab': ['slab', 'RCC slab', 'painted slab', 'roof slab', 'no false ceiling'],
+      'bare-slab': ['open ceiling', 'exposed ceiling', 'exposed services', 'open services', 'ducts', 'raw slab', 'concrete slab', 'exposed slab', 'no false ceiling'],
+      'wood-ceiling': ['wooden false ceiling', 'wood false ceiling', 'veneer ceiling', 'wooden panels', 'wooden planks', 'lakdi'],
+      'metal-roof': ['tin roof', 'roof sheet', 'GI roof', 'shed', 'PEB', 'industrial roof', 'warehouse roof'],
+      'acoustic-ceiling': ['ceiling absorbers', 'ceiling panels', 'clouds', 'rafts', 'baffles'],
+    },
+  };
+
+  /* The groups the types are shown in (Room Setup), in order, after those common in the room's type. Every type but
+     "Something else" is in one group; "Something else" always comes last, on its own. */
+  const G = (id, name, types) => ({ id, name, types });
+  const GROUPS = {
+    wall: [
+      G('plaster', 'Plaster & paint', ['painted-plaster', 'gypsum-partition', 'wallpaper', 'block-painted']),
+      G('masonry', 'Masonry & concrete', ['bare-brick', 'block-bare', 'bare-concrete']),
+      G('tiles', 'Tiles & stone', ['tiles-stone']),
+      G('wood', 'Wood', ['wood-panelling', 'wood-slats']),
+      G('glass-metal', 'Glass & metal', ['glass', 'mirror', 'metal-sheet', 'acp-cladding']),
+      G('soft', 'Fabric & soft', ['fabric', 'curtains', 'cork', 'green-wall']),
+      G('acoustic', 'Acoustic treatment', ['acoustic-panels', 'felt-panels', 'bass-absorber']),
+    ],
+    floor: [
+      G('tiles', 'Tiles & stone', ['vitrified-tiles', 'stone']),
+      G('wood', 'Wood & laminate', ['laminate', 'wood-floor']),
+      G('carpet', 'Carpet', ['carpet', 'carpet-tiles']),
+      G('vinyl', 'Vinyl & rubber', ['vinyl', 'sports-vinyl', 'rubber']),
+      G('concrete', 'Concrete', ['concrete-floor']),
+      G('raised', 'Raised floor', ['raised-floor', 'raised-floor-carpet']),
+    ],
+    ceiling: [
+      G('plaster', 'Plaster & gypsum', ['gypsum-ceiling', 'perforated-gypsum', 'plastered-slab']),
+      G('tiles', 'Ceiling tiles', ['grid-tiles', 'hygiene-tiles', 'metal-tiles']),
+      G('wood', 'Wood', ['wood-ceiling']),
+      G('open', 'Open & exposed', ['bare-slab', 'metal-roof']),
+      G('acoustic', 'Acoustic treatment', ['acoustic-ceiling']),
     ],
   };
 
@@ -307,5 +397,5 @@
     'Government and civic': P.council, 'Transport': P.terminal, 'Sports and recreation': P.sports,
   };
 
-  AM.roomFormData = { CONSTRUCTIONS, FINISHES, FITS, classify, EQUIPMENT, QUESTIONS, COMMON, SURFACE_TYPES, COVER_TYPES, OPENING_TYPES, ROOM_MATERIALS, INDUSTRY_MATERIALS };
+  AM.roomFormData = { CONSTRUCTIONS, FINISHES, FITS, classify, EQUIPMENT, QUESTIONS, COMMON, SURFACE_TYPES, ALIASES, GROUPS, COVER_TYPES, OPENING_TYPES, ROOM_MATERIALS, INDUSTRY_MATERIALS };
 })(window.AM);

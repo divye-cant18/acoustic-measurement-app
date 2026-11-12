@@ -184,6 +184,44 @@
     const by = (RF.ROOM_MATERIALS || {})[r.type] ? `a${/^[aeiou]/i.test(r.type) ? 'n' : ''} ${String(r.type).toLowerCase()}` : r.industry && (RF.INDUSTRY_MATERIALS || {})[r.industry] ? 'this industry' : '';
     return { common, rest, label: by ? `Common in ${by}` : '' };
   }
+  /* The types as Room Setup shows them: those common in the room's type first (typesFor), then the rest in their groups
+     (js/data/room-form.js GROUPS; a group left empty is not shown), then "Something else" on its own.
+     { label, common, groups: [{ id, name, types }], other } */
+  function typeGroups(kind, room) {
+    const g = typesFor(kind, room), rest = new Set(g.rest);
+    const groups = ((RF.GROUPS || {})[kind] || []).map(x => ({ id: x.id, name: x.name, types: x.types.map(id => typeOf(kind, id)).filter(t => t && rest.has(t)) })).filter(x => x.types.length);
+    // A type in no group is still offered, in a group of its own after the others.
+    const placed = new Set(groups.flatMap(x => x.types)), loose = g.rest.filter(t => t.id !== 'other' && !placed.has(t));
+    if (loose.length) groups.push({ id: 'more', name: 'More types', types: loose });
+    return { label: g.label, common: g.common, groups, other: typeOf(kind, 'other') };
+  }
+  /* "Type to search" in Room Setup: the types whose name, other names (js/data/room-form.js ALIASES) or description hold
+     every word typed, best match first (a whole word in the name or other names, then the start of one, then the
+     description); when none holds them all, those that hold the most (all: false). A word may also be the start of one
+     ("gyp" finds gypsum) or a longer form of it ("wooden" finds wood). Words that only say which surface it is ("wall",
+     "floor", "ceiling") and small joining words are skipped, so "POP false ceiling" finds the gypsum or POP false
+     ceiling and "green wall" the green wall. "Something else" is never a match: Room Setup always offers it.
+     { types, all }, or null when nothing but skipped words is typed (nothing to search: the whole list is shown). */
+  const SEARCH_SKIP = new Set(['a', 'an', 'the', 'of', 'and', 'or', 'with', 'on', 'in', 'is', 'it', 'its', 'has', 'type', 'kind', 'made',
+    'wall', 'walls', 'floor', 'floors', 'flooring', 'ceiling', 'ceilings']);
+  const searchWords = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^a-z0-9]+/).filter(Boolean);
+  function searchTypes(kind, query) {
+    const q = searchWords(query).filter(w => !SEARCH_SKIP.has(w));
+    if (!q.length) return null;
+    const aliases = (RF.ALIASES || {})[kind] || {};
+    const near = (w, list) => list.some(x => x.startsWith(w) || (x.length >= 4 && w.startsWith(x)));
+    const hits = typesOf(kind).filter(t => t.id !== 'other').map((t, i) => {
+      const name = searchWords(t.name), other = (aliases[t.id] || []).flatMap(searchWords), hint = searchWords(t.hint);
+      let found = 0, score = 0;
+      q.forEach(w => {
+        const s = name.includes(w) || other.includes(w) ? 4 : near(w, name) ? 3 : near(w, other) ? 2 : near(w, hint) ? 1 : 0;
+        if (s) { found += 1; score += s; }
+      });
+      return { t, i, found, score };
+    }).filter(h => h.found);
+    const most = Math.max(0, ...hits.map(h => h.found));
+    return { types: hits.filter(h => h.found === most).sort((a, b) => b.score - a.score || a.i - b.i).map(h => h.t), all: most === q.length };
+  }
   // A surface's type: the one chosen, or, for a surface saved before types existed, the one with its construction and
   // finish (and its library entry, where two types share them). { type, inferred } or null.
   function typeOfSurface(cfg, kind) {
@@ -456,7 +494,7 @@
     SURFACES, OPENINGS, PLACEMENTS, CLASSES: DATA.CLASSES || {}, WALL_LIMITS, blankSurface, blankSurfaces, surfaceDef, surfacesOf, wallKeysOf, ceilingKeysOf, nextKey,
     placementsFor, placementKeys, material, materialsFor, familyOf, categoryOf, alphaOf, sourceOf, classOf, openingArea, wallDimError, surfaceModel, coveredBy,
     constructionsFor, finishesFor, finishFits, materialFits, constructionOf, finishOf, constructionText, finishText, equipmentOf,
-    typesOf, typeOf, typesFor, typeOfSurface, typeText, soundRating, SOUND_WORDS, openingTypesFor, openingTypeOf, coverTypesFor, coverTypeOf, sectionsOf, fittedTreatment,
+    typesOf, typeOf, typesFor, typeGroups, searchTypes, typeOfSurface, typeText, soundRating, SOUND_WORDS, openingTypesFor, openingTypeOf, coverTypesFor, coverTypeOf, sectionsOf, fittedTreatment,
     describe, finishes, totals, customMaterials, fromLegacy,
   };
 })(window.AM);

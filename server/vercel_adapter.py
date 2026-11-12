@@ -4,6 +4,8 @@ Each file in api/ defines `handler`, a subclass of Handler below with its route 
   api/health.py                        GET  /api/health
   api/report-submissions.py            POST /api/report-submissions
   api/report-submissions/verify.py     POST /api/report-submissions/verify
+  api/voice-room.py                    POST /api/voice-room (Cloudflare Workers AI; needs CLOUDFLARE_ACCOUNT_ID and
+                                       CLOUDFLARE_AI_TOKEN, and takes longer than the form: vercel.json allows 60 s)
 
 What differs from running server/app_server.py:
   - Only the API is answered here. The app's files (index.html, css/, js/, assets/) are published by vercel.json's build

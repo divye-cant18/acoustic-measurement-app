@@ -252,6 +252,13 @@ other). A material that is not listed ("Something else") is typed in and kept, w
 is sent with the report form for review in Supabase. docs/ROOM-FORM.md lists the types, their typical data, the types
 common in each room type, the fields, the calculations and the saved data.
 
+**Describe the room by voice.** A sales representative can say the room's name, size, walls, floor, ceiling, doors and
+windows in English or Hinglish. A pop-up card shows what was understood, each change ticked and with an Edit that
+opens the form's own choices for it, and fills in Room Setup only on "Fill in Room Setup", through the same actions as
+the buttons; what was said is kept with that project only.
+It uses Cloudflare Workers AI on the Free plan (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_AI_TOKEN`); without them Room
+Setup is filled in by hand as before. See docs/VOICE-ROOM-SETUP.md.
+
 A wall can be split into parts that are something else (2.4 m of glass, the rest drywall): each wall card shows the wall
 face-on to scale, a row per part with its width ("Split the wall"), and doors and windows with − and + (one more starts
 at a standard 0.9 × 2.1 m door or 1.2 × 1.2 m window, its size changeable); the rest of what is recorded on a wall is
@@ -778,20 +785,22 @@ lets the browser open the microphone.
 - **What is published:** the build installs the interface's build tools (`npm ci`), builds the interface
   (`npm run build`), then copies `index.html`, `css/`, `js/` and `assets/` to `public/`, and only that is served.
   `src/`, `server/`, `docs/`, `tests/` and the README are never published.
-- **The API:** `api/health.py`, `api/report-submissions.py` and `api/report-submissions/verify.py` are Vercel Functions
-  (Python, standard library only). Each is `server/app_server.py`'s handler through `server/vercel_adapter.py`, so the
+- **The API:** `api/health.py`, `api/report-submissions.py`, `api/report-submissions/verify.py` and `api/voice-room.py`
+  are Vercel Functions (Python, standard library only; `vercel.json` allows them 60 s, which voice needs). Each is `server/app_server.py`'s handler through `server/vercel_adapter.py`, so the
   validation, the allowlist, the receipts and the database code are the same as on your own server.
 - **Environment Variables** (Vercel → Project → Settings → Environment Variables), as in `server/.env.example`:
   `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_TABLE` (optional, default `report_submissions`) and
   `REPORT_RECEIPT_SECRET`, which is **required** on Vercel: a long random value that stays the same (for example the
   output of `python -c "import secrets; print(secrets.token_hex(32))"`). Without it the form says it is not connected.
-  Changing any of them needs a redeploy.
+  For voice Room Setup: `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_AI_TOKEN` (docs/VOICE-ROOM-SETUP.md). Changing any of
+  them needs a redeploy.
 - **What differs from your own server:** the disk is temporary, so the ledger lives in `/tmp` and can be lost between
   requests; the table's primary key and the lookup by submission ID then decide, so a submission is still stored once
   and a receipt still verifies. The same ID sent again with different content after such a loss is answered from the
   stored row instead of being refused. Rate limits are counted per running instance, using the address Vercel reports
   (`x-real-ip`).
-- **Check after deploying:** `https://<project>.vercel.app/api/health` answers `{"ok": true, "store": "configured"}`.
+- **Check after deploying:** `https://<project>.vercel.app/api/health` answers
+  `{"ok": true, "store": "configured", "voice": "configured"}` (voice `not_configured` without the Cloudflare keys).
 
 Projects are kept in each browser's own storage for that address, so projects made at `localhost` do not appear on the
 Vercel address.
@@ -799,6 +808,10 @@ Vercel address.
 ## Testing
 
 `tests/` is for development only. The application never loads it, and nothing in it can reach a real measurement.
+
+- `tests/voice-room.html` (40 checks) and `tests/voice_room_test.py` (14 checks): voice Room Setup, in the whole app with a
+  fake server and a fake microphone, and the server with a fake Cloudflare; neither contacts Cloudflare. See
+  docs/VOICE-ROOM-SETUP.md.
 
 - `tests/dsp.html`: the analysis code against signals with known answers (`tests/fixtures.js`: seeded synthetic room
   responses of known RT60, optionally with a single device's direct sound (`directDb`), background noise, clipping,

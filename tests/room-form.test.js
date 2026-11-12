@@ -181,8 +181,8 @@
         return !m || !m.surfaces.includes(k) || !SF.materialFits(t.material, k, t.construction, t.finish);
       }).map(t => `${k}:${t.id}`));
       const noData = kinds.flatMap(k => RF.SURFACE_TYPES[k].filter(t => !t.material).map(t => `${k}:${t.id}`));
-      check('Every everyday type has a construction and finish that fit, and typical sound data from a library entry that describes it; only these have none: mirror, metal sheet and "Something else"',
-        !bad.length && json(noData) === json(['wall:mirror', 'wall:metal-sheet', 'wall:other', 'floor:other', 'ceiling:other']), bad.join(', ') || `no data: ${noData.join(', ')}`);
+      check('Every everyday type has a construction and finish that fit, and typical sound data from a library entry that describes it; only these have none: green wall, mirror, metal sheet, ACP cladding and "Something else"',
+        !bad.length && json(noData) === json(['wall:green-wall', 'wall:mirror', 'wall:metal-sheet', 'wall:acp-cladding', 'wall:other', 'floor:other', 'ceiling:other']), bad.join(', ') || `no data: ${noData.join(', ')}`);
       const types = [...new Set(D.INDUSTRIES.flatMap(i => i.types))].filter(t => t !== 'Other');
       const missing = types.filter(t => { const l = RF.ROOM_MATERIALS[t]; return !l || kinds.some(k => !l[k] || !l[k].length || l[k].some(id => !SF.typeOf(k, id))); });
       check('Every room type has its own list of the walls, floors and ceilings common in it, each a type in the list', !missing.length, missing.join(', ') || `${types.length} room types`);
@@ -196,6 +196,37 @@
       check('The common types come first: a hotel lobby\'s floors start with marble, granite or Kota stone; a room type the user names uses its industry\'s list; "Something else" is always last',
         lobby.common[0].id === 'stone' && /hotel lobby/.test(lobby.label) && mine.common[0].id === 'block-bare' && mine.label === 'Common in this industry' && lobby.rest[lobby.rest.length - 1].id === 'other' && !lobby.common.some(t => t.id === 'other'),
         `${lobby.label}: ${lobby.common.map(t => t.id).join(', ')} · ${mine.label}: ${mine.common[0].id}`);
+      // Groups (12 November 2026): every type but "Something else" in exactly one group of its kind, and nothing else there.
+      const groupBad = kinds.flatMap(k => {
+        const ids = RF.GROUPS[k].flatMap(g => g.types), types = RF.SURFACE_TYPES[k].map(t => t.id).filter(id => id !== 'other');
+        return [...types.filter(id => ids.filter(x => x === id).length !== 1), ...ids.filter(id => !types.includes(id))].map(id => `${k}:${id}`);
+      });
+      const aliasBad = kinds.flatMap(k => Object.keys(RF.ALIASES[k]).filter(id => id === 'other' || !SF.typeOf(k, id)).map(id => `${k}:${id}`));
+      check('Groups: every wall, floor and ceiling type but "Something else" is in exactly one group of its kind; other names are given only for types that exist',
+        !groupBad.length && !aliasBad.length, [...groupBad, ...aliasBad].join(', ') || kinds.map(k => `${k}: ${RF.GROUPS[k].map(g => g.name).join(', ')}`).join(' · '));
+      const conf = SF.typeGroups('wall', { type: 'Conference room', industry: 'Corporate offices and meeting rooms' });
+      const shown = [...conf.common, ...conf.groups.flatMap(g => g.types)].map(t => t.id);
+      check('In a conference room the common walls come first, every other wall type once in its group, and "Something else" last on its own',
+        conf.label === 'Common in a conference room' && json(conf.common.map(t => t.id)) === json(RF.ROOM_MATERIALS['Conference room'].wall) && conf.other.id === 'other'
+          && shown.length === new Set(shown).size && json(shown.slice().sort()) === json(RF.SURFACE_TYPES.wall.map(t => t.id).filter(id => id !== 'other').sort())
+          && !conf.groups.some(g => !g.types.length) && conf.groups.find(g => g.id === 'glass-metal').types.some(t => t.id === 'acp-cladding'),
+        conf.groups.map(g => `${g.name}: ${g.types.map(t => t.id).join(', ')}`).join(' · '));
+      // Type to search: other names, Indian names and Hindi words in Latin letters; every word typed must be found.
+      const find = (k, q) => { const r = SF.searchTypes(k, q); return r ? r.types.map(t => t.id) : null; };
+      const cases = [
+        ['ceiling', 'POP false ceiling', ['gypsum-ceiling']], ['ceiling', 'wooden false ceiling', ['wood-ceiling']], ['ceiling', 'open ceiling with ducts', ['bare-slab']],
+        ['floor', 'Kota', ['stone']], ['floor', 'granite', ['stone']], ['floor', 'epoxy', ['concrete-floor']], ['floor', 'IPS', ['concrete-floor']],
+        ['wall', 'ACP', ['acp-cladding']], ['wall', 'green wall', ['green-wall']], ['wall', 'HPL', ['wood-panelling']], ['wall', 'veneer panelling', ['wood-panelling']],
+        ['wall', 'stone cladding', ['tiles-stone']], ['wall', 'sheesha', ['glass', 'mirror']], ['wall', 'gyp', ['gypsum-partition']],
+      ];
+      const wrong = cases.filter(([k, q, want]) => json(find(k, q)) !== json(want)).map(([k, q, want]) => `${k} "${q}": ${json(find(k, q))}, expected ${json(want)}`);
+      check('Type to search finds by other names: "POP false ceiling" the POP ceiling, "Kota" and "granite" the stone floor, "epoxy" and "IPS" the concrete floor, "ACP", "green wall", "HPL", "stone cladding", "sheesha" (glass, then mirror), "gyp" (the start of a word)',
+        !wrong.length, wrong.join(' · ') || `${cases.length} searches`);
+      const mixed = SF.searchTypes('wall', 'green glass'), none = SF.searchTypes('wall', 'xyzzy');
+      check('No type holds every word: the closest are offered and marked so; nothing at all: an empty list; only "wall" typed: nothing to search; "Something else" is never a match',
+        !mixed.all && mixed.types.some(t => t.id === 'glass') && mixed.types.some(t => t.id === 'green-wall') && !none.types.length && SF.searchTypes('wall', 'the wall') === null
+          && !SF.searchTypes('wall', 'something else').types.some(t => t.id === 'other'),
+        `green glass: ${mixed.types.map(t => t.id).join(', ')} (all ${mixed.all}); xyzzy: ${none.types.length}`);
       // Choosing a type: its construction, finish and typical entry; the same type again keeps an exact entry chosen for it.
       act.setSurfaceType(ctx(), 'wall3|gypsum-partition');
       const w3 = () => p().room.surfaces.wall3;
@@ -206,6 +237,9 @@
       check('An exact entry of the same type (2 × 13 mm plasterboard) keeps the type, and choosing the type again does not replace it', w3().type === 'gypsum-partition' && w3().material === PLASTERBOARD, `${w3().type}; ${w3().material}`);
       act.setSurfaceType(ctx(), 'wall3|mirror');
       check('Another type replaces it: a mirror wall has no library data, so none is set (never a borrowed value)', w3().type === 'mirror' && w3().construction === 'glass' && w3().finish === 'mirror' && w3().material === '' && SF.surfaceModel(p().room, 'wall3').parts.find(x => x.role === 'finish').alpha == null,
+        json(w3()).slice(0, 200));
+      act.setSurfaceType(ctx(), 'wall3|green-wall');
+      check('A green wall (plants or moss): its own finish, no borrowed sound data, and its name in words', w3().type === 'green-wall' && w3().finish === 'plants' && w3().material === '' && SF.typeText(w3(), 'wall') === 'Green wall (plants or moss)',
         json(w3()).slice(0, 200));
       act.setSurfaceType(ctx(), 'wall3|other');
       S.set('room.surfaces.wall3.finishOther', { name: 'Jute wall covering', notes: '' });
@@ -414,6 +448,28 @@
         p().room.surfaces.wall6.type === 'glass' && p().room.surfaces.wall6.material === 'hall-heavy-plate-glass' && app.querySelector('#surf-wall6-type-glass').getAttribute('aria-pressed') === 'true'
           && /Hard: reflects almost all sound/.test(w6c.querySelector('.surf-sound').textContent) && /typical values/.test(w6c.querySelector('.surf-sound').textContent) && !/\d\s?mm\b/.test(plain) && !app.querySelector('#surf-wall6-con'),
         `${p().room.surfaces.wall6.type}; ${w6c.querySelector('.surf-sound').textContent}`);
+      // Type to search on the screen (12 November 2026): typing narrows the buttons, Enter chooses the only match, and
+      // with the box cleared the common walls, the groups and "Something else" are back. The box is a React field, so the
+      // value is set the way typing sets it.
+      const q6 = () => app.querySelector('#surf-wall6-type-q');
+      const type6 = v => { const el = q6(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); };
+      const chips6 = () => [...q6().closest('.type-pick').querySelectorAll('.chip')].map(b => b.id.replace('surf-wall6-type-', ''));
+      type6('ACP');
+      await sleep(60);
+      const narrowed = chips6();
+      q6().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await sleep(60);
+      check('Type to search on Wall 6: "ACP" leaves ACP cladding and "Something else"; Enter chooses it, and with no sourced data none is set',
+        json(narrowed) === json(['acp-cladding', 'other']) && p().room.surfaces.wall6.type === 'acp-cladding' && p().room.surfaces.wall6.material === '' && p().room.surfaces.wall6.construction === 'metal',
+        `${narrowed.join(', ')}; ${p().room.surfaces.wall6.type}`);
+      type6('');
+      await sleep(60);
+      const exp6 = SF.typeGroups('wall', p().room), heads = [...q6().closest('.type-pick').querySelectorAll('.type-pick-l')].map(h => h.textContent);
+      check('Search cleared: the common walls first, then the groups, "Something else" last on its own; every wall type shown once',
+        json(heads) === json([...(exp6.common.length ? [exp6.label] : []), ...exp6.groups.map(g => g.name), 'Not in the list']) && chips6().length === new Set(chips6()).size && chips6().length === RF.SURFACE_TYPES.wall.length,
+        heads.join(' · '));
+      app.querySelector('#surf-wall6-type-glass').click();
+      await sleep(60);
       app.querySelector('#surf-wall6-eq-ac').click();
       await sleep(60);
       check('Ticking "Air conditioner" on Wall 6: recorded and shown as ticked; no size, position or clearance fields',

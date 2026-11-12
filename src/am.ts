@@ -80,7 +80,7 @@ export interface PrimaryAction { label: string; action: string; value?: string; 
 export interface View { body: string; primary?: PrimaryAction | null; header?: boolean; footer?: boolean }
 export type ActionFn = (ctx: Ctx, value: string | undefined, el: HTMLElement, e?: Event) => unknown;
 export interface UiState {
-  navOpen: boolean; sheet: null | { kind: 'explain'; stage: string } | { kind: 'tools' } | { kind: 'history' } | { kind: 'guide'; id: string };
+  navOpen: boolean; sheet: null | { kind: 'explain'; stage: string } | { kind: 'tools' } | { kind: 'history' } | { kind: 'guide'; id: string } | { kind: 'voice' };
   toast: string | null; band: number; confirm: string | null; open?: Record<string, boolean>;
   // The tour of the screen (src/shell/Tour.tsx) and the Help menu on a step's top bar.
   tour?: { kind: 'home' | 'step'; i: number; at: string } | null; help?: boolean;

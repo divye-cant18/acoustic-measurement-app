@@ -97,6 +97,7 @@ window.AM = window.AM || { services: {} };
     refresh: '<path d="M19.5 12a7.5 7.5 0 11-2.2-5.3"/><path d="M19.5 4.5v4.5H15"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/>',
+    pencil: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M14 6l4 4"/>',
     minus: '<path d="M5 12h14"/>',
     x: '<path d="M6 6l12 12M18 6L6 18"/>',
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',

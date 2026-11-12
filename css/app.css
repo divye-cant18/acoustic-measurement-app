@@ -765,10 +765,14 @@ details.surf>.surf-h .surf-area{flex:none;white-space:nowrap;padding-left:8px}
 .surf-acoustic-h .field-l{margin:0}
 .surf-acoustic-h .input{flex:1 1 200px;max-width:320px;margin-left:auto}
 .surf-nodata{margin:0}
-/* What a surface is, in everyday words: buttons, the common ones first; then how much sound it absorbs, in words */
-.type-pick{display:flex;flex-direction:column;gap:6px}
+/* What a surface is, in everyday words: a search box, buttons (the common ones first, the rest in groups, "Something
+   else" last); then how much sound it absorbs, in words */
+.type-pick{display:flex;flex-direction:column;gap:12px}
+.type-pick-q{width:100%;max-width:380px}
+.type-pick-g{display:flex;flex-direction:column;gap:6px}
 .type-pick-l{font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
 .type-pick .chip{padding:7px 12px;font-size:13px}
+.type-pick-none{margin:0}
 .surf-hint{margin:-2px 0 0}
 .surf-sound{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--r);background:var(--well);border:1px solid var(--line-soft);font-size:13px}
 .surf-sound-none{margin:0}
@@ -1537,6 +1541,49 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
 .tool-row span:nth-child(2){flex:1}
 .tool-row .wf-mark{width:22px;height:22px;box-shadow:inset 0 0 0 1.5px var(--line);font-size:10.5px;color:var(--muted)}
 .sheet.sheet-video{width:min(880px,100%)}
+/* Voice Room Setup (src/shell/VoicePanel.tsx): a pop-up card in the middle of the page */
+.sheet.sheet-pop{top:50%;left:50%;right:auto;bottom:auto;transform:translate(-50%,-50%);width:min(640px,calc(100% - 32px));max-height:min(88vh,820px);border:1px solid var(--line);border-radius:18px;animation:fade .2s}
+.voice-say{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:3px}
+.voice-acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.voice-final{padding-top:4px}
+.voice-rec{display:flex;align-items:center;gap:14px;padding:16px;border-radius:var(--r);background:var(--well);border:1px solid var(--line-soft)}
+.voice-rec-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.voice-dot{width:14px;height:14px;border-radius:50%;background:var(--brand);flex:none;animation:vpulse 1.1s ease-in-out infinite}
+@keyframes vpulse{50%{opacity:.3;transform:scale(.8)}}
+.voice-level{display:block;height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+.voice-level i{display:block;height:100%;background:var(--brand);transform-origin:left center;transform:scaleX(0);transition:transform .1s linear}
+.voice-time{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink)}
+.voice-busy{display:flex;align-items:center;gap:10px;padding:16px;border-radius:var(--r);background:var(--well)}
+.voice-text{width:100%;min-height:76px;resize:vertical;font:inherit;line-height:1.45}
+.voice-lead{margin:0;color:var(--ink)}
+.voice-group{display:flex;flex-direction:column;gap:6px}
+.voice-g{margin:0;font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.voice-items{display:flex;flex-direction:column;gap:6px}
+/* One change: its tick (the whole line), its Edit, a problem when it no longer fits another change, the open Edit. */
+.voice-row{border-radius:10px;background:var(--raised);box-shadow:inset 0 0 0 1px var(--line);transition:box-shadow var(--t-fast) var(--ease)}
+.voice-row:hover{box-shadow:inset 0 0 0 1px var(--ink-2)}
+.voice-row.has-problem{box-shadow:inset 0 0 0 1px var(--warn)}
+.voice-row.is-editing{box-shadow:inset 0 0 0 1.5px var(--brand)}
+.voice-row-main{display:flex;align-items:flex-start}
+.voice-item{flex:1;min-width:0;display:flex;gap:10px;align-items:flex-start;text-align:left;padding:9px 11px;border-radius:10px;background:none;color:var(--ink);font-size:14px;transition:opacity var(--t-fast) var(--ease)}
+.voice-mine{font-style:normal;font-size:12.5px;font-weight:600;color:var(--brand-ink)}
+.voice-edit{flex:none;display:inline-flex;align-items:center;gap:5px;margin:5px 6px 0 0;padding:4px 10px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--ink-2);box-shadow:inset 0 0 0 1px var(--line);transition:box-shadow var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
+.voice-edit:hover{color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink-2)}
+.voice-edit[aria-expanded="true"]{color:var(--brand-ink);background:var(--brand-tint);box-shadow:none}
+.voice-problem{display:flex;gap:6px;align-items:flex-start;margin:-2px 0 0;padding:0 11px 9px 39px;font-size:12.8px;font-weight:600;color:var(--warn-ink)}
+.voice-problem .i{flex:none;margin-top:2px}
+.voice-ed{display:flex;flex-direction:column;gap:12px;margin:0 8px 8px;padding:12px;border-radius:9px;background:var(--well)}
+.voice-step{display:flex;align-items:center;gap:12px}
+.voice-step output{min-width:2.5ch;text-align:center;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink)}
+@media (max-width:640px){.voice-problem{padding-left:11px}}
+.voice-box{flex:none;width:18px;height:18px;margin-top:1px;border-radius:5px;box-shadow:inset 0 0 0 1.5px var(--ink-2);display:grid;place-items:center;color:transparent}
+.voice-item[aria-checked="true"] .voice-box{background:var(--brand);box-shadow:none;color:#fff}
+.voice-item[aria-checked="false"]{opacity:.62}
+.voice-item[aria-checked="false"] span:last-child{text-decoration:line-through}
+.voice-list{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:3px;font-size:13.5px}
+.voice-notes summary{cursor:pointer;font-size:13px;font-weight:600}
+.voice-notes ul{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.voice-notes p{margin:2px 0 0;font-size:13.5px;color:var(--ink-2)}
 .gv{display:flex;flex-direction:column;gap:12px}
 .gv-screen{position:relative;aspect-ratio:16/9;border-radius:var(--r-lg);overflow:hidden;background:#1A1617;box-shadow:var(--sh-2)}
 .gv-svg,.gv-video{display:block;width:100%;height:100%}
@@ -1692,6 +1739,7 @@ details.tech[open]>summary svg{transform:rotate(90deg)}
   .record{grid-template-columns:minmax(0,1fr)}
   .sheet{top:auto;left:0;width:100%;max-height:88%;border-radius:18px 18px 0 0;animation-name:up;border-left:0;border-top:1px solid var(--line)}
   .sheet.sheet-video{max-height:94%}
+  .sheet.sheet-pop{top:auto;left:0;bottom:0;transform:none;width:100%;max-height:92%;border-radius:18px 18px 0 0;animation-name:up}
   .guide-row{grid-template-columns:minmax(0,1fr)}
   .guide-row .mi-thumb{max-width:240px}
   .learn-strip{grid-template-columns:112px minmax(0,1fr);padding:12px}

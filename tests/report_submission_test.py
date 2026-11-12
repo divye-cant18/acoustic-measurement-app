@@ -498,7 +498,9 @@ class Serving(ServerCase):
             _, body = self.call('GET', path)
             self.assertNotIn(fs.SECRET_KEY.encode(), body if isinstance(body, bytes) else json.dumps(body).encode())
         _, health = self.call('GET', '/api/health')
-        self.assertEqual(set(health), {'ok', 'store'})
+        # Only whether each part is set up (voice: server/voice_room.py), never a key.
+        self.assertEqual(set(health), {'ok', 'store', 'voice'})
+        self.assertIn(health['voice'], ('configured', 'not_configured'))
 
     def test_other_origins_and_non_json_are_refused(self):
         status, _ = self.call('POST', '/api/report-submissions', {'submissionId': str(uuid.uuid4()), 'form': form(), 'project': project()},
@@ -675,7 +677,7 @@ class Vercel(unittest.TestCase):
             self.assertRegex(gate, rf"(api|post)\('{name}'", name)
 
     def test_submit_verify_and_health(self):
-        self.assertEqual(self.call('GET', '/api/health'), (200, {'ok': True, 'store': 'configured'}))
+        self.assertEqual(self.call('GET', '/api/health'), (200, {'ok': True, 'store': 'configured', 'voice': 'not_configured'}))
         sid, (status, out) = self.submit()
         self.assertEqual(status, 200, out)
         self.assertEqual(len(self.fake.rows), 1)

@@ -243,23 +243,48 @@ function DataLine({ m }: { m: any }) {
   );
 }
 
-/* What a surface is, in everyday words: one button per type (js/data/room-form.js SURFACE_TYPES), those most often met
-   in the room's type first. The type's hint is its tooltip and is shown once it is chosen. `only`: a fixed list (what
-   covers part of a surface, doors and windows). */
-function TypePicker({ id, kind, room, value, action, keyName, question, only }: { id: string; kind?: string; room?: any; value: string; action: string; keyName: string; question: string; only?: any[] }) {
-  const g = only ? { common: [], rest: only, label: '' } : SURF.typesFor(kind, room);
+/* What a surface is, in everyday words: one button per type (js/data/room-form.js SURFACE_TYPES). For a wall, floor or
+   ceiling: "Type to search" (its name, other names and description, SURF.searchTypes), then the types most often met
+   in the room's type, the rest in their groups (SURF.typeGroups), and "Something else" last, always there. The search
+   is kept by this picker only, never in the project. The type's hint is its tooltip and is shown once it is chosen.
+   `only`: a fixed short list (what covers part of a surface, doors and windows), shown as it is. Also used by the
+   Edit of a wall, floor or ceiling on the voice card (src/shell/VoicePanel.tsx). */
+const SEARCH_EG: Record<string, string> = { wall: 'e.g. ACP, sheesha, fluted', floor: 'e.g. Kota, IPS, epoxy', ceiling: 'e.g. POP, Armstrong, open ceiling' };
+export function TypePicker({ id, kind, room, value, action, keyName, question, only }: { id: string; kind?: string; room?: any; value: string; action: string; keyName: string; question: string; only?: any[] }) {
+  const [q, setQ] = useState('');
   const chip = (t: any) => (
     <button type="button" key={t.id} className="chip" id={`${id}-${t.id}`} data-action={action} data-value={`${keyName}|${t.id}`} aria-pressed={value === t.id} title={t.hint || undefined}>{t.name}</button>
   );
+  const row = (key: string, label: string, types: any[]) => (
+    <div className="type-pick-g" key={key}>
+      <span className="type-pick-l">{label}</span>
+      <div className="chips" role="group" aria-label={`${question} ${label.toLowerCase()}`}>{types.map(chip)}</div>
+    </div>
+  );
+  if (only || !kind) {
+    return <Field label={question}><div className="type-pick"><div className="chips" role="group" aria-label={question}>{(only || []).map(chip)}</div></div></Field>;
+  }
+  const g = SURF.typeGroups(kind, room), typed = q.trim(), found = typed ? SURF.searchTypes(kind, typed) : null;
+  // Enter with a single match chooses it, as a click on it would.
+  const enter = (e: any) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (found && found.types.length === 1) { const b = document.getElementById(`${id}-${found.types[0].id}`); if (b) b.click(); }
+  };
   return (
     <Field label={question}>
       <div className="type-pick">
-        {g.common.length ? <>
-          <span className="type-pick-l">{g.label}</span>
-          <div className="chips" role="group" aria-label={`${question} ${g.label.toLowerCase()}`}>{g.common.map(chip)}</div>
-          <span className="type-pick-l">More types</span>
-        </> : null}
-        <div className="chips" role="group" aria-label={question}>{g.rest.map(chip)}</div>
+        <input className="input input-sm type-pick-q" id={`${id}-q`} type="search" value={q} onChange={e => setQ(e.target.value)} onKeyDown={enter}
+          placeholder={`Type to search, ${SEARCH_EG[kind] || 'e.g. glass'}`} aria-label={`Search: ${question}`} autoComplete="off" />
+        {found
+          ? (found.types.length
+            ? row('found', found.all ? `${found.types.length} match${found.types.length > 1 ? 'es' : ''}` : 'Closest matches', found.types)
+            : <p className="small muted type-pick-none">{`Nothing in the list matches “${typed}”. Choose “Something else” and type what it is.`}</p>)
+          : <>
+            {g.common.length ? row('common', g.label, g.common) : null}
+            {g.groups.map((x: any) => row(x.id, x.name, x.types))}
+          </>}
+        {g.other ? row('other', 'Not in the list', [g.other]) : null}
       </div>
     </Field>
   );
@@ -339,12 +364,15 @@ function PartData({ id }: { id: string }) {
 /* The wall from left to right: one row per section (what it is, its width) and one for the wall's own type in the width
    they leave; "Split the wall"; and its doors and windows, one more or one less. */
 function WallParts({ def, model, s, room }: { def: any; model: any; s: any; room: any }) {
-  const key = def.key, g = SURF.typesFor('wall', room), secs = SURF.sectionsOf(s), own = SURF.typeOfSurface(s, 'wall');
+  const key = def.key, g = SURF.typeGroups('wall', room), secs = SURF.sectionsOf(s), own = SURF.typeOfSurface(s, 'wall');
   const counted = model.parts.filter((x: any) => x.role === 'section'), used = counted.reduce((t: number, x: any) => t + x.widthM, 0);
+  // The same order as the wall's type buttons: common in the room's type, then the groups, then "Something else".
+  const opt = (t: any) => <option value={t.id} key={t.id}>{t.name}</option>;
   const options = <>
     <option value="" disabled>Choose what it is</option>
-    {g.common.length ? <optgroup label={g.label}>{g.common.map((t: any) => <option value={t.id} key={t.id}>{t.name}</option>)}</optgroup> : null}
-    <optgroup label={g.common.length ? 'More types' : 'Types'}>{g.rest.map((t: any) => <option value={t.id} key={t.id}>{t.name}</option>)}</optgroup>
+    {g.common.length ? <optgroup label={g.label}>{g.common.map(opt)}</optgroup> : null}
+    {g.groups.map((x: any) => <optgroup label={x.name} key={x.id}>{x.types.map(opt)}</optgroup>)}
+    {g.other ? <optgroup label="Not in the list">{opt(g.other)}</optgroup> : null}
   </>;
   const pick = (part: string, type: string, label: string) => (
     <SyncSelect className="select" id={`surf-${key}-part-${part}`} value={type} data-change-action="setWallPart" data-key={key} data-part={part} aria-label={label}>{options}</SyncSelect>
@@ -550,6 +578,25 @@ function Questions({ r, qs }: { r: any; qs: Question[] }) {
   );
 }
 
+/* Voice Room Setup (js/services/voice-room.js): the rep describes the room; a pop-up card shows what would be filled in
+   before anything is. What was said is kept with this project only, listed here. */
+function VoiceCard({ notes }: { notes: { at: string; text: string }[] }) {
+  return (
+    <Card icon="mic" title="Describe the room by voice" sub="Say the room's name, size, walls, floor, ceiling, doors and windows in English or Hinglish. You check every change on a card before it is filled in." cls="card-voice">
+      <div className="hstack">
+        <Btn action="openVoice" variant="primary" icon="mic" id="voice-open">Describe by voice</Btn>
+        {notes.length ? <span className="small muted">{`${notes.length} description${notes.length > 1 ? 's' : ''} kept with this project`}</span> : null}
+      </div>
+      {notes.length ? (
+        <details className="voice-notes">
+          <summary>What was said</summary>
+          <ul>{notes.slice().reverse().map((n, i) => <li key={`${n.at}-${i}`}><span className="small muted">{fmt.when(n.at)}</span><p>{n.text}</p></li>)}</ul>
+        </details>
+      ) : null}
+    </Card>
+  );
+}
+
 export function RoomScreen({ ctx }: { ctx: Ctx }) {
   const r: any = ctx.project.room, g = acoustics.geometry(r), m = M(), O = DEMO.OPTIONS as any;
   const validG = g && !m.DIMS.some(([k]) => m.dimError(k, r[k]));
@@ -576,6 +623,7 @@ export function RoomScreen({ ctx }: { ctx: Ctx }) {
     <div className="grid split">
       <svg className="look-defs" width={0} height={0} aria-hidden="true" focusable="false"><defs dangerouslySetInnerHTML={{ __html: lookDefs() }} /></svg>
       <div className="stack">
+        <VoiceCard notes={Array.isArray(r.voiceNotes) ? r.voiceNotes : []} />
         <Card icon="doc" title="Room">
           <div className="fields">
             <div className="grid g2">

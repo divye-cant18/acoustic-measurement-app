@@ -44,7 +44,8 @@ are moved to the new ones on load, by their room type (`canonicalIndustry` in `d
 
 Each wall, the floor and each ceiling section is described by one question, "What is this wall?" (or the floor, or this
 ceiling), answered with a button. The types most often met in the room's type come first ("Common in a conference room"),
-the rest after them, and "Something else" last; a room type the user names uses its industry's list. A type's tooltip
+the rest after them in groups, and "Something else" last; a room type the user names uses its industry's list. A search
+box above them finds a type by other names too (see "Groups and Type to search" below). A type's tooltip
 says what it looks like, and once chosen its line says how much sound it absorbs, in words, with a small meter.
 
 Behind each type (`SURFACE_TYPES` in `js/data/room-form.js`) are the construction and finish it stands for, and the
@@ -72,6 +73,30 @@ industrial, homes) were added in everyday words: vitrified tiles, marble, granit
 floors, sports vinyl, gypsum and POP false ceilings, grid ceilings, metal roofs, laminate panelling, upholstered walls,
 pin boards and mirror walls. Each uses an existing library entry for the same kind of surface, or none.
 
+### Groups and "Type to search" (added 2026-11-12)
+
+Above the buttons, "Type to search" finds a type by its name, its description, or the other names people use for it
+(`ALIASES` in `js/data/room-form.js`): trade and brand words used as everyday names (drywall, Gyproc, Armstrong, ACP,
+Sunmica), Indian names (POP, Kota stone, IPS, vitrified, fluted panels) and Hindi words in Latin letters (sheesha, kaanch,
+lakdi, patthar). Every word typed must be found; the words "wall", "floor" and "ceiling" and small joining words are
+skipped, so "POP false ceiling" finds the gypsum or POP false ceiling, and "green wall" the green wall. A word may be the
+start of one ("gyp") or a longer form ("wooden" finds wood). When no type holds every word, the closest matches are shown;
+when none holds any, the screen says so and points to "Something else", which is always offered. Enter chooses the match
+when there is only one. The search is kept by the picker only, never in the project.
+
+Without a search, the types common in the room's type still come first, and the rest are shown in groups (`GROUPS`):
+walls in plaster & paint, masonry & concrete, tiles & stone, wood, glass & metal, fabric & soft, and acoustic treatment;
+floors in tiles & stone, wood & laminate, carpet, vinyl & rubber, concrete, and raised floor; ceilings in plaster &
+gypsum, ceiling tiles, wood, open & exposed, and acoustic treatment. "Something else" is last, on its own. A wall's parts
+("Split the wall") list the same groups in their select.
+
+Two wall types were added: **ACP or aluminium composite cladding** (metal, coated) and **Green wall (plants or moss)**
+(a new finish, "Plants or moss"). The library has no sourced data for either, so none is set: they are recorded as
+described, drawn in the 3D room, and treated as unknown by the treatment prediction, like a mirror wall. The other
+materials asked for were already types, under the names above (marble, granite and Kota stone; IPS and epoxy floors;
+laminate, HPL and veneer panelling; stone cladding; wooden false ceilings; open ceilings with ducts in view), and are now
+found by those words too.
+
 **Walls**
 
 | Type | Typical sound data (library entry) | Source |
@@ -93,8 +118,10 @@ pin boards and mirror walls. Each uses an existing library entry for the same ki
 | Concrete blocks, bare | Concrete block, unpainted | HyperPhysics (Hall, Musical Acoustics) |
 | Cork or pin board | Cork board 25 mm on solid backing | Absorption coefficients table (acoustic.ua) |
 | Curtains or drapes | Curtains hung in folds against solid wall | Absorption coefficients table (acoustic.ua) |
+| Green wall (plants or moss) | none in the library (recorded, treated as unknown) | — |
 | Mirror wall | none in the library (recorded, treated as unknown) | — |
 | Metal sheet or cladding | none in the library (recorded, treated as unknown) | — |
+| ACP or aluminium composite cladding | none in the library (recorded, treated as unknown) | — |
 | Something else | none in the library (recorded, treated as unknown) | — |
 
 **Floors**

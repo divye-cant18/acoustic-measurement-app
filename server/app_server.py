@@ -8,9 +8,10 @@ The table is created once with server/supabase/schema.sql (Supabase dashboard > 
 Python standard library only; nothing to install.
 
 Endpoints
-  GET  /api/health                      {"ok": true, "store": "configured" | "not_configured"}
+  GET  /api/health                      {"ok": true, "store": "configured" | "not_configured", "voice": the same for voice}
   POST /api/report-submissions          {"submissionId", "form", "project"} -> one table row per submission ID
   POST /api/report-submissions/verify   {"submissionId", "projectId", "submittedAt", "receipt"} -> {"verified": bool}
+  POST /api/voice-room                  {"audio" or "text", "catalog", "room"} -> a proposal for Room Setup (server/voice_room.py)
 
 Only the app's own files are served (index.html, css/, js/, assets/, tests/). This folder (server/), its data and its
 configuration are never served.
@@ -28,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.dont_write_bytecode = True  # no __pycache__ folders in the project
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import submissions as subs  # noqa: E402
+import voice_room  # noqa: E402
 from supabase_client import DbDefinite, DbError, DbUncertain, SupabaseClient  # noqa: E402
 
 ROOT = subs.ROOT
@@ -40,6 +42,7 @@ TYPES = {
     '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8',
 }
 MAX_BODY = 16 * 1024
+VOICE_PATH = '/api/voice-room'
 
 # What the browser is told. Details stay in this server's console.
 MESSAGES = {
@@ -90,6 +93,10 @@ class App:
         self.verify_limit = subs.RateLimiter([(60, 60)])
         self.extra_origins = {o.strip().rstrip('/') for o in os.environ.get('REPORT_ALLOWED_ORIGINS', '').split(',') if o.strip()}
         self.db, self.config_problem = self._db()
+        # Voice Room Setup (server/voice_room.py): requests per client, so one device cannot use up the day's free allocation.
+        self.voice, self.voice_problem = voice_room.from_env()
+        vlimits = os.environ.get('VOICE_LIMITS') or '6/60,60/3600'
+        self.voice_limit = subs.RateLimiter([tuple(int(x) for x in pair.split('/')) for pair in vlimits.split(',')])
 
     def _db(self):
         url = os.environ.get('SUPABASE_URL', '').strip()
@@ -272,7 +279,7 @@ class Handler(BaseHTTPRequestHandler):
         path = self.request_path()
         if path == '/api/health':
             a = self.app
-            return self._send(200, {'ok': True, 'store': 'configured' if a.db else 'not_configured'})
+            return self._send(200, {'ok': True, 'store': 'configured' if a.db else 'not_configured', 'voice': 'configured' if a.voice else 'not_configured'})
         if path.startswith('/api/'):
             return self._send(404, {'error': 'not_found'})
         decoded = urllib.parse.unquote(path)
@@ -304,13 +311,14 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get('Content-Length') or 0)
         except ValueError:
             length = -1
-        if length <= 0 or length > MAX_BODY:
+        # A recording is larger than a form: up to about a minute of 16 kHz speech.
+        if length <= 0 or length > (voice_room.MAX_BODY if path == VOICE_PATH else MAX_BODY):
             self.close_connection = True
             return self._send(413, {'status': 'failed', 'reason': 'size', 'message': 'The request is empty or too large.'})
         raw = self.rfile.read(length)  # read before any answer: an unread body can reset the connection on Windows
         if not self.host_allowed():
             return self._send(421, {'status': 'failed', 'reason': 'host', 'message': 'Requests to this address are not accepted.'})
-        if path not in ('/api/report-submissions', '/api/report-submissions/verify'):
+        if path not in ('/api/report-submissions', '/api/report-submissions/verify', VOICE_PATH):
             return self._send(404, {'error': 'not_found'})
         origin = self.headers.get('Origin')
         if origin and origin.rstrip('/') not in self.same_origins() | self.app.extra_origins:
@@ -322,6 +330,15 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError):
             return self._send(400, {'status': 'invalid', 'errors': {'_': 'The request is not valid JSON.'}})
         client = self.client_key()
+        if path == VOICE_PATH:
+            if not self.app.voice_limit.allow(client):
+                return self._send(429, {'status': 'failed', 'reason': 'rate_limited', 'message': 'Too many voice requests from this device. Wait a minute and try again.'}, extra={'Retry-After': '60'})
+            try:
+                status, out = voice_room.handle(self.app.voice, body)
+            except Exception as e:  # noqa: BLE001 - an answer, never a dropped connection
+                log(f'Voice: unexpected error: {type(e).__name__}: {e}')
+                status, out = 500, {'status': 'failed', 'reason': 'server_error', 'message': 'The voice request could not be finished. Try again.'}
+            return self._send(status, out)
         if path.endswith('/verify'):
             if not self.app.verify_limit.allow(client):
                 return self._send(429, {'verified': False, 'reason': 'rate_limited'}, extra={'Retry-After': '60'})
@@ -416,6 +433,7 @@ def main():
         log(f'Report form -> Supabase {app.db.url}, table {app.db.table}')
     else:
         log(f'Report form: Supabase NOT CONFIGURED ({app.config_problem}). Submissions fail and reports stay locked.')
+    log('Voice Room Setup -> Cloudflare Workers AI' if app.voice else f'Voice Room Setup: NOT CONFIGURED ({app.voice_problem}).')
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

@@ -320,6 +320,22 @@
         });
       },
 
+      /* ---------- describing the room by voice (js/services/voice-room.js; the pop-up confirm card) ---------- */
+      // Nothing is filled in before "Fill in Room Setup" on the card; then the ticked changes go through these actions.
+      openVoice: () => AM.services.voiceRoom.open(),
+      voiceStart: () => AM.services.voiceRoom.start(),
+      voiceStop: () => AM.services.voiceRoom.stop(),
+      voiceCancel: () => AM.services.voiceRoom.cancel(),
+      voiceRead: () => { const el = document.getElementById('voice-text'); AM.services.voiceRoom.readText(el ? el.value : ''); },
+      voiceToggle: (ctx, id) => AM.services.voiceRoom.toggle(id),
+      // Edit of one change on the card: open or close it, a choice or type picked, the typed value saved, − and +.
+      voiceEdit: (ctx, id) => AM.services.voiceRoom.edit(id),
+      voiceEditCancel: () => AM.services.voiceRoom.editCancel(),
+      voiceEditPick: (ctx, v) => AM.services.voiceRoom.editPick(v),
+      voiceEditSave: (ctx, id) => { const el = document.getElementById(`voice-ed-${id}-words`) || document.getElementById(`voice-ed-${id}-in`); AM.services.voiceRoom.editSave(id, el ? el.value : ''); },
+      voiceEditStep: (ctx, d) => AM.services.voiceRoom.editStep(Number(d)),
+      voiceApply: () => AM.services.voiceRoom.apply(),
+
       /* ---------- equipment on a wall ---------- */
       // Ticking a kind of equipment on a wall (an air conditioner, a speaker, …); unticking "Other" drops what it was.
       toggleEquipment: (ctx, v) => {

@@ -12,7 +12,8 @@ export const LOOKS: Record<string, Record<string, Look>> = {
     wallpaper: L('#E2B9A4', 'dots', 'plaster'), 'tiles-stone': L('#B7C9C2', 'tilegrid', 'tiles'), 'bare-brick': L('#B9654A', 'brick', 'brick'),
     'bare-concrete': L('#A3A19C', 'dots', 'concrete'), 'block-painted': L('#CFCBC2', 'brick', 'block'), 'block-bare': L('#8F8A82', 'brick', 'block'),
     cork: L('#C9A27E', 'dots', 'concrete'), curtains: L('#C58FB0', 'hatch', 'fabric'), mirror: L('#C4D3DA', 'glint', 'mirror'),
-    'metal-sheet': L('#7D8A99', 'ribs', 'metal'), other: L('#BDB5B3', 'hatch', 'plaster'),
+    'metal-sheet': L('#7D8A99', 'ribs', 'metal'), 'acp-cladding': L('#A9B4C0', 'seams', 'metal'), 'green-wall': L('#5E8F4E', 'pile', 'carpet'),
+    other: L('#BDB5B3', 'hatch', 'plaster'),
   },
   floor: {
     'vitrified-tiles': L('#D6CDBD', 'tilegrid', 'tiles'), stone: L('#B8B2AA', 'dots', 'concrete'), carpet: L('#7F9E6E', 'pile', 'carpet'),
