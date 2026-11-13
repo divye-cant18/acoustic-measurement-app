@@ -11,6 +11,7 @@ import { screenFor, type ScreenDef } from '../screens/registry';
 import { TargetWorkings } from '../screens/Target';
 import { TourLayer } from './Tour';
 import { VoicePanel } from './VoicePanel';
+import { AppSwitch } from './AppSwitch';
 
 /* ---------- workflow rail ---------- */
 const STATE_LABEL: Record<string, string> = { current: 'Current', completed: 'Completed', available: 'Upcoming', locked: 'Locked' };
@@ -122,6 +123,7 @@ function TopBar({ stage }: { stage: Stage }) {
         {stage.id !== 'home' ? <><span className="crumb-sep">/</span><span className="crumb-stage">{`${n}. ${stage.title}`}</span></> : null}
       </div>
       {facts}
+      <AppSwitch />
       {stage.id === 'home' ? (
         // Home: quick help, the walkthrough of the workflow (the brand is already in the rail and on the page), and the
         // tour of the screen (src/shell/Tour.tsx).

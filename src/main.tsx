@@ -172,5 +172,7 @@ function render() {
 am.app = { render };
 wireEvents($app, render);
 S.load();
+// A room handed over from Lighter RT60 (the Estimate | Measure switch) becomes a new measurement (js/services/handoff.js).
+(am.services as any).handoff?.receive();
 S.subscribe(render);
 render();

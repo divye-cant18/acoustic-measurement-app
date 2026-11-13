@@ -286,6 +286,23 @@ svg.i{display:inline-block;flex:none;vertical-align:middle}
 .topbar-tour:hover{border-color:var(--brand);background:var(--brand-wash)}
 /* Help on a step: one button, a menu of the tour, the walkthrough video and the step's guide */
 .help-wrap{position:relative;flex:none;margin-left:auto}
+/* Estimate | Measure (src/shell/AppSwitch.tsx): a recessed track, a white thumb on the app in use, an icon and a label
+   for each app; then the help on its right. The UV tile turns on the other app's backdrop while it opens. */
+.app-switch{position:relative;flex:none;margin-left:auto;display:inline-grid;grid-template-columns:1fr 1fr;align-items:center;height:38px;padding:3px;border-radius:12px;background:#EBE6E4;box-shadow:inset 0 0 0 1px rgba(35,30,31,.07),inset 0 1px 2px rgba(35,30,31,.05)}
+.app-switch + .help-wrap,.app-switch + .topbar-helpers{margin-left:0}
+.app-switch .as-thumb{position:absolute;top:3px;bottom:3px;left:50%;width:calc(50% - 3px);border-radius:9px;background:#fff;box-shadow:0 1px 2px rgba(35,30,31,.10),0 2px 6px rgba(35,30,31,.06),0 0 0 .5px rgba(35,30,31,.08)}
+.app-switch .as-opt{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:7px;height:32px;padding:0 14px;border:0;background:transparent;border-radius:9px;font:inherit;font-size:13px;font-weight:500;color:var(--muted);white-space:nowrap;cursor:pointer}
+.app-switch .as-opt:hover{color:var(--ink)}
+.app-switch .as-opt.on{font-weight:600;color:var(--ink);cursor:default}
+.app-switch .as-ic{display:grid;place-items:center}
+.app-switch .as-opt.on .as-ic{color:var(--brand)}
+.app-switch .as-opt:focus-visible{outline:2px solid var(--action);outline-offset:2px}
+.app-switch-spin{position:fixed;inset:0;z-index:300;display:grid;place-items:center;background:var(--bg)}
+.app-switch-spin.to-estimate{background:#f3f2ef}
+.app-switch-tile{width:112px;height:112px;border-radius:24%;background:#fff;overflow:hidden;display:grid;place-items:center;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08),0 10px 30px rgba(35,30,31,.16),0 2px 6px rgba(35,30,31,.08);will-change:transform}
+.app-switch-spin.to-estimate .app-switch-tile{opacity:0}
+.app-switch-tile img{display:block;width:108%;height:auto;aspect-ratio:1/1;max-width:none}
+@media (max-width:560px){.app-switch .as-opt{padding:0 10px}.app-switch .as-ic{display:none}}
 .topbar-helpbtn{display:flex;align-items:center;gap:6px;height:40px;padding:0 14px 0 11px;border:1px solid var(--line);border-radius:10px;background:var(--well);color:var(--ink);font-size:13.5px;font-weight:600;transition:border-color var(--t-fast) var(--ease),background-color var(--t-fast) var(--ease)}
 .topbar-helpbtn .i{color:var(--action)}
 .topbar-helpbtn:hover,.topbar-helpbtn[aria-expanded="true"]{border-color:var(--brand);background:var(--surface)}
