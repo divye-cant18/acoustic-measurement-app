@@ -83,13 +83,19 @@
     S.toast(`${room().name || 'The room'} came from the estimate. Check Room Setup, then measure.`);
   }
 
-  // The UV tile the switch spins, lifting away as this app opens (the end of the switch's transition).
+  // The UV tile the switch spins, lifting away as this app opens (the end of the switch's transition). It is the page's
+  // own opening tile (#boot in index.html, already showing, logo built in), so nothing pops or waits for a download.
   function arrive() {
-    const over = document.createElement('div');
-    over.className = 'app-switch-spin';
+    let over = document.getElementById('boot');
+    if (over) over.removeAttribute('id'); // taken: the app's start leaves it to this
+    else {
+      over = document.createElement('div');
+      over.className = 'app-switch-spin';
+      over.innerHTML = '<div class="app-switch-tile"><img alt=""></div>';
+      over.querySelector('img').src = window.UV_ICON || 'assets/brand/univicoustic-icon.png';
+      document.body.appendChild(over);
+    }
     over.setAttribute('aria-hidden', 'true');
-    over.innerHTML = '<div class="app-switch-tile"><img src="assets/brand/univicoustic-icon.png" alt=""></div>';
-    document.body.appendChild(over);
     const tile = over.firstElementChild;
     requestAnimationFrame(() => {
       tile.animate([{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(1.12)', opacity: 0 }], { duration: 380, delay: 120, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' });

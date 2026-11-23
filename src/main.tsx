@@ -176,3 +176,15 @@ S.load();
 (am.services as any).handoff?.receive();
 S.subscribe(render);
 render();
+// The opening tile (#boot in index.html), unless the hand-off above took it: it fades once the app is on screen.
+{
+  const boot = document.getElementById('boot');
+  if (boot) {
+    boot.removeAttribute('id');
+    requestAnimationFrame(() => {
+      const done = () => boot.remove();
+      if (typeof boot.animate !== 'function') return done();
+      boot.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 240, easing: 'ease-out', fill: 'forwards' }).finished.then(done, done);
+    });
+  }
+}
