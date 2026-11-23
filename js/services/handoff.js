@@ -12,6 +12,7 @@
    AM.services.handoff:
      receive()            on start, after the store has loaded: takes a handed-over room, if any, and clears the address
      estimateLink(p)      where the Estimate switch goes: the room this project came from, else Lighter's projects
+     canGoBack(p)         whether that is simply the page before this one (the switch then uses the browser's Back)
      ESTIMATE_URL         Lighter's address */
 (function (AM) {
   'use strict';
@@ -83,8 +84,19 @@
     S.toast(`${room().name || 'The room'} came from the estimate. Check Room Setup, then measure.`);
   }
 
-  // The UV tile the switch spins, lifting away as this app opens (the end of the switch's transition). It is the page's
-  // own opening tile (#boot in index.html, already showing, logo built in), so nothing pops or waits for a download.
+  // Where this tab came from: Lighter's page just before this one in the browser's history. While nothing else has been
+  // opened since, the Estimate switch goes back to it with the browser's Back, which shows it at once, as it was left.
+  const ARRIVED = 'am-from-estimate';
+  function remember(back) {
+    try { sessionStorage.setItem(ARRIVED, JSON.stringify({ len: history.length, back: back || '' })); } catch (e) { /* only a speed-up */ }
+  }
+  function cameFrom() {
+    try { return JSON.parse(sessionStorage.getItem(ARRIVED) || 'null'); } catch (e) { return null; }
+  }
+
+  // The end of the switch: the UV tile, still, in the middle, as Lighter left it; the app fades in around it and the
+  // switch's thumb slides over to Measure. It is the page's own opening tile (#boot in index.html, already showing,
+  // logo built in), so nothing pops or waits for a download.
   function arrive() {
     let over = document.getElementById('boot');
     if (over) over.removeAttribute('id'); // taken: the app's start leaves it to this
@@ -97,9 +109,14 @@
     }
     over.setAttribute('aria-hidden', 'true');
     const tile = over.firstElementChild;
+    const ease = 'cubic-bezier(.22,1,.36,1)';
     requestAnimationFrame(() => {
-      tile.animate([{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(1.12)', opacity: 0 }], { duration: 380, delay: 120, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' });
-      over.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 380, delay: 220, fill: 'forwards' }).finished.then(() => over.remove(), () => over.remove());
+      tile.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.04)' }], { duration: 320, easing: ease, fill: 'forwards' });
+      over.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 320, easing: 'ease-out', fill: 'forwards' }).finished.then(() => over.remove(), () => over.remove());
+      // The app is drawn by now: the thumb comes across from Estimate, as if the one switch had been flipped.
+      const thumb = document.querySelector('.app-switch .as-thumb');
+      if (thumb && !matchMedia('(prefers-reduced-motion: reduce)').matches)
+        thumb.animate([{ transform: 'translateX(-100%)' }, { transform: 'none' }], { duration: 380, delay: 180, easing: ease, fill: 'backwards' });
     });
   }
 
@@ -109,16 +126,28 @@
     if (!m && h !== '#from=estimate') return false;
     // Cleared at once, so a reload never starts the same room twice.
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* address unchanged */ }
+    let back = '';
     if (m) {
       try {
         const data = decode(m[1]);
-        if (data && data.v === 1 && data.from === 'estimate') fill(data);
+        if (data && data.v === 1 && data.from === 'estimate') {
+          fill(data);
+          back = safeBack(data.back);
+        }
       } catch (e) {
         S.toast('The room from the estimate could not be read. Fill in Room Setup here.');
       }
     }
+    remember(back);
     arrive();
     return true;
+  }
+
+  /** Whether the Estimate switch can simply go back: the page before this one is the Lighter page the switch means. */
+  function canGoBack(p) {
+    const c = cameFrom();
+    const back = (p && p.room && safeBack(p.room.estimateBack)) || '';
+    return !!c && c.len === history.length && history.length > 1 && c.back === back;
   }
 
   function estimateLink(p) {
@@ -126,5 +155,5 @@
     return back || `${ESTIMATE_URL}/#/projects`;
   }
 
-  AM.services.handoff = { receive, estimateLink, ESTIMATE_URL };
+  AM.services.handoff = { receive, estimateLink, canGoBack, ESTIMATE_URL };
 })(window.AM);
