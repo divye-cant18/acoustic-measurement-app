@@ -94,9 +94,29 @@
     try { return JSON.parse(sessionStorage.getItem(ARRIVED) || 'null'); } catch (e) { return null; }
   }
 
-  // The end of the switch: the UV tile, still, in the middle, as Lighter left it; the app fades in around it and the
-  // switch's thumb slides over to Measure. It is the page's own opening tile (#boot in index.html, already showing,
-  // logo built in), so nothing pops or waits for a download.
+  // The UV tile's turn during the switch: one steady turn a second, its angle read off the clock, exactly as Lighter
+  // turns it (Lighter's src/lib/spin.ts; keep SPIN_MS equal). So when one app hands over to the other, the tile carries
+  // on from the same angle: no jump, no stop. When the app is ready it glides to rest while the cover fades.
+  const SPIN_MS = 1000;
+  const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const angleNow = () => ((Date.now() % SPIN_MS) / SPIN_MS) * 360;
+  function spin(el) {
+    if (still()) return;
+    el.animate([{ transform: 'rotate(0turn)' }, { transform: 'rotate(1turn)' }], { duration: SPIN_MS, iterations: Infinity, delay: -(Date.now() % SPIN_MS), easing: 'linear' });
+  }
+  // Slows down evenly from the turning speed (no jolt): this curve starts at twice its average speed, so half as far.
+  function settle(el, ms) {
+    ms = ms || 650;
+    const from = angleNow();
+    el.getAnimations().forEach(a => a.cancel());
+    el.style.animation = 'none';
+    if (still()) return;
+    el.animate([{ transform: `rotate(${from}deg)` }, { transform: `rotate(${from + ((360 / SPIN_MS) * ms) / 2}deg)` }], { duration: ms, easing: 'cubic-bezier(.3,.6,.35,1)', fill: 'forwards' });
+  }
+
+  // The end of the switch: the UV tile, turning in the middle as Lighter left it, glides to rest as the app fades in
+  // around it, and the switch's thumb slides over to Measure. It is the page's own opening tile (#boot in index.html,
+  // already showing and turning, logo built in), so nothing pops or waits for a download.
   function arrive() {
     let over = document.getElementById('boot');
     if (over) over.removeAttribute('id'); // taken: the app's start leaves it to this
@@ -112,9 +132,11 @@
     const ease = 'cubic-bezier(.22,1,.36,1)';
     // Never left covering the app, even if the browser draws no frames for a while (a hidden tab, a busy laptop).
     setTimeout(() => over.remove(), 1500);
+    const turning = over.classList.contains('uv-turning');
     requestAnimationFrame(() => {
-      tile.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.04)' }], { duration: 320, easing: ease, fill: 'forwards' });
-      over.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 320, easing: 'ease-out', fill: 'forwards' }).finished.then(() => over.remove(), () => over.remove());
+      if (turning) settle(tile);
+      else tile.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.04)' }], { duration: 320, easing: ease, fill: 'forwards' });
+      over.animate([{ opacity: 1 }, { opacity: 0 }], { duration: turning ? 380 : 320, delay: turning ? 160 : 0, easing: 'ease-out', fill: 'forwards' }).finished.then(() => over.remove(), () => over.remove());
       // The app is drawn by now: the thumb comes across from Estimate, as if the one switch had been flipped.
       const thumb = document.querySelector('.app-switch .as-thumb');
       if (thumb && !matchMedia('(prefers-reduced-motion: reduce)').matches)
@@ -157,5 +179,5 @@
     return back || `${ESTIMATE_URL}/#/projects`;
   }
 
-  AM.services.handoff = { receive, estimateLink, canGoBack, ESTIMATE_URL };
+  AM.services.handoff = { receive, estimateLink, canGoBack, spin, settle, ESTIMATE_URL };
 })(window.AM);

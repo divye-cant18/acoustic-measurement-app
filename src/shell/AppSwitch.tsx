@@ -1,8 +1,8 @@
 /* Estimate | Measure: one toggle across this measuring app and Lighter RT60, the quick sales estimator (as in the
    approved preview). Pressing Estimate slides the thumb across, the screen settles softly onto Lighter's backdrop with
-   the UV tile in the middle, and Lighter opens behind it, starting at once: at the room this project came from
-   (js/services/handoff.js), else at its projects. The tile stays still (no spinner) at the size and place where Lighter
-   shows its own, so the change of page is invisible; if the network is slow it only breathes gently.
+   the UV tile turning steadily in the middle, and Lighter opens behind it, starting at once: at the room this project
+   came from (js/services/handoff.js), else at its projects. Lighter's own tile shows at the same size and place and
+   turns on from the same angle (both read it off the clock), so the change of page is invisible.
 
    When the page before this one is that same Lighter page (the rep came from it and has not left this one since), the
    switch uses the browser's Back: Lighter is shown at once, exactly as it was left. */
@@ -50,6 +50,17 @@ function flip(toEstimate: boolean) {
     thumb.animate([{ transform: toEstimate ? 'none' : 'translateX(-100%)' }, { transform: toEstimate ? 'translateX(-100%)' : 'none' }], { duration: 300, easing: EASE, fill: 'forwards' });
 }
 
+/** Lighter's address, marked as opened by the switch, so its first frame carries on turning the tile. */
+function withSwitch(href: string) {
+  try {
+    const u = new URL(href);
+    u.searchParams.set('switch', '1');
+    return u.toString();
+  } catch (e) {
+    return href;
+  }
+}
+
 async function toEstimate() {
   if (going) return;
   going = true;
@@ -57,7 +68,7 @@ async function toEstimate() {
   const visit = visits;
   warmUp();
   const p = S.state.project;
-  const href: string = handoff().estimateLink(p);
+  const href = withSwitch(handoff().estimateLink(p));
   const back: boolean = !!handoff().canGoBack?.(p);
   flip(true);
   const over = document.createElement('div');
@@ -72,9 +83,8 @@ async function toEstimate() {
   document.body.appendChild(over);
   over.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 230, delay: 70, easing: 'ease-out', fill: 'forwards' });
   box.animate([{ opacity: 0, transform: 'scale(.94)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 300, delay: 110, easing: EASE, fill: 'forwards' });
-  // Only if Lighter is slow to come: a calm breath, never a spinner.
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
-    tile.animate([{ transform: 'scale(1)' }, { transform: 'scale(.965)' }, { transform: 'scale(1)' }], { duration: 1600, delay: 1100, iterations: Infinity, easing: 'ease-in-out' });
+  // One steady turn, in step with the clock, so Lighter's tile carries on from the same angle.
+  handoff().spin?.(tile);
   await wait(300);
   if (back) {
     history.back();
@@ -98,7 +108,11 @@ window.addEventListener('pageshow', (e: PageTransitionEvent) => {
   left = false;
   const covers = document.querySelectorAll<HTMLElement>('.app-switch-spin.to-estimate');
   if (!covers.length) return;
-  covers.forEach(el => el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: e.persisted ? 260 : 0, easing: 'ease-out', fill: 'forwards' }).finished.then(() => el.remove(), () => el.remove()));
+  covers.forEach(el => {
+    const tile = el.querySelector<HTMLElement>('.app-switch-tile');
+    if (tile && e.persisted) handoff().settle?.(tile);
+    el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: e.persisted ? 380 : 0, delay: e.persisted ? 160 : 0, easing: 'ease-out', fill: 'forwards' }).finished.then(() => el.remove(), () => el.remove());
+  });
   flip(false);
 });
 
