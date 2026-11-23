@@ -110,6 +110,8 @@
     over.setAttribute('aria-hidden', 'true');
     const tile = over.firstElementChild;
     const ease = 'cubic-bezier(.22,1,.36,1)';
+    // Never left covering the app, even if the browser draws no frames for a while (a hidden tab, a busy laptop).
+    setTimeout(() => over.remove(), 1500);
     requestAnimationFrame(() => {
       tile.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.04)' }], { duration: 320, easing: ease, fill: 'forwards' });
       over.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 320, easing: 'ease-out', fill: 'forwards' }).finished.then(() => over.remove(), () => over.remove());

@@ -181,6 +181,7 @@ render();
   const boot = document.getElementById('boot');
   if (boot) {
     boot.removeAttribute('id');
+    setTimeout(() => boot.remove(), 1500); // never left covering the app, even if no frames are drawn for a while
     requestAnimationFrame(() => {
       const done = () => boot.remove();
       if (typeof boot.animate !== 'function') return done();
